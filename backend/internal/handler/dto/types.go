@@ -520,6 +520,8 @@ type UsageLog struct {
 
 	BillingType  int8   `json:"billing_type"`
 	RequestType  string `json:"request_type"`
+	// ClientRequestType is the transport used by the client calling sub2api.
+	ClientRequestType *string `json:"client_request_type,omitempty"`
 	Stream       bool   `json:"stream"`
 	OpenAIWSMode bool   `json:"openai_ws_mode"`
 	// NativeCompactionV2 is true only for requests positively identified at
@@ -527,6 +529,8 @@ type UsageLog struct {
 	NativeCompactionV2 bool `json:"native_compaction_v2"`
 	DurationMs         *int `json:"duration_ms"`
 	FirstTokenMs       *int `json:"first_token_ms"`
+	// GenerationTokensPerSecond is output-token throughput after first token.
+	GenerationTokensPerSecond *float64 `json:"generation_tokens_per_second,omitempty"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`

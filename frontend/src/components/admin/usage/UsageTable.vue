@@ -105,14 +105,18 @@
         </template>
 
         <template #cell-endpoint="{ row }">
-          <div class="max-w-[320px] space-y-1 text-xs">
-            <div class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.inbound') }}:</span>
-              <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
+          <div class="max-w-[320px] space-y-1.5 text-xs">
+            <div class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+              <span data-testid="client-request-type" class="inline-flex min-w-12 shrink-0 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="requestTransportBadgeClass(resolveClientRequestType(row))">
+                {{ requestTransportLabel(resolveClientRequestType(row)) }}
+              </span>
+              <span class="break-all pt-0.5">{{ row.inbound_endpoint?.trim() || '-' }}</span>
             </div>
-            <div v-if="showUpstreamEndpoint" class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.upstream') }}:</span>
-              <span class="ml-1">{{ row.upstream_endpoint?.trim() || '-' }}</span>
+            <div v-if="showUpstreamEndpoint" class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+              <span data-testid="upstream-request-type" class="inline-flex min-w-12 shrink-0 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="requestTransportBadgeClass(resolveUpstreamRequestType(row))">
+                {{ requestTransportLabel(resolveUpstreamRequestType(row)) }}
+              </span>
+              <span class="break-all pt-0.5">{{ row.upstream_endpoint?.trim() || '-' }}</span>
             </div>
           </div>
         </template>
@@ -137,6 +141,18 @@
               {{ t('usage.nativeCompactionV2') }}
             </span>
           </div>
+        </template>
+        <template #cell-service_tier="{ row }">
+          <span v-if="row.service_tier?.trim()" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="serviceTierBadgeClass(row.service_tier)">
+            {{ getUsageServiceTierLabel(row.service_tier, t) }}
+          </span>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
+        <template #cell-generation_speed="{ row }">
+          <span class="whitespace-nowrap text-sm font-medium tabular-nums text-gray-700 dark:text-gray-300">
+            {{ formatGenerationSpeed(row.generation_tokens_per_second) }}
+          </span>
         </template>
 
         <template #cell-billing_mode="{ row }">
@@ -520,8 +536,8 @@ import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
-import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
-import { resolveUsageRequestType } from '@/utils/usageRequestType'
+import { getUsageServiceTierLabel, normalizeUsageServiceTier } from '@/utils/usageServiceTier'
+import { resolveClientRequestType, resolveUpstreamRequestType } from '@/utils/usageRequestType'
 import {
   LATENCY_BAR_CLASSES,
   LATENCY_BAR_FROM_CLASSES,
@@ -565,7 +581,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
-import type { AdminUsageLog } from '@/types'
+import type { AdminUsageLog, UsageTransportType } from '@/types'
 import type { Column } from '@/components/common/types'
 
 interface Props {
@@ -676,24 +692,30 @@ const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
 
-const getRequestTypeLabel = (row: AdminUsageLog): string => {
-  const requestType = resolveUsageRequestType(row)
-  if (requestType === 'cyber') return t('usage.cyber')
-  if (requestType === 'live') return t('usage.live')
-  if (requestType === 'ws_v2') return t('usage.ws')
-  if (requestType === 'stream') return t('usage.stream')
+const requestTransportLabel = (requestType: UsageTransportType): string => {
+  if (requestType === 'sse') return 'SSE'
+  if (requestType === 'ws') return 'WS'
   if (requestType === 'sync') return t('usage.sync')
-  return t('usage.unknown')
+  return '-'
 }
 
-const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
-  const requestType = resolveUsageRequestType(row)
-  if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-  if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
-  if (requestType === 'ws_v2') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
-  if (requestType === 'stream') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+const requestTransportBadgeClass = (requestType: UsageTransportType): string => {
+  if (requestType === 'sse') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+  if (requestType === 'ws') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
   if (requestType === 'sync') return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
   return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+}
+
+const serviceTierBadgeClass = (serviceTier?: string | null): string => {
+  const normalized = normalizeUsageServiceTier(serviceTier)
+  if (normalized === 'priority') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+  if (normalized === 'flex') return 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200'
+  return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+}
+
+const formatGenerationSpeed = (value?: number | null): string => {
+  if (value == null || !Number.isFinite(value) || value <= 0) return '-'
+  return `${value.toFixed(1)} tok/s`
 }
 
 

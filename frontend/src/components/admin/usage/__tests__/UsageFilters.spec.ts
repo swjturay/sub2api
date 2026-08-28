@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   'admin.usage.account': 'Account',
   'admin.usage.searchAccountPlaceholder': 'Search account...',
   'usage.type': 'Type',
+  'usage.upstreamRequestType': 'Upstream request type',
   'admin.usage.allTypes': 'All Types',
   'usage.ws': 'WS',
   'usage.stream': 'Stream',

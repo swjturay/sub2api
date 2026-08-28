@@ -32,6 +32,7 @@ const messages: Record<string, string> = {
   'usage.serviceTierPriority': 'Fast',
   'usage.serviceTierFlex': 'Flex',
   'usage.serviceTierStandard': 'Standard',
+	'usage.sync': 'Sync',
   'usage.rate': 'Rate',
   'usage.accountMultiplier': 'Account rate',
   'usage.original': 'Original',
@@ -88,6 +89,9 @@ const DataTableStub = {
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
+        <slot name="cell-endpoint" :row="row" />
+        <slot name="cell-service_tier" :row="row" />
+        <slot name="cell-generation_speed" :row="row" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -270,6 +274,42 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$5.0000 / 1M tokens')
     expect(text).toContain('$30.0000 / 1M tokens')
     expect(text).toContain('$0.069568')
+  })
+
+  it('shows client and upstream request types with speed fields', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-sse-to-ws',
+          model: 'gpt-5.4',
+          client_request_type: 'sse',
+          request_type: 'ws_v2',
+          stream: true,
+          openai_ws_mode: true,
+          inbound_endpoint: '/v1/responses',
+          upstream_endpoint: '/v1/responses',
+          service_tier: 'priority',
+          generation_tokens_per_second: 25,
+        }],
+        loading: false,
+        columns: [],
+        showUpstreamEndpoint: true,
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="client-request-type"]').text()).toBe('SSE')
+    expect(wrapper.get('[data-testid="upstream-request-type"]').text()).toBe('WS')
+    expect(wrapper.text()).toContain('/v1/responses')
+    expect(wrapper.text()).toContain('Fast')
+    expect(wrapper.text()).toContain('25.0 tok/s')
   })
 
   it('shows requested and upstream models separately for admin rows', () => {
