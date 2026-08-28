@@ -1,15 +1,21 @@
-import type { UsageRequestType } from '@/types'
+import type { UsageRequestType, UsageTransportType } from '@/types'
 
 export interface UsageRequestTypeLike {
   request_type?: string | null
+  client_request_type?: string | null
   stream?: boolean | null
   openai_ws_mode?: boolean | null
 }
 
 const VALID_REQUEST_TYPES = new Set<UsageRequestType>(['unknown', 'sync', 'stream', 'ws_v2', 'cyber', 'live'])
+const VALID_TRANSPORT_TYPES = new Set<UsageTransportType>(['unknown', 'sync', 'sse', 'ws'])
 
 export const isUsageRequestType = (value: unknown): value is UsageRequestType => {
   return typeof value === 'string' && VALID_REQUEST_TYPES.has(value as UsageRequestType)
+}
+
+export const isUsageTransportType = (value: unknown): value is UsageTransportType => {
+  return typeof value === 'string' && VALID_TRANSPORT_TYPES.has(value as UsageTransportType)
 }
 
 export const resolveUsageRequestType = (value: UsageRequestTypeLike): UsageRequestType => {
@@ -20,6 +26,24 @@ export const resolveUsageRequestType = (value: UsageRequestTypeLike): UsageReque
     return 'ws_v2'
   }
   return value.stream ? 'stream' : 'sync'
+}
+
+export const resolveClientRequestType = (value: UsageRequestTypeLike): UsageTransportType => {
+  if (isUsageTransportType(value.client_request_type) && value.client_request_type !== 'unknown') {
+    return value.client_request_type
+  }
+  const requestType = resolveUsageRequestType(value)
+  if (requestType === 'sync') return 'sync'
+  if (requestType === 'stream') return 'sse'
+  return 'unknown'
+}
+
+export const resolveUpstreamRequestType = (value: UsageRequestTypeLike): UsageTransportType => {
+  const requestType = resolveUsageRequestType(value)
+  if (requestType === 'ws_v2' || requestType === 'live' || value.openai_ws_mode) return 'ws'
+  if (requestType === 'stream' || value.stream) return 'sse'
+  if (requestType === 'sync' || requestType === 'cyber') return 'sync'
+  return 'unknown'
 }
 
 export const requestTypeToLegacyStream = (requestType?: UsageRequestType | null): boolean | null | undefined => {

@@ -514,12 +514,16 @@ type UsageLog struct {
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
 
-	BillingType  int8   `json:"billing_type"`
-	RequestType  string `json:"request_type"`
-	Stream       bool   `json:"stream"`
-	OpenAIWSMode bool   `json:"openai_ws_mode"`
-	DurationMs   *int   `json:"duration_ms"`
-	FirstTokenMs *int   `json:"first_token_ms"`
+	BillingType int8   `json:"billing_type"`
+	RequestType string `json:"request_type"`
+	// ClientRequestType is the transport used by the client calling sub2api.
+	ClientRequestType *string `json:"client_request_type,omitempty"`
+	Stream            bool    `json:"stream"`
+	OpenAIWSMode      bool    `json:"openai_ws_mode"`
+	DurationMs        *int    `json:"duration_ms"`
+	FirstTokenMs      *int    `json:"first_token_ms"`
+	// GenerationTokensPerSecond is output-token throughput after first token.
+	GenerationTokensPerSecond *float64 `json:"generation_tokens_per_second,omitempty"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`

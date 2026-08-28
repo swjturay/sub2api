@@ -645,6 +645,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ServiceTier:               l.ServiceTier,
 		ReasoningEffort:           l.ReasoningEffort,
 		InboundEndpoint:           l.InboundEndpoint,
+		UpstreamEndpoint:          l.UpstreamEndpoint,
 		GroupID:                   l.GroupID,
 		SubscriptionID:            l.SubscriptionID,
 		InputTokens:               l.InputTokens,
@@ -663,10 +664,12 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		LongContextBillingApplied: l.LongContextBillingApplied,
 		BillingType:               l.BillingType,
 		RequestType:               requestType.String(),
+		ClientRequestType:         clientRequestTypeStringPtr(l.EffectiveClientRequestType()),
 		Stream:                    stream,
 		OpenAIWSMode:              openAIWSMode,
 		DurationMs:                l.DurationMs,
 		FirstTokenMs:              l.FirstTokenMs,
+		GenerationTokensPerSecond: usageGenerationTokensPerSecond(l),
 		ImageCount:                l.ImageCount,
 		ImageSize:                 l.ImageSize,
 		ImageInputSize:            l.ImageInputSize,
@@ -708,7 +711,6 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		return nil
 	}
 	usageLog := usageLogFromServiceUser(l)
-	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
 	return &AdminUsageLog{
 		UsageLog:              usageLog,
 		UpstreamModel:         l.UpstreamModel,
@@ -722,6 +724,26 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		IPAddress:             l.IPAddress,
 		Account:               AccountSummaryFromService(l.Account),
 	}
+}
+
+func usageGenerationTokensPerSecond(l *service.UsageLog) *float64 {
+	if l == nil || l.OutputTokens <= 0 || l.DurationMs == nil || l.FirstTokenMs == nil || l.ImageCount > 0 || l.VideoCount > 0 {
+		return nil
+	}
+	generationMs := *l.DurationMs - *l.FirstTokenMs
+	if generationMs <= 0 {
+		return nil
+	}
+	value := float64(l.OutputTokens) * 1000 / float64(generationMs)
+	return &value
+}
+
+func clientRequestTypeStringPtr(requestType service.ClientRequestType) *string {
+	value := requestType.String()
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func UsageCleanupTaskFromService(task *service.UsageCleanupTask) *UsageCleanupTask {

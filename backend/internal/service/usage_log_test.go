@@ -104,6 +104,28 @@ func TestUsageLogEffectiveRequestTypeNilReceiver(t *testing.T) {
 	require.Equal(t, RequestTypeUnknown, log.EffectiveRequestType())
 }
 
+func TestUsageLogEffectiveClientRequestType(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, ClientRequestTypeSSE, (&UsageLog{ClientRequestType: ClientRequestTypeSSE, RequestType: RequestTypeWSV2}).EffectiveClientRequestType())
+	require.Equal(t, ClientRequestTypeSync, (&UsageLog{RequestType: RequestTypeSync}).EffectiveClientRequestType())
+	require.Equal(t, ClientRequestTypeSSE, (&UsageLog{RequestType: RequestTypeStream}).EffectiveClientRequestType())
+	require.Equal(t, ClientRequestTypeUnknown, (&UsageLog{RequestType: RequestTypeWSV2}).EffectiveClientRequestType())
+
+	var log *UsageLog
+	require.Equal(t, ClientRequestTypeUnknown, log.EffectiveClientRequestType())
+}
+
+func TestClientRequestTypeNormalizeAndString(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, ClientRequestTypeUnknown, ClientRequestType(99).Normalize())
+	require.Empty(t, ClientRequestTypeUnknown.String())
+	require.Equal(t, "sync", ClientRequestTypeSync.String())
+	require.Equal(t, "sse", ClientRequestTypeSSE.String())
+	require.Equal(t, "ws", ClientRequestTypeWS.String())
+}
+
 func TestUsageLogSyncRequestTypeAndLegacyFieldsNilReceiver(t *testing.T) {
 	t.Parallel()
 

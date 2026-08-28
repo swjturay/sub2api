@@ -39,6 +39,9 @@ type OpenAIRecordUsageInput struct {
 	PricingAt time.Time
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
+	// ClientRequestType is required for native WebSocket ingress. HTTP ingress
+	// may leave it unknown and will be resolved from Result.Stream.
+	ClientRequestType ClientRequestType
 	ChannelUsageFields
 }
 
@@ -374,6 +377,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	usageLog.AccountRateMultiplier = &accountRateMultiplier
 	usageLog.BillingType = billingType
+	usageLog.ClientRequestType = input.ClientRequestType.Normalize()
+	if usageLog.ClientRequestType == ClientRequestTypeUnknown {
+		usageLog.ClientRequestType = ClientRequestTypeFromStream(result.Stream)
+	}
 	usageLog.Stream = result.Stream
 	if input.CyberBlocked {
 		usageLog.RequestType = RequestTypeCyberBlocked

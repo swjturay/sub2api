@@ -1627,6 +1627,7 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'cyber' | 'live'
+export type UsageTransportType = 'unknown' | 'sync' | 'sse' | 'ws'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
@@ -1663,10 +1664,12 @@ export interface UsageLog {
   billing_type: number
 
   request_type?: UsageRequestType
+  client_request_type?: UsageTransportType | null
   stream: boolean
   openai_ws_mode?: boolean
   duration_ms: number | null
   first_token_ms: number | null
+  generation_tokens_per_second?: number | null
 
   // 图片生成字段
   image_count: number

@@ -108,7 +108,7 @@
               <Select v-model="filters.group_id" :options="groupOptions" searchable @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[180px]">
-              <label class="input-label">{{ t('usage.type') }}</label>
+              <label class="input-label">{{ t('usage.upstreamRequestType') }}</label>
               <Select v-model="filters.request_type" :options="requestTypeOptions" @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[200px]">
@@ -177,7 +177,7 @@
           :columns="visibleColumns"
           :server-side-sort="true"
           :show-account-billing="false"
-          :show-upstream-endpoint="false"
+          :show-upstream-endpoint="true"
           default-sort-key="created_at"
           default-sort-order="desc"
           @sort="handleSort"
@@ -232,7 +232,8 @@ import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
-import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import { resolveClientRequestType, resolveUpstreamRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import type {
   ApiKey,
   EndpointStat,
@@ -241,6 +242,7 @@ import type {
   ModelStat,
   TrendDataPoint,
   UsageLog,
+  UsageTransportType,
   UsageQueryParams,
   UsageStatsResponse,
   UserErrorRequest,
@@ -593,14 +595,11 @@ const handleIpGeoBatchFailed = () => {
   appStore.showError(t('usage.ipGeo.batchFailed'))
 }
 
-const getRequestTypeExportText = (log: UsageLog): string => {
-  const requestType = resolveUsageRequestType(log)
-  if (requestType === 'cyber') return 'Cyber'
-  if (requestType === 'live') return 'Live'
-  if (requestType === 'ws_v2') return 'WS'
-  if (requestType === 'stream') return 'Stream'
+const getTransportExportText = (requestType: UsageTransportType): string => {
+  if (requestType === 'sse') return 'SSE'
+  if (requestType === 'ws') return 'WS'
   if (requestType === 'sync') return 'Sync'
-  return 'Unknown'
+  return ''
 }
 
 const getDisplayBillingMode = (
@@ -640,9 +639,13 @@ const exportToCSV = async () => {
       'API Key Name',
       'Model',
       'Reasoning Effort',
+      'Client Request Type',
       'Inbound Endpoint',
+      'Upstream Request Type',
+      'Upstream Endpoint',
+      'Speed Mode',
+      'Generation Speed (tok/s)',
       'IP Address',
-      'Type',
       'Billing Mode',
       'Input Tokens',
       'Output Tokens',
@@ -659,9 +662,13 @@ const exportToCSV = async () => {
       log.api_key?.name || '',
       log.model,
       formatReasoningEffort(log.reasoning_effort),
+      getTransportExportText(resolveClientRequestType(log)),
       log.inbound_endpoint || '',
+      getTransportExportText(resolveUpstreamRequestType(log)),
+      log.upstream_endpoint || '',
+      log.service_tier?.trim() ? getUsageServiceTierLabel(log.service_tier, t) : '',
+      log.generation_tokens_per_second ?? '',
       log.ip_address || '',
-      getRequestTypeExportText(log),
       getBillingModeLabel(getDisplayBillingMode(log), t),
       log.input_tokens,
       log.output_tokens,
@@ -702,9 +709,10 @@ const allColumns = computed<Column[]>(() => [
   { key: 'model', label: t('usage.model'), sortable: true },
   { key: 'reasoning_effort', label: t('usage.reasoningEffort'), sortable: false },
   { key: 'endpoint', label: t('usage.endpoint'), sortable: false },
+  { key: 'service_tier', label: t('usage.speedMode'), sortable: false },
+  { key: 'generation_speed', label: t('usage.generationSpeed'), sortable: false },
   { key: 'ip_address', label: 'IP', sortable: false },
   { key: 'group', label: t('admin.usage.group'), sortable: false },
-  { key: 'stream', label: t('usage.type'), sortable: false },
   { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
   { key: 'cost', label: t('usage.cost'), sortable: false },

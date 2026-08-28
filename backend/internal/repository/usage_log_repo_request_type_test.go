@@ -98,6 +98,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // client_request_type
 			sqlmock.AnyArg(), // session_id
 			createdAt,
 		).
@@ -190,6 +191,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_tier
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
+			sqlmock.AnyArg(), // client_request_type
 			sqlmock.AnyArg(), // session_id
 			createdAt,
 		).
@@ -838,6 +840,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullFloat64{},
+			sql.NullInt64{},
 			sql.NullString{},
 			now,
 		}})
@@ -915,13 +918,15 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
-			sql.NullString{},  // session_id
+			sql.NullInt64{Valid: true, Int64: int64(service.ClientRequestTypeSSE)}, // client_request_type
+			sql.NullString{}, // session_id
 			now,
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
 		require.Equal(t, "priority", *log.ServiceTier)
 		require.Equal(t, service.RequestTypeWSV2, log.RequestType)
+		require.Equal(t, service.ClientRequestTypeSSE, log.ClientRequestType)
 		require.True(t, log.Stream)
 		require.True(t, log.OpenAIWSMode)
 	})
@@ -975,6 +980,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullInt64{},   // client_request_type
 			sql.NullString{},  // session_id
 			now,
 		}})
@@ -1035,6 +1041,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_tier
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
+			sql.NullInt64{},   // client_request_type
 			sql.NullString{},  // session_id
 			now,
 		}})
