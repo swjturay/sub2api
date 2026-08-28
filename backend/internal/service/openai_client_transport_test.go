@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -104,4 +105,34 @@ func TestResolveOpenAIWSDecisionByClientTransport(t *testing.T) {
 
 	unknownDecision := resolveOpenAIWSDecisionByClientTransport(base, OpenAIClientTransportUnknown)
 	require.Equal(t, base, unknownDecision)
+}
+
+func TestOpenAIHTTPIngressWSBridgeRequiresCtxPoolAndFlag(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.HTTPIngressEnabled = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
+	svc := &OpenAIGatewayService{cfg: cfg, openaiWSResolver: NewOpenAIWSProtocolResolver(cfg)}
+	account := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_mode": OpenAIWSIngressModeCtxPool,
+		},
+	}
+	require.True(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, true, false))
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, false, false))
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, true, true))
+	account.Extra["openai_apikey_responses_websockets_v2_mode"] = OpenAIWSIngressModePassthrough
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, true, false))
+	account.Extra["openai_apikey_responses_websockets_v2_mode"] = OpenAIWSIngressModeCtxPool
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	setOpenAIHTTPIngressWSFallbackActive(c, true)
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(c, account, true, false))
+	cfg.Gateway.OpenAIWS.HTTPIngressEnabled = false
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, true, false))
 }
