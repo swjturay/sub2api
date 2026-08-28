@@ -193,6 +193,9 @@ func TestOpenAIGatewayService_Forward_HTTPIngressCtxPoolBridgesToSSE(t *testing.
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	c.Request.Header.Set("User-Agent", "custom-client/1.0")
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+	groupID := int64(13)
+	c.Set("api_key", &APIKey{ID: 102, GroupID: &groupID})
+	SetOpenAIHTTPResponseOwner(c, 1, 102)
 
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.Enabled = false
@@ -252,6 +255,9 @@ func TestOpenAIGatewayService_Forward_HTTPIngressCtxPoolBridgesToSSE(t *testing.
 	require.Equal(t, 1, captureDialer.DialCount())
 	decision, _ := c.Get("openai_ws_transport_decision")
 	require.Equal(t, string(OpenAIUpstreamTransportResponsesWebsocketV2), decision)
+	owned, ownerErr := svc.ValidateOpenAIHTTPResponseOwner(context.Background(), groupID, result.RequestID, 1, 102)
+	require.NoError(t, ownerErr)
+	require.True(t, owned, "HTTP ingress WS responses must authorize the next HTTP continuation")
 }
 
 func TestOpenAIGatewayService_Forward_HTTPIngressWSFallsBackToHTTPBeforeOutput(t *testing.T) {
