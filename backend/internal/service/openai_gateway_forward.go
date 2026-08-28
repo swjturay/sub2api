@@ -925,6 +925,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.ImageInputSize = imageInputSize
 				wsResult.BillingModel = imageBillingModel
 			}
+			if httpIngressWS && strings.TrimSpace(wsResult.RequestID) != "" {
+				// Native client WS ingress owns continuation inside its connection.
+				// HTTP/SSE ingress must additionally persist the downstream owner so
+				// the next HTTP request passes the tenant ownership gate before it is
+				// routed back to the WS pool.
+				s.bindHTTPResponseAccount(ctx, c, account, wsResult.RequestID)
+			}
 			return wsResult, nil
 		}
 		// The HTTP-ingress bridge is allowed to fall back only before any
