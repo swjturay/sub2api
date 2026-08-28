@@ -104,12 +104,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = liteBody
 		}
 	}
-	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
-	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
-	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	compactPath := isOpenAIResponsesCompactPath(c)
-	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
+	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
+	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
+	// HTTP/SSE ingress may opt into the ctx_pool bridge. Other HTTP requests
+	// retain the historical transport guard, while native downstream WS keeps
+	// the resolver decision unchanged.
+	httpIngressWS := s.IsOpenAIHTTPIngressWSBridgeEnabled(
+		c,
+		account,
+		gjson.GetBytes(body, "stream").Bool(),
+		compactPath,
+	)
+	if !httpIngressWS {
+		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
+	}
+	passthroughEnabledForTransport := passthroughEnabled && !httpIngressWS
+	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabledForTransport, compactPath) {
 		body, err = flattenOpenAIResponsesNamespaces(c, body)
 		if err != nil {
 			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
@@ -119,9 +130,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 	}
-	if shouldStripOpenAIResponsesInputNamespaces(account, wsDecision.Transport, passthroughEnabled) {
+	if shouldStripOpenAIResponsesInputNamespaces(account, wsDecision.Transport, passthroughEnabledForTransport) {
 		keepToolCallNamespaces := shouldKeepOpenAIResponsesToolCallNamespaces(
-			account, wsDecision.Transport, passthroughEnabled, compactPath, body,
+			account, wsDecision.Transport, passthroughEnabledForTransport, compactPath, body,
 		)
 		body, err = stripOpenAIResponsesInputNamespaces(body, keepToolCallNamespaces)
 		if err != nil {
@@ -242,7 +253,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		return nil, errors.New("openai ws v1 is temporarily unsupported; use ws v2")
 	}
-	if passthroughEnabled {
+	if passthroughEnabledForTransport {
 		attemptImageIntentInvalidated := false
 		if isCodexCLI && codexImageGenerationExplicitToolPolicy == codexImageGenerationExplicitToolPolicyStrip {
 			strippedBody, changed, stripErr := stripOpenAIImageGenerationToolsFromRawPayload(body)
@@ -951,6 +962,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.BillingModel = imageBillingModel
 			}
 			return wsResult, nil
+		}
+		// The HTTP-ingress bridge is allowed to fall back only before any
+		// downstream semantic bytes have been committed. Re-enter Forward with
+		// an explicit guard so the retry takes the ordinary HTTP adapter rather
+		// than recursively selecting the same WS bridge.
+		if httpIngressWS && (c == nil || c.Writer == nil || !c.Writer.Written()) {
+			logOpenAIWSModeInfo(
+				"http_ingress_fallback_to_http account_id=%d reason=%s",
+				account.ID,
+				normalizeOpenAIWSLogValue(wsLastFailureReason),
+			)
+			setOpenAIHTTPIngressWSFallbackActive(c, true)
+			fallbackResult, fallbackErr := s.Forward(ctx, c, account, body)
+			setOpenAIHTTPIngressWSFallbackActive(c, false)
+			return fallbackResult, fallbackErr
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
