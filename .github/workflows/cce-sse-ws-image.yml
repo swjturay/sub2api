@@ -46,3 +46,17 @@ jobs:
         run: |
           echo "source_sha=${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
           echo "image=ghcr.io/swjturay/sub2api:cce-v183-sse-ws-${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Export validation image archive
+        run: |
+          image="ghcr.io/swjturay/sub2api:cce-v183-sse-ws-${GITHUB_SHA}"
+          docker pull --platform linux/amd64 "$image"
+          docker save "$image" | gzip -1 > /tmp/sub2api-cce-v183-sse-ws.tar.gz
+
+      - name: Upload validation image archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sub2api-cce-v183-sse-ws-${{ github.sha }}
+          path: /tmp/sub2api-cce-v183-sse-ws.tar.gz
+          if-no-files-found: error
+          retention-days: 7
