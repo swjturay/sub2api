@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveClientRequestType, resolveUpstreamRequestType } from '@/utils/usageRequestType'
+import {
+  formatUsageRequestType,
+  formatUsageTransport,
+  resolveClientTransport,
+  resolveUpstreamTransport,
+} from '@/utils/usageRequestType'
+
+const labels: Record<string, string> = {
+  'usage.cyber': 'Cyber',
+  'usage.live': 'Live',
+  'usage.ws': 'WS',
+  'usage.stream': 'Stream',
+  'usage.sync': 'Sync',
+  'usage.unknown': 'Unknown',
+}
+const t = (key: string): string => labels[key] ?? key
 
 describe('usage request transports', () => {
   it('keeps client SSE distinct from upstream WS for bridged requests', () => {
@@ -11,18 +26,31 @@ describe('usage request transports', () => {
       openai_ws_mode: true,
     }
 
-    expect(resolveClientRequestType(usage)).toBe('sse')
-    expect(resolveUpstreamRequestType(usage)).toBe('ws')
+    expect(resolveClientTransport(usage)).toBe('sse')
+    expect(resolveUpstreamTransport(usage)).toBe('ws')
   })
 
-  it('uses only unambiguous legacy client request type fallbacks', () => {
-    expect(resolveClientRequestType({ request_type: 'sync' })).toBe('sync')
-    expect(resolveClientRequestType({ request_type: 'stream', stream: true })).toBe('sse')
-    expect(resolveClientRequestType({ request_type: 'ws_v2', stream: true, openai_ws_mode: true })).toBe('unknown')
+  it('uses only unambiguous legacy client transport fallbacks', () => {
+    expect(resolveClientTransport({ request_type: 'sync' })).toBe('sync')
+    expect(resolveClientTransport({ request_type: 'stream', stream: true })).toBe('sse')
+    expect(resolveClientTransport({ request_type: 'ws_v2', stream: true, openai_ws_mode: true })).toBe('unknown')
   })
 
   it('maps native and live upstream websocket requests', () => {
-    expect(resolveUpstreamRequestType({ request_type: 'ws_v2' })).toBe('ws')
-    expect(resolveUpstreamRequestType({ request_type: 'live' })).toBe('ws')
+    expect(resolveUpstreamTransport({ request_type: 'ws_v2' })).toBe('ws')
+    expect(resolveUpstreamTransport({ request_type: 'live' })).toBe('ws')
+  })
+
+  it('formats semantic request types without collapsing live or cyber', () => {
+    expect(formatUsageRequestType({ request_type: 'live' }, t)).toBe('Live')
+    expect(formatUsageRequestType({ request_type: 'cyber' }, t)).toBe('Cyber')
+    expect(formatUsageRequestType({ request_type: 'stream' }, t)).toBe('Stream')
+  })
+
+  it('formats transport labels independently from request type labels', () => {
+    expect(formatUsageTransport('sse', t)).toBe('SSE')
+    expect(formatUsageTransport('ws', t)).toBe('WS')
+    expect(formatUsageTransport('sync', t)).toBe('Sync')
+    expect(formatUsageTransport('unknown', t, '-')).toBe('-')
   })
 })

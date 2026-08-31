@@ -645,7 +645,6 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ServiceTier:               l.ServiceTier,
 		ReasoningEffort:           l.ReasoningEffort,
 		InboundEndpoint:           l.InboundEndpoint,
-		UpstreamEndpoint:          l.UpstreamEndpoint,
 		GroupID:                   l.GroupID,
 		SubscriptionID:            l.SubscriptionID,
 		InputTokens:               l.InputTokens,
@@ -669,7 +668,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		OpenAIWSMode:              openAIWSMode,
 		DurationMs:                l.DurationMs,
 		FirstTokenMs:              l.FirstTokenMs,
-		GenerationTokensPerSecond: usageGenerationTokensPerSecond(l),
+		OutputTokensPerSecond:     usageOutputTokensPerSecond(l),
 		ImageCount:                l.ImageCount,
 		ImageSize:                 l.ImageSize,
 		ImageInputSize:            l.ImageInputSize,
@@ -713,6 +712,7 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	usageLog := usageLogFromServiceUser(l)
 	return &AdminUsageLog{
 		UsageLog:              usageLog,
+		UpstreamEndpoint:      l.UpstreamEndpoint,
 		UpstreamModel:         l.UpstreamModel,
 		UpstreamResponseModel: l.UpstreamResponseModel,
 		UpstreamModelMismatch: l.UpstreamModelMismatch,
@@ -726,15 +726,15 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	}
 }
 
-func usageGenerationTokensPerSecond(l *service.UsageLog) *float64 {
-	if l == nil || l.OutputTokens <= 0 || l.DurationMs == nil || l.FirstTokenMs == nil || l.ImageCount > 0 || l.VideoCount > 0 {
+func usageOutputTokensPerSecond(l *service.UsageLog) *float64 {
+	if l == nil || l.OutputTokens <= 1 || l.DurationMs == nil || l.FirstTokenMs == nil || l.ImageCount > 0 || l.VideoCount > 0 {
 		return nil
 	}
 	generationMs := *l.DurationMs - *l.FirstTokenMs
 	if generationMs <= 0 {
 		return nil
 	}
-	value := float64(l.OutputTokens) * 1000 / float64(generationMs)
+	value := float64(l.OutputTokens-1) * 1000 / float64(generationMs)
 	return &value
 }
 

@@ -1641,7 +1641,6 @@ export interface UsageLog {
   service_tier?: string | null
   reasoning_effort?: string | null
   inbound_endpoint?: string | null
-  upstream_endpoint?: string | null
 
   group_id: number | null
   subscription_id: number | null
@@ -1669,7 +1668,7 @@ export interface UsageLog {
   openai_ws_mode?: boolean
   duration_ms: number | null
   first_token_ms: number | null
-  generation_tokens_per_second?: number | null
+  output_tokens_per_second?: number | null
 
   // 图片生成字段
   image_count: number
@@ -1707,6 +1706,7 @@ export interface UsageLogAccountSummary {
 }
 
 export interface AdminUsageLog extends UsageLog {
+  upstream_endpoint?: string | null
   upstream_model?: string | null
   upstream_response_model?: string | null
   upstream_model_mismatch?: boolean | null
