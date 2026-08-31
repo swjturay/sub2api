@@ -34,9 +34,11 @@ continuation behavior is unchanged.
 ## Safety boundary
 
 Before downstream semantic output is written, an exhausted WS attempt may
-re-enter the HTTP adapter once. The feature does not replay a request after
-downstream semantic output has been written; existing post-output failure rules
-remain authoritative.
+re-enter the HTTP adapter once when doing so preserves request semantics.
+OAuth/SetupToken requests with `previous_response_id` fail closed because the
+HTTP adapter cannot preserve that continuation. The feature does not replay a
+request after downstream semantic output has been written; existing post-output
+failure rules remain authoritative.
 `/v1/chat/completions`, `/v1/messages`, `/v1/responses/compact`, and native
 downstream WebSocket ingress are outside this first-stage bridge.
 
