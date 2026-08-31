@@ -106,6 +106,10 @@ vi.mock('vue-i18n', async () => {
 
 const simpleStub = { template: '<div><slot /></div>' }
 const chartStub = { template: '<div />' }
+const usageTableStub = {
+  props: ['audience'],
+  template: '<div data-testid="user-usage-table" :data-audience="audience" />',
+}
 
 const usageLog = {
   id: 1,
@@ -156,7 +160,7 @@ function mountUsageView() {
         DateRangePicker: true,
         Icon: true,
         UsageStatsCards: chartStub,
-        UsageTable: chartStub,
+        UsageTable: usageTableStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,
@@ -211,7 +215,7 @@ describe('user UsageView', () => {
   })
 
   it('loads logs, stats, model stats, and snapshot on first render', async () => {
-    mountUsageView()
+    const wrapper = mountUsageView()
     await flushPromises()
 
     expect(query).toHaveBeenCalled()
@@ -224,6 +228,7 @@ describe('user UsageView', () => {
     }))
     expect(list).toHaveBeenCalledWith(1, 100)
     expect(getAvailable).toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="user-usage-table"]').attributes('data-audience')).toBe('user')
   })
 
   it('propagates and resets the native compaction filter across page requests', async () => {
@@ -304,14 +309,16 @@ describe('user UsageView', () => {
     expect(showSuccess).toHaveBeenCalled()
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.slice(1)).toBe([
-      'Time,API Key Name,Model,Reasoning Effort,Request Type,Client Transport,Inbound Endpoint,Upstream Transport,Service Tier,Output Token Throughput (tok/s),IP Address,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
-      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",WS,SSE,/v1/responses,WS,Fast,25.5,203.0.113.10,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
+      'Time,API Key Name,Model,Reasoning Effort,Request Type,Client Transport,Inbound Endpoint,Service Tier,Output Token Throughput (tok/s),IP Address,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
+      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",Stream,SSE,/v1/responses,Fast,25.5,203.0.113.10,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
     ].join('\n'))
     expect(csvContent).toContain('IP Address')
     expect(csvContent).toContain('203.0.113.10')
     expect(csvContent).toContain('Billed Cost')
     expect(csvContent).toContain('Original Cost')
     expect(csvContent).not.toContain('Upstream Endpoint')
+    expect(csvContent).not.toContain('Upstream Transport')
+    expect(csvContent).not.toContain(',WS,')
     expect(csvContent).not.toContain('/v1/responses,/v1/responses')
     expect(csvContent).not.toContain('account_cost')
     expect(csvContent).not.toContain('account_rate_multiplier')

@@ -112,7 +112,7 @@
               </span>
               <span class="break-all pt-0.5">{{ row.inbound_endpoint?.trim() || '-' }}</span>
             </div>
-            <div class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+            <div v-if="audience === 'admin'" class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
               <span data-testid="upstream-transport" class="inline-flex min-w-12 shrink-0 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="transportBadgeClass(resolveUpstreamTransport(row))">
                 {{ transportLabel(resolveUpstreamTransport(row)) }}
               </span>
@@ -123,7 +123,7 @@
 
         <template #cell-request_type="{ row }">
           <span data-testid="request-type" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="requestTypeBadgeClass(row)">
-            {{ formatUsageRequestType(row, t) }}
+            {{ requestTypeLabel(row) }}
           </span>
         </template>
 
@@ -546,6 +546,7 @@ import { getUsageServiceTierLabel, normalizeUsageServiceTier } from '@/utils/usa
 import {
   formatUsageRequestType,
   formatUsageTransport,
+  resolveClientFacingUsageRequestType,
   resolveClientTransport,
   resolveUpstreamTransport,
   resolveUsageRequestType,
@@ -605,6 +606,7 @@ interface Props {
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
   showUpstreamEndpoint?: boolean
+  audience?: 'admin' | 'user'
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -616,6 +618,7 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   showAccountBilling: true,
   showUpstreamEndpoint: true,
+  audience: 'admin',
   flat: false
 })
 const emit = defineEmits<{
@@ -628,6 +631,7 @@ const appStore = useAppStore()
 const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
+const audience = props.audience
 const ipGeoBatchLoading = ref(false)
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
@@ -713,8 +717,16 @@ const transportBadgeClass = (transport: UsageTransportType): string => {
   return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
 }
 
+const displayedRequestType = (row: AdminUsageLog) => (
+  audience === 'user' ? resolveClientFacingUsageRequestType(row) : resolveUsageRequestType(row)
+)
+
+const requestTypeLabel = (row: AdminUsageLog): string => formatUsageRequestType({
+  request_type: displayedRequestType(row),
+}, t)
+
 const requestTypeBadgeClass = (row: AdminUsageLog): string => {
-  const requestType = resolveUsageRequestType(row)
+  const requestType = displayedRequestType(row)
   if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
   if (requestType === 'ws_v2') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
