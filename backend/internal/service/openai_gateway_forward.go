@@ -938,7 +938,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// downstream semantic bytes have been committed. Re-enter Forward with
 		// an explicit guard so the retry takes the ordinary HTTP adapter rather
 		// than recursively selecting the same WS bridge.
-		if httpIngressWS && (c == nil || c.Writer == nil || !c.Writer.Written()) {
+		hasContinuation := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != ""
+		httpFallbackPreservesContinuation := account.IsOpenAIApiKey() || !hasContinuation
+		if httpIngressWS && httpFallbackPreservesContinuation && (c == nil || c.Writer == nil || !c.Writer.Written()) {
 			logOpenAIWSModeInfo(
 				"http_ingress_fallback_to_http account_id=%d reason=%s",
 				account.ID,
@@ -948,6 +950,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			fallbackResult, fallbackErr := s.Forward(ctx, c, account, body)
 			setOpenAIHTTPIngressWSFallbackActive(c, false)
 			return fallbackResult, fallbackErr
+		}
+		if httpIngressWS && hasContinuation && !account.IsOpenAIApiKey() {
+			logOpenAIWSModeInfo(
+				"http_ingress_fallback_skipped account_id=%d reason=continuation_requires_websocket",
+				account.ID,
+			)
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
