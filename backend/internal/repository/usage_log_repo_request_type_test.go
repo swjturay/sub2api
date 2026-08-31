@@ -1038,8 +1038,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			sql.NullInt64{Valid: true, Int64: int64(service.ClientRequestTypeSSE)}, // client_request_type
-			sql.NullString{},  // session_id
-			false,              // native_compaction_v2
+			sql.NullString{}, // session_id
+			false,            // native_compaction_v2
 			now,
 		}})
 		require.NoError(t, err)

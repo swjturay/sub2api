@@ -111,7 +111,7 @@ func TestForwardOpenAIWSV2_StoreFalseContinuationWaitsForBoundConnection(t *test
 	}
 }
 
-+// HTTP POST /v1/responses -> forwardOpenAIWSV2 keeps the canonical outbound
+// HTTP POST /v1/responses -> forwardOpenAIWSV2 keeps the canonical outbound
 // tier separate from response.completed.service_tier for usage-time billing.
 func TestForwardOpenAIWSV2_KeepsOutboundAndObservedServiceTiersSeparate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -193,7 +193,6 @@ func TestForwardOpenAIWSV2_KeepsOutboundAndObservedServiceTiersSeparate(t *testi
 		})
 	}
 }
-
 
 func TestForwardOpenAIWSV2_MissingBoundDeltaContinuationReturnsPreviousResponseNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -393,7 +392,8 @@ func TestForwardOpenAIWSV2_UpstreamDefaultServiceTierWinsOverRequest(t *testing.
 			require.Equal(t, tc.stream, result.Stream)
 			require.Equal(t, "resp_tier_v2", result.RequestID)
 			require.NotNil(t, result.ServiceTier)
-			require.Equal(t, "default", *result.ServiceTier)
+			require.Equal(t, "priority", *result.ServiceTier)
+			require.Equal(t, "default", result.UpstreamResponseServiceTier)
 			require.Equal(t, "priority", captureConn.lastWrite["service_tier"],
 				"outbound WS payload still carries the requested Fast tier")
 		})

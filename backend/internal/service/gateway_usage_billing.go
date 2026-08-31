@@ -1260,7 +1260,6 @@ func (s *GatewayService) buildRecordUsageLog(
 		GroupID:                  apiKey.GroupID,
 		SubscriptionID:           optionalSubscriptionID(subscription),
 		CreatedAt:                time.Now(),
-
 	}
 	if usageLog.ClientRequestType == ClientRequestTypeUnknown {
 		usageLog.ClientRequestType = ClientRequestTypeFromStream(result.Stream)

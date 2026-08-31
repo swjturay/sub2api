@@ -134,20 +134,6 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
-        <template #cell-stream="{ row }">
-          <div class="flex flex-wrap items-center gap-1">
-            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
-              {{ getRequestTypeLabel(row) }}
-            </span>
-            <span
-              v-if="row.native_compaction_v2"
-              data-testid="native-compaction-badge"
-              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
-            >
-              {{ t('usage.nativeCompactionV2') }}
-            </span>
-          </div>
-        </template>
         <template #cell-service_tier="{ row }">
           <span v-if="row.service_tier?.trim()" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="serviceTierBadgeClass(row.service_tier)">
             {{ getUsageServiceTierLabel(row.service_tier, t) }}

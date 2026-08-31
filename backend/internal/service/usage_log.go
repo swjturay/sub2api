@@ -218,12 +218,12 @@ type UsageLog struct {
 	// AccountStatsCost 账号统计定价预计算费用（nil = 使用默认公式 total_cost × account_rate_multiplier）
 	AccountStatsCost *float64
 
-	BillingType        int8
-	RequestType        RequestType
+	BillingType int8
+	RequestType RequestType
 	// ClientRequestType records the client ingress transport independently of
 	// the effective upstream RequestType. Unknown is preserved for ambiguous
 	// historical ws_v2 rows created before this field existed.
-	ClientRequestType ClientRequestType
+	ClientRequestType  ClientRequestType
 	Stream             bool
 	OpenAIWSMode       bool
 	NativeCompactionV2 bool
