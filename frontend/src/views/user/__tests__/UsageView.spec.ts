@@ -49,8 +49,9 @@ const messages: Record<string, string> = {
   'usage.allApiKeys': 'All API Keys',
   'usage.apiKeyFilter': 'API Key',
   'usage.model': 'Model',
-  'usage.type': 'Type',
-  'usage.upstreamRequestType': 'Upstream request type',
+  'usage.type': 'Request type',
+  'usage.clientRequestType': 'Client transport',
+  'usage.upstreamRequestType': 'Upstream transport',
   'usage.ws': 'WS',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
@@ -60,6 +61,9 @@ const messages: Record<string, string> = {
 	'usage.serviceTierPriority': 'Fast',
 	'usage.serviceTierFlex': 'Flex',
 	'usage.serviceTierStandard': 'Standard',
+  'usage.serviceTier': 'Service tier',
+  'usage.outputTokenThroughput': 'Output token throughput',
+  'usage.unknown': 'Unknown',
   'usage.exporting': 'Exporting',
   'usage.exportCsv': 'Export CSV',
   'usage.failedToLoad': 'Failed to load',
@@ -139,7 +143,7 @@ const usageLog = {
   request_type: 'ws_v2',
   openai_ws_mode: true,
   stream: true,
-  generation_tokens_per_second: 25.5,
+  output_tokens_per_second: 25.5,
 }
 
 function mountUsageView() {
@@ -300,14 +304,15 @@ describe('user UsageView', () => {
     expect(showSuccess).toHaveBeenCalled()
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.slice(1)).toBe([
-      'Time,API Key Name,Model,Reasoning Effort,Client Request Type,Inbound Endpoint,Upstream Request Type,Upstream Endpoint,Speed Mode,Generation Speed (tok/s),IP Address,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
-      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",SSE,/v1/responses,WS,/v1/responses,Fast,25.5,203.0.113.10,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
+      'Time,API Key Name,Model,Reasoning Effort,Request Type,Client Transport,Inbound Endpoint,Upstream Transport,Service Tier,Output Token Throughput (tok/s),IP Address,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
+      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",WS,SSE,/v1/responses,WS,Fast,25.5,203.0.113.10,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
     ].join('\n'))
     expect(csvContent).toContain('IP Address')
     expect(csvContent).toContain('203.0.113.10')
     expect(csvContent).toContain('Billed Cost')
     expect(csvContent).toContain('Original Cost')
-    expect(csvContent).toContain('Upstream Endpoint')
+    expect(csvContent).not.toContain('Upstream Endpoint')
+    expect(csvContent).not.toContain('/v1/responses,/v1/responses')
     expect(csvContent).not.toContain('account_cost')
     expect(csvContent).not.toContain('account_rate_multiplier')
 

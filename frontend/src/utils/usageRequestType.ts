@@ -28,7 +28,7 @@ export const resolveUsageRequestType = (value: UsageRequestTypeLike): UsageReque
   return value.stream ? 'stream' : 'sync'
 }
 
-export const resolveClientRequestType = (value: UsageRequestTypeLike): UsageTransportType => {
+export const resolveClientTransport = (value: UsageRequestTypeLike): UsageTransportType => {
   if (isUsageTransportType(value.client_request_type) && value.client_request_type !== 'unknown') {
     return value.client_request_type
   }
@@ -38,12 +38,38 @@ export const resolveClientRequestType = (value: UsageRequestTypeLike): UsageTran
   return 'unknown'
 }
 
-export const resolveUpstreamRequestType = (value: UsageRequestTypeLike): UsageTransportType => {
+export const resolveUpstreamTransport = (value: UsageRequestTypeLike): UsageTransportType => {
   const requestType = resolveUsageRequestType(value)
   if (requestType === 'ws_v2' || requestType === 'live' || value.openai_ws_mode) return 'ws'
   if (requestType === 'stream' || value.stream) return 'sse'
   if (requestType === 'sync' || requestType === 'cyber') return 'sync'
   return 'unknown'
+}
+
+type UsageLabelTranslator = (key: string) => string
+
+export const formatUsageTransport = (
+  transport: UsageTransportType,
+  translate: UsageLabelTranslator,
+  unknownLabel = '',
+): string => {
+  if (transport === 'sse') return 'SSE'
+  if (transport === 'ws') return 'WS'
+  if (transport === 'sync') return translate('usage.sync')
+  return unknownLabel
+}
+
+export const formatUsageRequestType = (
+  value: UsageRequestTypeLike,
+  translate: UsageLabelTranslator,
+): string => {
+  const requestType = resolveUsageRequestType(value)
+  if (requestType === 'cyber') return translate('usage.cyber')
+  if (requestType === 'live') return translate('usage.live')
+  if (requestType === 'ws_v2') return translate('usage.ws')
+  if (requestType === 'stream') return translate('usage.stream')
+  if (requestType === 'sync') return translate('usage.sync')
+  return translate('usage.unknown')
 }
 
 export const requestTypeToLegacyStream = (requestType?: UsageRequestType | null): boolean | null | undefined => {

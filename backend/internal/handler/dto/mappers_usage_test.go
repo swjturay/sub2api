@@ -116,8 +116,6 @@ func TestUsageLogFromService_IncludesServiceTierForUserAndAdmin(t *testing.T) {
 	require.Equal(t, serviceTier, *userDTO.ServiceTier)
 	require.NotNil(t, userDTO.InboundEndpoint)
 	require.Equal(t, inboundEndpoint, *userDTO.InboundEndpoint)
-	require.NotNil(t, userDTO.UpstreamEndpoint)
-	require.Equal(t, upstreamEndpoint, *userDTO.UpstreamEndpoint)
 	require.NotNil(t, adminDTO.ServiceTier)
 	require.Equal(t, serviceTier, *adminDTO.ServiceTier)
 	require.NotNil(t, adminDTO.InboundEndpoint)
@@ -128,7 +126,7 @@ func TestUsageLogFromService_IncludesServiceTierForUserAndAdmin(t *testing.T) {
 	require.InDelta(t, 1.5, *adminDTO.AccountRateMultiplier, 1e-12)
 }
 
-func TestUsageLogFromService_IncludesClientRequestTypeAndGenerationSpeed(t *testing.T) {
+func TestUsageLogFromService_IncludesClientRequestTypeAndOutputTokenThroughput(t *testing.T) {
 	t.Parallel()
 
 	durationMs := 2100
@@ -149,8 +147,8 @@ func TestUsageLogFromService_IncludesClientRequestTypeAndGenerationSpeed(t *test
 	for _, got := range []*UsageLog{userDTO, &adminDTO.UsageLog} {
 		require.NotNil(t, got.ClientRequestType)
 		require.Equal(t, "sse", *got.ClientRequestType)
-		require.NotNil(t, got.GenerationTokensPerSecond)
-		require.InDelta(t, 25, *got.GenerationTokensPerSecond, 1e-12)
+		require.NotNil(t, got.OutputTokensPerSecond)
+		require.InDelta(t, 24.5, *got.OutputTokensPerSecond, 1e-12)
 	}
 }
 
@@ -170,7 +168,7 @@ func TestUsageLogFromService_OmitsAmbiguousLegacyClientTypeAndInvalidSpeed(t *te
 
 	dto := UsageLogFromService(log)
 	require.Nil(t, dto.ClientRequestType)
-	require.Nil(t, dto.GenerationTokensPerSecond)
+	require.Nil(t, dto.OutputTokensPerSecond)
 }
 
 func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *testing.T) {

@@ -37,12 +37,13 @@ const messages: Record<string, string> = {
 	'usage.sentUpstreamModel': 'Sent upstream model',
 	'usage.upstreamResponseModel': 'Upstream response model',
 	'usage.upstreamModelMismatch': 'Upstream model mismatch',
-	'usage.clientRequestType': 'Client request type',
-	'usage.upstreamRequestType': 'Upstream request type',
+	'usage.clientRequestType': 'Client transport',
+	'usage.upstreamRequestType': 'Upstream transport',
+	'usage.type': 'Request type',
 	'usage.inboundEndpoint': 'Inbound endpoint',
 	'usage.upstreamEndpoint': 'Upstream endpoint',
-	'usage.speedMode': 'Speed mode',
-	'usage.generationSpeed': 'Generation speed',
+	'usage.serviceTier': 'Service tier',
+	'usage.outputTokenThroughput': 'Output token throughput',
 	'usage.serviceTierPriority': 'Fast',
 	'usage.serviceTierFlex': 'Flex',
 	'usage.serviceTierStandard': 'Standard',
@@ -723,7 +724,7 @@ describe('admin UsageView model audit export', () => {
 				inbound_endpoint: '/v1/responses',
 				upstream_endpoint: '/v1/responses',
 				service_tier: 'priority',
-				generation_tokens_per_second: 25,
+				output_tokens_per_second: 25,
 				input_tokens: 1,
 				output_tokens: 1,
 				cache_read_tokens: 0,
@@ -772,10 +773,11 @@ describe('admin UsageView model audit export', () => {
 		])
 		const row = sheetAddAoa.mock.calls[0][1][0]
 		expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
-		expect(headers).toContain('Client request type')
-		expect(headers).toContain('Upstream request type')
-		expect(headers).toContain('Speed mode')
-		expect(headers).toContain('Generation speed (tok/s)')
+		expect(headers).toContain('Request type')
+		expect(headers).toContain('Client transport')
+		expect(headers).toContain('Upstream transport')
+		expect(headers).toContain('Service tier')
+		expect(headers).toContain('Output token throughput (tok/s)')
 		expect(row).toContain('SSE')
 		expect(row).toContain('WS')
 		expect(row).toContain('Fast')

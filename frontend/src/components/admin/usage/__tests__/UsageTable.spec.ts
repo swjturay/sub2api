@@ -31,8 +31,13 @@ const messages: Record<string, string> = {
   'usage.serviceTier': 'Service tier',
   'usage.serviceTierPriority': 'Fast',
   'usage.serviceTierFlex': 'Flex',
-  'usage.serviceTierStandard': 'Standard',
-	'usage.sync': 'Sync',
+	'usage.serviceTierStandard': 'Standard',
+  'usage.ws': 'WS',
+  'usage.stream': 'Stream',
+  'usage.sync': 'Sync',
+  'usage.cyber': 'Cyber',
+  'usage.live': 'Live',
+  'usage.unknown': 'Unknown',
   'usage.rate': 'Rate',
   'usage.accountMultiplier': 'Account rate',
   'usage.original': 'Original',
@@ -90,8 +95,9 @@ const DataTableStub = {
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-endpoint" :row="row" />
+        <slot name="cell-request_type" :row="row" />
         <slot name="cell-service_tier" :row="row" />
-        <slot name="cell-generation_speed" :row="row" />
+        <slot name="cell-output_token_throughput" :row="row" />
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
@@ -276,7 +282,7 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('$0.069568')
   })
 
-  it('shows client and upstream request types with speed fields', () => {
+  it('shows request type, client and upstream transports, service tier, and output throughput', () => {
     const wrapper = mount(UsageTable, {
       props: {
         data: [{
@@ -289,7 +295,7 @@ describe('admin UsageTable tooltip', () => {
           inbound_endpoint: '/v1/responses',
           upstream_endpoint: '/v1/responses',
           service_tier: 'priority',
-          generation_tokens_per_second: 25,
+          output_tokens_per_second: 25,
         }],
         loading: false,
         columns: [],
@@ -305,11 +311,42 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    expect(wrapper.get('[data-testid="client-request-type"]').text()).toBe('SSE')
-    expect(wrapper.get('[data-testid="upstream-request-type"]').text()).toBe('WS')
+    expect(wrapper.get('[data-testid="request-type"]').text()).toBe('WS')
+    expect(wrapper.get('[data-testid="client-transport"]').text()).toBe('SSE')
+    expect(wrapper.get('[data-testid="upstream-transport"]').text()).toBe('WS')
     expect(wrapper.text()).toContain('/v1/responses')
     expect(wrapper.text()).toContain('Fast')
     expect(wrapper.text()).toContain('25.0 tok/s')
+  })
+
+  it('keeps upstream transport visible while hiding the upstream endpoint', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          request_id: 'req-user-transport',
+          model: 'gpt-5.4',
+          client_request_type: 'sse',
+          request_type: 'ws_v2',
+          inbound_endpoint: '/v1/responses',
+          upstream_endpoint: '/backend-api/codex/responses',
+        }],
+        loading: false,
+        columns: [],
+        showUpstreamEndpoint: false,
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.get('[data-testid="upstream-transport"]').text()).toBe('WS')
+    expect(wrapper.text()).toContain('/v1/responses')
+    expect(wrapper.text()).not.toContain('/backend-api/codex/responses')
   })
 
   it('shows requested and upstream models separately for admin rows', () => {

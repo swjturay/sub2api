@@ -202,11 +202,14 @@ func TestUserUsageListAllowsVideoBillingMode(t *testing.T) {
 
 func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) {
 	ipAddress := "203.0.113.10"
+	upstreamEndpoint := "/v1/responses"
 	upstreamModel := "upstream-private-model"
 	billingTier := "internal-tier"
 	channelID := int64(99)
 	accountRateMultiplier := 1.7
 	accountStatsCost := 0.12
+	durationMs := 2100
+	firstTokenMs := 100
 	repo := &userUsageRepoCapture{
 		listRows: []service.UsageLog{{
 			ID:                    1,
@@ -216,6 +219,7 @@ func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) 
 			RequestID:             "req_user_billing",
 			Model:                 "gpt-5",
 			NativeCompactionV2:    true,
+			OutputTokens:          50,
 			InputCost:             0.01,
 			OutputCost:            0.02,
 			CacheCreationCost:     0.03,
@@ -224,11 +228,14 @@ func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) 
 			ActualCost:            0.08,
 			RateMultiplier:        0.8,
 			IPAddress:             &ipAddress,
+			UpstreamEndpoint:      &upstreamEndpoint,
 			UpstreamModel:         &upstreamModel,
 			BillingTier:           &billingTier,
 			ChannelID:             &channelID,
 			AccountRateMultiplier: &accountRateMultiplier,
 			AccountStatsCost:      &accountStatsCost,
+			DurationMs:            &durationMs,
+			FirstTokenMs:          &firstTokenMs,
 		}},
 	}
 	router := newUserUsageRequestTypeTestRouter(repo)
@@ -247,6 +254,8 @@ func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) 
 	require.Contains(t, body, `"actual_cost":0.08`)
 	require.Contains(t, body, `"rate_multiplier":0.8`)
 	require.Contains(t, body, `"native_compaction_v2":true`)
+	require.Contains(t, body, `"output_tokens_per_second":24.5`)
+	require.NotContains(t, body, "generation_tokens_per_second")
 	require.Contains(t, body, `"ip_address":"203.0.113.10"`)
 	require.NotContains(t, body, "upstream_endpoint")
 	require.NotContains(t, body, "account_rate_multiplier")
