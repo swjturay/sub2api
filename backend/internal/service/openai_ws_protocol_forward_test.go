@@ -260,6 +260,121 @@ func TestOpenAIGatewayService_Forward_HTTPIngressCtxPoolBridgesToSSE(t *testing.
 	require.True(t, owned, "HTTP ingress WS responses must authorize the next HTTP continuation")
 }
 
+func TestOpenAIGatewayService_Forward_HTTPIngressNativeRemoteCompactionStaysHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	captureDialer := &openAIWSAlwaysFailDialer{}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
+	cfg.Gateway.OpenAIWS.HTTPIngressEnabled = true
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+
+	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"compaction\",\"encrypted_content\":\"summary\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_native_compact_http\",\"status\":\"completed\",\"output\":[{\"type\":\"compaction\",\"encrypted_content\":\"summary\"}],\"usage\":{\"input_tokens\":3,\"output_tokens\":1}}}\n\n",
+		)),
+	}}}
+	pool := newOpenAIWSConnPool(cfg)
+	defer pool.Close()
+	pool.setClientDialerForTest(captureDialer)
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID: 4104, Name: "openai-http-native-compaction", Platform: PlatformOpenAI,
+		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra: map[string]any{
+			"use_responses_api":                          true,
+			"openai_apikey_responses_websockets_v2_mode": OpenAIWSIngressModeCtxPool,
+		},
+	}
+	body := []byte(`{"model":"gpt-5.5","stream":true,"instructions":"compact-test","input":[{"type":"message","role":"user","content":"hello"},{"type":"compaction_trigger"}]}`)
+	MarkOpenAINativeCompactionV2(c)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.OpenAIWSMode)
+	require.Equal(t, 1, upstream.callCount)
+	require.Equal(t, 0, captureDialer.DialCount(), "native remote compaction must not acquire the WS pool")
+	require.Contains(t, rec.Body.String(), "response.completed")
+	decision, _ := c.Get("openai_ws_transport_decision")
+	require.Equal(t, string(OpenAIUpstreamTransportHTTPSSE), decision)
+}
+
+func TestOpenAIGatewayService_Forward_HTTPIngressDoesNotFallbackAfterClientCancel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil).WithContext(requestCtx)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.IngressModeDefault = OpenAIWSIngressModeCtxPool
+	cfg.Gateway.OpenAIWS.HTTPIngressEnabled = true
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
+
+	upstream := &httpUpstreamSequenceRecorder{responses: []*http.Response{{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_should_not_be_called","usage":{"input_tokens":1,"output_tokens":1}}`)),
+	}}}
+	dialer := &openAIWSAlwaysFailDialer{}
+	pool := newOpenAIWSConnPool(cfg)
+	defer pool.Close()
+	pool.setClientDialerForTest(dialer)
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	account := &Account{
+		ID: 4105, Name: "openai-http-ws-canceled", Platform: PlatformOpenAI,
+		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Credentials: map[string]any{"api_key": "sk-test"},
+		Extra: map[string]any{
+			"openai_apikey_responses_websockets_v2_mode": OpenAIWSIngressModeCtxPool,
+		},
+	}
+
+	_, err := svc.Forward(requestCtx, c, account, []byte(`{"model":"gpt-5.5","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Error(t, err)
+	require.Equal(t, 0, upstream.callCount, "a canceled client request must not start a late HTTP fallback")
+}
+
 func TestOpenAIGatewayService_Forward_HTTPIngressWSFallsBackToHTTPBeforeOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	wsRejected := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
