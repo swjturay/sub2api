@@ -56,7 +56,7 @@ jobs:
       - name: Upload validation image archive
         uses: actions/upload-artifact@v4
         with:
-          name: sub2api-cce-v183-sse-ws-${{ github.sha }}
+          name: sub2api-cce-v184-sse-ws-${{ github.sha }}
           path: /tmp/sub2api-cce-v184-sse-ws.tar.gz
           if-no-files-found: error
           retention-days: 7
