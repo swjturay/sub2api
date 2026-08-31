@@ -1999,13 +1999,27 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	reqLog *zap.Logger,
 ) (func(), bool) {
 	ctx := c.Request.Context()
-	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
+	var userReleaseFunc func()
+	var err error
+	if openAIConcurrencyWaitShouldEmitHeartbeat(c) {
+		userReleaseFunc, err = h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
+	} else {
+		userReleaseFunc, err = h.concurrencyHelper.AcquireUserSlotWithWaitNoHeartbeat(c, userID, userConcurrency, reqStream, streamStarted)
+	}
 	if err != nil {
 		reqLog.Warn("openai.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", *streamStarted)
 		return nil, false
 	}
 	return wrapReleaseOnDone(ctx, userReleaseFunc), true
+}
+
+// OpenAI Responses/Chat Completions clients need the HTTP status and
+// Retry-After header when admission fails. Anthropic Messages retains its
+// existing heartbeat behavior because its client contract tolerates waiting
+// SSE frames. All other OpenAI gateway paths are pre-stream admission paths.
+func openAIConcurrencyWaitShouldEmitHeartbeat(c *gin.Context) bool {
+	return GetInboundEndpoint(c) == EndpointMessages
 }
 
 // openAISlotAcquireResult 是账号槽位获取的三态结果。
@@ -2196,14 +2210,26 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	}
 	defer releaseWait()
 
-	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-		c,
-		account.ID,
-		selection.WaitPlan.MaxConcurrency,
-		selection.WaitPlan.Timeout,
-		reqStream,
-		streamStarted,
-	)
+	var accountReleaseFunc func()
+	if openAIConcurrencyWaitShouldEmitHeartbeat(c) {
+		accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+			c,
+			account.ID,
+			selection.WaitPlan.MaxConcurrency,
+			selection.WaitPlan.Timeout,
+			reqStream,
+			streamStarted,
+		)
+	} else {
+		accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutNoHeartbeat(
+			c,
+			account.ID,
+			selection.WaitPlan.MaxConcurrency,
+			selection.WaitPlan.Timeout,
+			reqStream,
+			streamStarted,
+		)
+	}
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, code, message := concurrencyErrorResponse(err, "account")
