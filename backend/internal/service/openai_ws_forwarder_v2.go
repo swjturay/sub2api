@@ -144,6 +144,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
 	forceNewConnByPolicy := shouldForceNewConnOnStoreDisabled(storeDisabledConnMode, lastFailureReason)
 	forceNewConn := forceNewConnByPolicy && storeDisabled && previousResponseID == "" && sessionHash != "" && preferredConnID == ""
+	forcePreferredConn := storeDisabled && previousResponseID != "" && preferredConnID != ""
 	wsHeaders, sessionResolution, buildHdrErr := s.buildOpenAIWSHeaders(
 		ctx,
 		c,
@@ -202,8 +203,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
-		PreferredConnID: preferredConnID,
-		ForceNewConn:    forceNewConn,
+		PreferredConnID:    preferredConnID,
+		ForceNewConn:       forceNewConn,
+		ForcePreferredConn: forcePreferredConn,
 		ProxyURL: func() string {
 			if account.ProxyID != nil && account.Proxy != nil {
 				return account.Proxy.URL()
@@ -212,6 +214,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}(),
 	})
 	if err != nil {
+		acquireReason := classifyOpenAIWSAcquireError(err)
+		if forcePreferredConn && errors.Is(err, errOpenAIWSPreferredConnUnavailable) {
+			acquireReason = "previous_response_not_found"
+			err = fmt.Errorf("previous response connection is unavailable: %w", err)
+		}
 		var agentDialErr *openAIWSDialError
 		if s.isAgentIdentityAccount(ctx, account) && errors.As(err, &agentDialErr) && isAgentIdentityTaskInvalidWSDialError(agentDialErr) && agentTaskRecoveryTried != nil && !*agentTaskRecoveryTried {
 			*agentTaskRecoveryTried = true
@@ -227,7 +234,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			account.ID,
 			account.Type,
 			normalizeOpenAIWSLogValue(string(decision.Transport)),
-			normalizeOpenAIWSLogValue(classifyOpenAIWSAcquireError(err)),
+			normalizeOpenAIWSLogValue(acquireReason),
 			dialStatus,
 			dialClass,
 			dialCloseStatus,
@@ -247,7 +254,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if errors.As(err, &dialErr) && dialErr != nil && dialErr.StatusCode == http.StatusTooManyRequests {
 			s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, nil, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()), mappedModel)
 		}
-		return nil, wrapOpenAIWSFallback(classifyOpenAIWSAcquireError(err), err)
+		return nil, wrapOpenAIWSFallback(acquireReason, err)
 	}
 	// cleanExit 标记正常终端事件退出，此时上游不会再发送帧，连接可安全归还复用。
 	// 所有异常路径（读写错误、error 事件等）已在各自分支中提前调用 MarkBroken，
