@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatUsageRequestType,
   formatUsageTransport,
+  resolveClientFacingUsageRequestType,
   resolveClientTransport,
   resolveUpstreamTransport,
 } from '@/utils/usageRequestType'
@@ -28,6 +29,15 @@ describe('usage request transports', () => {
 
     expect(resolveClientTransport(usage)).toBe('sse')
     expect(resolveUpstreamTransport(usage)).toBe('ws')
+    expect(resolveClientFacingUsageRequestType(usage)).toBe('stream')
+  })
+
+  it('does not expose an ambiguous upstream websocket decision as the client request type', () => {
+    expect(resolveClientFacingUsageRequestType({
+      request_type: 'ws_v2',
+      stream: true,
+      openai_ws_mode: true,
+    })).toBe('unknown')
   })
 
   it('uses only unambiguous legacy client transport fallbacks', () => {

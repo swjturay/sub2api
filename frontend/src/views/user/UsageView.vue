@@ -178,6 +178,7 @@
           :server-side-sort="true"
           :show-account-billing="false"
           :show-upstream-endpoint="false"
+          audience="user"
           default-sort-key="created_at"
           default-sort-order="desc"
           @sort="handleSort"
@@ -236,8 +237,8 @@ import {
   formatUsageRequestType,
   formatUsageTransport,
   requestTypeToLegacyStream,
+  resolveClientFacingUsageRequestType,
   resolveClientTransport,
-  resolveUpstreamTransport,
 } from '@/utils/usageRequestType'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import type {
@@ -640,7 +641,6 @@ const exportToCSV = async () => {
       'Request Type',
       'Client Transport',
       'Inbound Endpoint',
-      'Upstream Transport',
       'Service Tier',
       'Output Token Throughput (tok/s)',
       'IP Address',
@@ -660,10 +660,9 @@ const exportToCSV = async () => {
       log.api_key?.name || '',
       log.model,
       formatReasoningEffort(log.reasoning_effort),
-      formatUsageRequestType(log, t),
+      formatUsageRequestType({ request_type: resolveClientFacingUsageRequestType(log) }, t),
       formatUsageTransport(resolveClientTransport(log), t),
       log.inbound_endpoint || '',
-      formatUsageTransport(resolveUpstreamTransport(log), t),
       log.service_tier?.trim() ? getUsageServiceTierLabel(log.service_tier, t) : '',
       log.output_tokens_per_second ?? '',
       log.ip_address || '',

@@ -265,7 +265,7 @@ describe('admin UsageTable tooltip', () => {
     expect(wrapper.text()).toContain('25.0 tok/s')
   })
 
-  it('keeps upstream transport visible while hiding the upstream endpoint', () => {
+  it('shows only client-facing request details for user rows', () => {
     const wrapper = mount(UsageTable, {
       props: {
         data: [{
@@ -278,6 +278,7 @@ describe('admin UsageTable tooltip', () => {
         }],
         loading: false,
         columns: [],
+        audience: 'user',
         showUpstreamEndpoint: false,
       },
       global: {
@@ -290,9 +291,12 @@ describe('admin UsageTable tooltip', () => {
       },
     })
 
-    expect(wrapper.get('[data-testid="upstream-transport"]').text()).toBe('WS')
+    expect(wrapper.get('[data-testid="request-type"]').text()).toBe('Stream')
+    expect(wrapper.get('[data-testid="client-transport"]').text()).toBe('SSE')
+    expect(wrapper.find('[data-testid="upstream-transport"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('/v1/responses')
     expect(wrapper.text()).not.toContain('/backend-api/codex/responses')
+    expect(wrapper.text()).not.toContain('WS')
   })
 
   it('shows requested and upstream models separately for admin rows', () => {

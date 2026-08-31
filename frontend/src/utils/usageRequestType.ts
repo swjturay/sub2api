@@ -38,6 +38,23 @@ export const resolveClientTransport = (value: UsageRequestTypeLike): UsageTransp
   return 'unknown'
 }
 
+export const resolveClientFacingUsageRequestType = (value: UsageRequestTypeLike): UsageRequestType => {
+  const requestType = resolveUsageRequestType(value)
+  if (requestType === 'cyber' || requestType === 'live') {
+    return requestType
+  }
+
+  const clientTransport = resolveClientTransport(value)
+  if (clientTransport === 'sse') return 'stream'
+  if (clientTransport === 'ws') return 'ws_v2'
+  if (clientTransport === 'sync') return 'sync'
+
+  // A ws_v2 execution may be an internal HTTP/SSE-to-WS bridge. Without an
+  // explicit client transport, do not present that upstream decision as the
+  // user's request type.
+  return requestType === 'ws_v2' ? 'unknown' : requestType
+}
+
 export const resolveUpstreamTransport = (value: UsageRequestTypeLike): UsageTransportType => {
   const requestType = resolveUsageRequestType(value)
   if (requestType === 'ws_v2' || requestType === 'live' || value.openai_ws_mode) return 'ws'
