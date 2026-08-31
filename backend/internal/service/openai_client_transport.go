@@ -88,8 +88,10 @@ func resolveOpenAIWSDecisionByClientTransport(
 
 // IsOpenAIHTTPIngressWSBridgeEnabled reports whether an HTTP Responses request
 // may use the upstream Responses WebSocket pool. The bridge intentionally only
-// accepts ctx_pool semantics: passthrough remains a native downstream WS mode,
-// while http_bridge keeps its existing reverse (WS -> HTTP) meaning.
+// accepts ordinary ctx_pool turns: passthrough remains a native downstream WS
+// mode, http_bridge keeps its existing reverse (WS -> HTTP) meaning, and native
+// remote compaction stays on HTTP/SSE because its response has no token phase
+// that can release the WS pre-output buffer.
 func (s *OpenAIGatewayService) IsOpenAIHTTPIngressWSBridgeEnabled(
 	c *gin.Context,
 	account *Account,
@@ -97,7 +99,8 @@ func (s *OpenAIGatewayService) IsOpenAIHTTPIngressWSBridgeEnabled(
 	compactPath bool,
 ) bool {
 	if s == nil || s.cfg == nil || !s.cfg.Gateway.OpenAIWS.HTTPIngressEnabled ||
-		account == nil || !account.IsOpenAI() || !stream || compactPath {
+		account == nil || !account.IsOpenAI() || !stream || compactPath ||
+		isOpenAINativeCompactionV2(c) {
 		return false
 	}
 	if isOpenAIHTTPIngressWSFallbackActive(c) {

@@ -970,13 +970,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			return wsResult, nil
 		}
-		// The HTTP-ingress bridge is allowed to fall back only before any
-		// downstream semantic bytes have been committed. Re-enter Forward with
-		// an explicit guard so the retry takes the ordinary HTTP adapter rather
-		// than recursively selecting the same WS bridge.
+		// The HTTP-ingress bridge is allowed to fall back only while the client
+		// request is still alive and before any downstream semantic bytes have
+		// been committed. A canceled request must not start a detached HTTP retry:
+		// it cannot reach the client and would consume another upstream slot.
 		hasContinuation := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != ""
 		httpFallbackPreservesContinuation := account.IsOpenAIApiKey() || !hasContinuation
-		if httpIngressWS && httpFallbackPreservesContinuation && (c == nil || c.Writer == nil || !c.Writer.Written()) {
+		if httpIngressWS && httpFallbackPreservesContinuation && ctx.Err() == nil &&
+			(c == nil || c.Writer == nil || !c.Writer.Written()) {
 			logOpenAIWSModeInfo(
 				"http_ingress_fallback_to_http account_id=%d reason=%s",
 				account.ID,

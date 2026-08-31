@@ -133,6 +133,10 @@ func TestOpenAIHTTPIngressWSBridgeRequiresCtxPoolAndFlag(t *testing.T) {
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	setOpenAIHTTPIngressWSFallbackActive(c, true)
 	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(c, account, true, false))
+	setOpenAIHTTPIngressWSFallbackActive(c, false)
+	MarkOpenAINativeCompactionV2(c)
+	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(c, account, true, false),
+		"native remote compaction must stay on HTTP/SSE even when the HTTP ingress bridge is enabled")
 	cfg.Gateway.OpenAIWS.HTTPIngressEnabled = false
 	require.False(t, svc.IsOpenAIHTTPIngressWSBridgeEnabled(nil, account, true, false))
 }

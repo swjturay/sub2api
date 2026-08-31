@@ -16,9 +16,10 @@ gateway:
 
 The selected account must resolve to `ctx_pool`. `passthrough` remains the
 native downstream WebSocket relay mode, and `http_bridge` retains its existing
-WS-to-HTTP meaning. The bridge currently applies only to streaming
-`/v1/responses` requests; compact paths and other protocols remain on their
-existing transports.
+WS-to-HTTP meaning. The bridge currently applies only to ordinary streaming
+`/v1/responses` requests; legacy compact paths and native remote compaction
+v2 requests (`stream=true` with a `compaction_trigger` input item) remain on
+their existing HTTP/SSE transport.
 
 ## Wire behavior
 
