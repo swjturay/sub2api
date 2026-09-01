@@ -435,6 +435,51 @@ describe('UseKeyModal', () => {
     )
   })
 
+  it('copies a local setup command and selects available OpenCode models', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'gpt-5.5' }, { id: 'gpt-custom' }] })
+    }))
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-local-setup',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await wrapper.get('[data-testid="local-setup-models-fetch"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid^="local-setup-os-"]')).toHaveLength(2)
+    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(2)
+    expect(wrapper.findAll('input[type="checkbox"]')[1].element).toHaveProperty('checked', true)
+    await wrapper.findAll('input[type="checkbox"]')[1].setValue(false)
+
+    await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
+    expect(copyToClipboardMock).toHaveBeenCalledWith(
+      expect.stringContaining('sub2api-local-setup.sh'),
+      'keys.useKeyModal.localSetup.copiedToast'
+    )
+  })
+
   it('keeps legacy OpenAI Codex WebSocket config as the default', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

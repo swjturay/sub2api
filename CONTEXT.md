@@ -27,3 +27,15 @@ _Avoid_: Generation rate, generation speed, request speed, total-request through
 **Time per Output Token (TPOT)**:
 The average time between output tokens after the first token, excluding time to first token. Lower TPOT corresponds to higher output token throughput.
 _Avoid_: Time to first token, total latency, token latency
+
+**Local Client Setup**:
+A user-triggered operation that configures one Managed Agent Client in the current user's standard global configuration scope. It changes only the selected client's owned endpoint, authentication, and optional model fields; it is not client installation or account provisioning.
+_Avoid_: client installation, local deployment, account setup
+
+**Managed Configuration Field**:
+A configuration value owned by the Local Client Setup operation for one client and provider. Updating it may replace the previous value, but it must not change unrelated providers or user settings.
+_Avoid_: every field in the config file, global setting
+
+**Configuration Backup**:
+A timestamped copy of an existing client configuration created before a Local Client Setup update. It is a recovery artifact and remains available until the user removes it.
+_Avoid_: temporary file, configuration cache
