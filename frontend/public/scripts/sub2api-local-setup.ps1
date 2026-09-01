@@ -42,6 +42,18 @@ function Get-PortablePython {
 }
 
 $client = $env:SUB2API_SETUP_CLIENT
+$endpointArg = $null
+$apiKeyArg = $null
+if ([string]::IsNullOrWhiteSpace($env:SUB2API_SETUP_ENDPOINT) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
+  $endpointArg = $args[0]
+  $args = $args | Select-Object -Skip 1
+}
+if ([string]::IsNullOrWhiteSpace($env:SUB2API_SETUP_API_KEY) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
+  $apiKeyArg = $args[0]
+  $args = $args | Select-Object -Skip 1
+}
+if ($endpointArg) { $env:SUB2API_SETUP_ENDPOINT = $endpointArg }
+if ($apiKeyArg) { $env:SUB2API_SETUP_API_KEY = $apiKeyArg }
 if ([string]::IsNullOrWhiteSpace($client) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
   $client = $args[0]
   $args = $args | Select-Object -Skip 1

@@ -604,12 +604,15 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--list-backups", action="store_true")
     result.add_argument("--restore", metavar="BACKUP_FILE")
     result.add_argument("--skip-doctor", action="store_true", help="skip automatic codex doctor verification")
+    result.add_argument("--models", help="comma-separated OpenCode model IDs")
     return result
 
 
 def main() -> int:
     args = parser().parse_args()
     try:
+        if args.models:
+            os.environ["SUB2API_SETUP_OPENCODE_MODELS"] = args.models
         if args.list_backups:
             return list_backups()
         if args.restore:

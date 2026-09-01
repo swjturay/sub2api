@@ -56,52 +56,39 @@ function resolveEndpoint(input: LocalSetupCommandInput): string {
   return ensureV1(root)
 }
 
-function commonEnvironment(input: LocalSetupCommandInput): Record<string, string> {
-  const values: Record<string, string> = {
-    SUB2API_SETUP_ENDPOINT: resolveSetupBaseUrl(input.baseUrl),
-    SUB2API_SETUP_API_KEY: input.apiKey
-  }
-  if (input.client === 'opencode') {
-    if (input.opencodeModels?.length) {
-      values.SUB2API_SETUP_OPENCODE_MODELS = input.opencodeModels.join(',')
-    }
-  }
-  return values
-}
-
 export function buildLocalSetupCommand(input: LocalSetupCommandInput): string {
   const origin = normalizeOrigin(input.origin)
   const scriptUrl = `${origin}/scripts/sub2api-local-setup.${input.os === 'windows' ? 'ps1' : 'sh'}`
-  const assignments = Object.entries(commonEnvironment(input))
-
-  if (input.os === 'unix') {
-    const clientArg = input.client === 'codex' && input.codexWebsocket ? 'codex-ws' : input.client
-    const platformArg = input.platform && !((input.client === 'codex' && input.platform === 'openai') || (input.client !== 'codex' && input.platform === 'anthropic'))
-      ? ` ${shellQuote(input.platform)}`
-      : ''
-    const env = assignments.map(([key, value]) => `${key}=${shellQuote(value)}`).join(' ')
-    const pipeline = `curl -fsSL --proto '=https' --tlsv1.2 ${shellQuote(scriptUrl)} | ${env} sh -s -- ${shellQuote(clientArg)}${platformArg} --yes`
-    return `bash -o pipefail -c ${shellQuote(pipeline)}`
-  }
-
-  const env = assignments
-    .map(([key, value]) => `$env:${key}=${powerShellQuote(value)}`)
-    .join('; ')
+  const endpointValue = resolveSetupBaseUrl(input.baseUrl)
+  const endpointArg = input.os === 'windows' ? powerShellQuote(endpointValue) : shellQuote(endpointValue)
+  const apiKeyArg = input.os === 'windows' ? powerShellQuote(input.apiKey) : shellQuote(input.apiKey)
   const clientArg = input.client === 'codex' && input.codexWebsocket ? 'codex-ws' : input.client
   const platformArg = input.platform && !((input.client === 'codex' && input.platform === 'openai') || (input.client !== 'codex' && input.platform === 'anthropic'))
-    ? ` ${powerShellQuote(input.platform)}`
+    ? ` ${shellQuote(input.platform)}`
     : ''
-  const script = [
-    '$ErrorActionPreference = "Stop"',
-    '$d = Join-Path ([IO.Path]::GetTempPath()) ("sub2api-command-" + [guid]::NewGuid().ToString("N"))',
-    'New-Item -ItemType Directory -Force -Path $d | Out-Null',
-    'try {',
-    `  Invoke-WebRequest -UseBasicParsing -Uri ${powerShellQuote(scriptUrl)} -OutFile (Join-Path $d "setup.ps1")`,
-    `  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $d "setup.ps1") ${powerShellQuote(clientArg)}${platformArg} --yes`,
-    '  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }',
-    '} finally { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }'
-  ].join(' ')
-  return `& { ${env}; ${script} }`
+  const modelArg = input.opencodeModels?.length
+    ? ` --models ${shellQuote(input.opencodeModels.join(','))}`
+    : ''
+
+  if (input.os === 'unix') {
+    return `curl -fsSL ${shellQuote(scriptUrl)} | bash -s -- ${endpointArg} ${apiKeyArg} ${shellQuote(clientArg)}${platformArg}${modelArg} --yes`
+  }
+
+  const assignments = [
+    `$env:SUB2API_SETUP_ENDPOINT=${endpointArg}`,
+    `$env:SUB2API_SETUP_API_KEY=${apiKeyArg}`,
+    ...(input.client === 'codex' ? [] : [`$env:SUB2API_SETUP_CLIENT=${powerShellQuote(clientArg)}`]),
+    ...(input.client === 'codex' && input.codexWebsocket
+      ? ['$env:SUB2API_SETUP_CODEX_WEBSOCKET=\'true\'']
+      : []),
+    ...(input.platform && !((input.client === 'codex' && input.platform === 'openai') || (input.client !== 'codex' && input.platform === 'anthropic'))
+      ? [`$env:SUB2API_SETUP_PLATFORM=${powerShellQuote(input.platform)}`]
+      : []),
+    ...(input.opencodeModels?.length
+      ? [`$env:SUB2API_SETUP_OPENCODE_MODELS=${powerShellQuote(input.opencodeModels.join(','))}`]
+      : []),
+  ].join('; ')
+  return `& { ${assignments}; irm ${powerShellQuote(scriptUrl)} | iex }`
 }
 
 export function resolveLocalSetupEndpoint(input: LocalSetupCommandInput): string {

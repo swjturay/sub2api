@@ -11,24 +11,29 @@ describe('local setup command', () => {
     platform: 'openai' as const
   }
 
-  it('builds a POSIX command that downloads a temporary script and passes values as env', () => {
+  it('builds a POSIX curl-pipe-bash command with positional setup values', () => {
     const command = buildLocalSetupCommand({ ...input, os: 'unix' })
-    expect(command).toContain('SUB2API_SETUP_API_KEY=')
+    expect(command).toContain("bash -s -- 'https://api.example.com' 'sk-test' 'opencode' 'openai' --yes")
     expect(command).toContain('sk-test')
-    expect(command).toContain('SUB2API_SETUP_ENDPOINT=')
-    expect(command).toContain('https://api.example.com')
     expect(command).toContain('https://console.example.com/scripts/sub2api-local-setup.sh')
-    expect(command).toContain('bash -o pipefail -c')
+    expect(command).not.toContain("--proto '=https'")
+    expect(command).not.toContain('--tlsv1.2')
     expect(command).not.toContain('SUB2API_SETUP_PY_URL=')
-    expect(command).toMatch(/sh -s -- .*opencode.*openai.*--yes/)
+    expect(command).not.toContain('SUB2API_SETUP_ENDPOINT=')
+    expect(command).not.toContain('SUB2API_SETUP_API_KEY=')
+    expect(command).not.toContain(' -o ')
     expect(command).not.toContain('--api-key')
   })
 
   it('builds a PowerShell command with temporary cleanup and quote-safe values', () => {
     const command = buildLocalSetupCommand({ ...input, apiKey: "sk-o'hare", os: 'windows' })
+    expect(command).toContain("irm 'https://console.example.com/scripts/sub2api-local-setup.ps1' | iex")
+    expect(command).toContain("$env:SUB2API_SETUP_ENDPOINT='https://api.example.com'")
     expect(command).toContain("$env:SUB2API_SETUP_API_KEY='sk-o''hare'")
+    expect(command).toContain("'sk-o''hare'")
     expect(command).toContain('sub2api-local-setup.ps1')
-    expect(command).toContain('Remove-Item -LiteralPath $d')
+    expect(command).not.toContain('Invoke-WebRequest')
+    expect(command).not.toContain('powershell.exe')
   })
 
   it('keeps the common OpenAI Codex command free of optional mode flags', () => {

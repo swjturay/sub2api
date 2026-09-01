@@ -70,6 +70,15 @@ download_python() {
   printf '%s\n' "$python_path"
 }
 
+if [ -z "${SUB2API_SETUP_ENDPOINT:-}" ] && [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
+  export SUB2API_SETUP_ENDPOINT="$1"
+  shift
+fi
+if [ -z "${SUB2API_SETUP_API_KEY:-}" ] && [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
+  export SUB2API_SETUP_API_KEY="$1"
+  shift
+fi
+
 client="${SUB2API_SETUP_CLIENT:-}"
 if [ -z "$client" ] && [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
   client=$1
