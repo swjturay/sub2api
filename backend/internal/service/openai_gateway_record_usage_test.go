@@ -604,6 +604,48 @@ func TestOpenAIGatewayServiceRecordUsage_IncludesEndpointMetadata(t *testing.T) 
 	require.Equal(t, "/v1/responses", *usageRepo.lastLog.UpstreamEndpoint)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_RecordsClientRequestType(t *testing.T) {
+	tests := []struct {
+		name     string
+		stream   bool
+		explicit ClientRequestType
+		expected ClientRequestType
+	}{
+		{name: "http stream defaults to SSE", stream: true, expected: ClientRequestTypeSSE},
+		{name: "native websocket stays WS", stream: true, explicit: ClientRequestTypeWS, expected: ClientRequestTypeWS},
+		{name: "non-stream HTTP defaults to sync", expected: ClientRequestTypeSync},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+			svc := newOpenAIRecordUsageServiceForTest(
+				usageRepo,
+				&openAIRecordUsageUserRepoStub{},
+				&openAIRecordUsageSubRepoStub{},
+				&openAIUserGroupRateRepoStub{},
+			)
+
+			err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+				Result: &OpenAIForwardResult{
+					RequestID: "resp_client_request_type",
+					Model:     "gpt-5.4",
+					Stream:    tt.stream,
+					Duration:  time.Second,
+				},
+				APIKey:            &APIKey{ID: 1002, Group: &Group{RateMultiplier: 1}},
+				User:              &User{ID: 2002},
+				Account:           &Account{ID: 3002},
+				ClientRequestType: tt.explicit,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, usageRepo.lastLog)
+			require.Equal(t, tt.expected, usageRepo.lastLog.ClientRequestType)
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceRecordUsage_FallsBackToGroupDefaultRateOnResolverError(t *testing.T) {
 	groupID := int64(12)
 	groupRate := 1.6

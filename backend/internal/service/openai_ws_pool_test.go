@@ -1154,6 +1154,7 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount(t *testing.T) {
 
 func TestOpenAIWSConnPool_EffectiveMaxConnsDisabledFallbackHardCap(t *testing.T) {
 	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
 	cfg.Gateway.OpenAIWS.DynamicMaxConnsByAccountConcurrencyEnabled = false
 	cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 1.0
@@ -1161,10 +1162,10 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsDisabledFallbackHardCap(t *testing.T)
 
 	pool := newOpenAIWSConnPool(cfg)
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 2}
-	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(account), "关闭动态模式后应保持旧行为")
+	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(account), "V2 关闭动态容量后应使用独立物理硬上限")
 }
 
-func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount_ModeRouterV2RespectsHardCap(t *testing.T) {
+func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount_ModeRouterV2UsesFactorsAndRespectsHardCap(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
@@ -1175,10 +1176,54 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount_ModeRouterV2RespectsHardCap
 	pool := newOpenAIWSConnPool(cfg)
 
 	high := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 20}
+	require.Equal(t, 6, pool.effectiveMaxConnsByAccount(high), "v2 路径应应用 OAuth 连接系数")
+	cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 2.0
 	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(high), "v2 路径也必须受连接池硬上限约束")
 
 	nonPositive := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 0}
 	require.Equal(t, 0, pool.effectiveMaxConnsByAccount(nonPositive), "并发数<=0 时应不可调度")
+}
+
+func TestOpenAIWSConnPool_ModeRouterV2UsesOAuthFactorForPhysicalCapacity(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 8
+	cfg.Gateway.OpenAIWS.DynamicMaxConnsByAccountConcurrencyEnabled = true
+	cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 2.0
+	cfg.Gateway.OpenAIWS.APIKeyMaxConnsFactor = 1.0
+	cfg.Gateway.OpenAIWS.PoolTargetUtilization = 1.0
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
+
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 3}
+	req := openAIWSAcquireRequest{Account: account, WSURL: "wss://example.com/v1/responses"}
+
+	leases := make([]*openAIWSConnLease, 0, 6)
+	defer func() {
+		for _, lease := range leases {
+			lease.Release()
+		}
+	}()
+	for i := 0; i < 6; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		lease, err := pool.Acquire(ctx, req)
+		cancel()
+		require.NoErrorf(t, err, "physical connection %d should fit concurrency*factor capacity", i+1)
+		leases = append(leases, lease)
+	}
+	require.Equal(t, 6, dialer.DialCount())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	seventh, err := pool.Acquire(ctx, req)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Nil(t, seventh)
+	require.Equal(t, 6, dialer.DialCount(), "websocket leases must remain bounded by the physical cap")
 }
 
 func TestOpenAIWSConnPool_AcquireRejectsWhenEffectiveMaxConnsIsZero(t *testing.T) {

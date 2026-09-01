@@ -116,7 +116,6 @@ func TestUsageLogFromService_IncludesServiceTierForUserAndAdmin(t *testing.T) {
 	require.Equal(t, serviceTier, *userDTO.ServiceTier)
 	require.NotNil(t, userDTO.InboundEndpoint)
 	require.Equal(t, inboundEndpoint, *userDTO.InboundEndpoint)
-	require.Nil(t, userDTO.UpstreamEndpoint)
 	require.NotNil(t, adminDTO.ServiceTier)
 	require.Equal(t, serviceTier, *adminDTO.ServiceTier)
 	require.NotNil(t, adminDTO.InboundEndpoint)
@@ -125,6 +124,51 @@ func TestUsageLogFromService_IncludesServiceTierForUserAndAdmin(t *testing.T) {
 	require.Equal(t, upstreamEndpoint, *adminDTO.UpstreamEndpoint)
 	require.NotNil(t, adminDTO.AccountRateMultiplier)
 	require.InDelta(t, 1.5, *adminDTO.AccountRateMultiplier, 1e-12)
+}
+
+func TestUsageLogFromService_IncludesClientRequestTypeAndOutputTokenThroughput(t *testing.T) {
+	t.Parallel()
+
+	durationMs := 2100
+	firstTokenMs := 100
+	log := &service.UsageLog{
+		RequestID:         "req_transport_speed",
+		Model:             "gpt-5.4",
+		RequestType:       service.RequestTypeWSV2,
+		ClientRequestType: service.ClientRequestTypeSSE,
+		OutputTokens:      50,
+		DurationMs:        &durationMs,
+		FirstTokenMs:      &firstTokenMs,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	for _, got := range []*UsageLog{userDTO, &adminDTO.UsageLog} {
+		require.NotNil(t, got.ClientRequestType)
+		require.Equal(t, "sse", *got.ClientRequestType)
+		require.NotNil(t, got.OutputTokensPerSecond)
+		require.InDelta(t, 24.5, *got.OutputTokensPerSecond, 1e-12)
+	}
+}
+
+func TestUsageLogFromService_OmitsAmbiguousLegacyClientTypeAndInvalidSpeed(t *testing.T) {
+	t.Parallel()
+
+	durationMs := 100
+	firstTokenMs := 100
+	log := &service.UsageLog{
+		RequestID:    "req_legacy_ws",
+		Model:        "gpt-5.4",
+		RequestType:  service.RequestTypeWSV2,
+		OutputTokens: 10,
+		DurationMs:   &durationMs,
+		FirstTokenMs: &firstTokenMs,
+	}
+
+	dto := UsageLogFromService(log)
+	require.Nil(t, dto.ClientRequestType)
+	require.Nil(t, dto.OutputTokensPerSecond)
 }
 
 func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *testing.T) {

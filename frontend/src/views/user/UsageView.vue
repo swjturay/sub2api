@@ -184,6 +184,7 @@
           :server-side-sort="true"
           :show-account-billing="false"
           :show-upstream-endpoint="false"
+          audience="user"
           default-sort-key="created_at"
           default-sort-order="desc"
           @sort="handleSort"
@@ -238,7 +239,14 @@ import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
 import { getBillingModeLabel, getDisplayBillingMode as resolveDisplayBillingMode } from '@/utils/billingMode'
-import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
+import {
+  formatUsageRequestType,
+  formatUsageTransport,
+  requestTypeToLegacyStream,
+  resolveClientFacingUsageRequestType,
+  resolveClientTransport,
+} from '@/utils/usageRequestType'
+import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import type {
   ApiKey,
   EndpointStat,
@@ -605,16 +613,6 @@ const handleIpGeoBatchFailed = () => {
   appStore.showError(t('usage.ipGeo.batchFailed'))
 }
 
-const getRequestTypeExportText = (log: UsageLog): string => {
-  const requestType = resolveUsageRequestType(log)
-  if (requestType === 'cyber') return 'Cyber'
-  if (requestType === 'live') return 'Live'
-  if (requestType === 'ws_v2') return 'WS'
-  if (requestType === 'stream') return 'Stream'
-  if (requestType === 'sync') return 'Sync'
-  return 'Unknown'
-}
-
 const getDisplayBillingMode = (
   row: Pick<UsageLog, 'billing_mode' | 'image_count'> | null | undefined
 ): string | null | undefined => resolveDisplayBillingMode(row)
@@ -652,9 +650,12 @@ const exportToCSV = async () => {
       'API Key Name',
       'Model',
       'Reasoning Effort',
+      'Request Type',
+      'Client Transport',
       'Inbound Endpoint',
+      'Service Tier',
+      'Output Token Throughput (tok/s)',
       'IP Address',
-      'Type',
       'Billing Mode',
       'Input Tokens',
       'Output Tokens',
@@ -671,9 +672,12 @@ const exportToCSV = async () => {
       log.api_key?.name || '',
       log.model,
       formatReasoningEffort(log.reasoning_effort),
+      formatUsageRequestType({ request_type: resolveClientFacingUsageRequestType(log) }, t),
+      formatUsageTransport(resolveClientTransport(log), t),
       log.inbound_endpoint || '',
+      log.service_tier?.trim() ? getUsageServiceTierLabel(log.service_tier, t) : '',
+      log.output_tokens_per_second ?? '',
       log.ip_address || '',
-      getRequestTypeExportText(log),
       getBillingModeLabel(getDisplayBillingMode(log), t),
       log.input_tokens,
       log.output_tokens,
@@ -714,9 +718,11 @@ const allColumns = computed<Column[]>(() => [
   { key: 'model', label: t('usage.model'), sortable: true },
   { key: 'reasoning_effort', label: t('usage.reasoningEffort'), sortable: false },
   { key: 'endpoint', label: t('usage.endpoint'), sortable: false },
+  { key: 'request_type', label: t('usage.type'), sortable: false },
+  { key: 'service_tier', label: t('usage.serviceTier'), sortable: false },
+  { key: 'output_token_throughput', label: t('usage.outputTokenThroughput'), sortable: false },
   { key: 'ip_address', label: 'IP', sortable: false },
   { key: 'group', label: t('admin.usage.group'), sortable: false },
-  { key: 'stream', label: t('usage.type'), sortable: false },
   { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
   { key: 'cost', label: t('usage.cost'), sortable: false },

@@ -28,6 +28,87 @@
           {{ platformDescription }}
         </p>
 
+        <section
+          v-if="localSetupSupported"
+          data-testid="local-setup"
+          class="rounded-lg border border-primary-200 bg-primary-50/60 p-3 dark:border-primary-900/60 dark:bg-primary-950/20"
+        >
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div class="min-w-0">
+              <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                {{ t('keys.useKeyModal.localSetup.title') }}
+              </h3>
+              <p class="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
+                {{ t('keys.useKeyModal.localSetup.description') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="local-setup-copy"
+              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
+              @click="copyLocalSetupCommand"
+            >
+              <Icon name="copy" size="sm" class="mr-1.5" />
+              {{ copiedSetup ? t('keys.useKeyModal.localSetup.copied') : t('keys.useKeyModal.localSetup.copy') }}
+            </button>
+          </div>
+
+          <div class="mt-3 flex flex-wrap gap-2" role="radiogroup" :aria-label="t('keys.useKeyModal.localSetup.osTitle')">
+            <button
+              v-for="os in localSetupOSOptions"
+              :key="os.id"
+              type="button"
+              role="radio"
+              :data-testid="`local-setup-os-${os.id}`"
+              :aria-checked="setupOS === os.id"
+              :class="[
+                'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                setupOS === os.id
+                  ? 'border-primary-500 bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
+                  : 'border-gray-200 bg-transparent text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-dark-300'
+              ]"
+              @click="setupOS = os.id"
+            >
+              {{ os.label }}
+            </button>
+          </div>
+
+          <div v-if="activeClientTab === 'opencode'" class="mt-3 border-t border-primary-100 pt-3 dark:border-primary-900/50">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-xs text-gray-600 dark:text-gray-400">
+                {{ t('keys.useKeyModal.localSetup.openCodeModelsDescription') }}
+              </p>
+              <button
+                type="button"
+                data-testid="local-setup-models-fetch"
+                class="btn btn-secondary min-h-8 px-2.5 text-xs"
+                :disabled="openCodeModelsState === 'loading'"
+                @click="loadOpenCodeModels"
+              >
+                <Icon name="refresh" size="sm" class="mr-1" :class="openCodeModelsState === 'loading' ? 'animate-spin' : ''" />
+                {{ openCodeModelsState === 'ready' ? t('keys.useKeyModal.localSetup.modelsRefresh') : t('keys.useKeyModal.localSetup.modelsFetch') }}
+              </button>
+            </div>
+            <div v-if="openCodeAvailableModelIds.length" class="mt-2 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2">
+              <label
+                v-for="model in openCodeAvailableModelIds"
+                :key="model"
+                class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-700 hover:bg-white/70 dark:text-gray-200 dark:hover:bg-dark-800/70"
+              >
+                <input v-model="selectedOpenCodeModelIds" type="checkbox" :value="model" class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600" />
+                <span class="truncate font-mono">{{ model }}</span>
+              </label>
+            </div>
+            <p v-else-if="openCodeModelsState === 'error'" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              {{ t('keys.useKeyModal.localSetup.modelsError') }}
+            </p>
+          </div>
+
+          <p class="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
+            {{ t('keys.useKeyModal.localSetup.secretWarning') }}
+          </p>
+        </section>
+
         <!-- Client Tabs -->
         <div v-if="clientTabs.length" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
           <nav class="-mb-px flex min-w-max gap-4 sm:gap-6" aria-label="Client">
@@ -262,6 +343,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
+import { fetchGatewayModels } from '@/api/models'
 import type { GroupPlatform } from '@/types'
 import {
   findCodexCatalogModel,
@@ -269,6 +351,12 @@ import {
   parseCodexCatalogModels,
   selectCodexConfigReasoningEffort
 } from '@/utils/codexCatalogConfig'
+import {
+  buildLocalSetupCommand,
+  resolveLocalSetupEndpoint,
+  type LocalSetupClient,
+  type LocalSetupOS
+} from '@/utils/localSetupCommand'
 
 interface Props {
   show: boolean
@@ -302,8 +390,10 @@ const { t } = useI18n()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const copiedIndex = ref<number | null>(null)
+const copiedSetup = ref(false)
 const activeTab = ref<string>('unix')
 const activeClientTab = ref<string>('claude')
+const setupOS = ref<LocalSetupOS>('unix')
 type CodexAuthMode = 'legacy' | 'api-key'
 const codexAuthMode = ref<CodexAuthMode>('legacy')
 type CodexModelManifestState = 'idle' | 'loading' | 'ready' | 'error'
@@ -312,6 +402,17 @@ const codexModelManifestContent = ref('')
 const codexModelManifestModelCount = ref(0)
 let codexModelManifestController: AbortController | null = null
 let codexModelManifestRequestID = 0
+type OpenCodeModelsState = 'idle' | 'loading' | 'ready' | 'error'
+const openCodeModelsState = ref<OpenCodeModelsState>('idle')
+const openCodeAvailableModelIds = ref<string[]>([])
+const selectedOpenCodeModelIds = ref<string[]>([])
+let openCodeModelsController: AbortController | null = null
+let openCodeModelsRequestID = 0
+
+const localSetupOSOptions: Array<{ id: LocalSetupOS; label: string }> = [
+  { id: 'unix', label: 'macOS / Linux' },
+  { id: 'windows', label: 'Windows PowerShell' }
+]
 
 const showCodexModelCatalog = computed(() =>
   props.show &&
@@ -350,6 +451,7 @@ watch(() => props.platform, () => {
   activeTab.value = 'unix'
   activeClientTab.value = defaultClientTab.value
   codexAuthMode.value = 'legacy'
+  setupOS.value = 'unix'
 }, { immediate: true })
 
 watch(() => props.show, (show) => {
@@ -357,6 +459,7 @@ watch(() => props.show, (show) => {
     codexAuthMode.value = 'legacy'
   } else {
     resetCodexModelManifest()
+    resetOpenCodeModels()
   }
 })
 
@@ -369,6 +472,23 @@ watch(codexManifestContext, (context, previousContext) => {
 // Reset shell tab when client changes
 watch(activeClientTab, () => {
   activeTab.value = 'unix'
+  copiedSetup.value = false
+})
+
+const localSetupSupported = computed(() =>
+  ['claude', 'codex', 'codex-ws', 'opencode'].includes(activeClientTab.value)
+)
+
+const localSetupClient = computed<LocalSetupClient>(() =>
+  activeClientTab.value === 'opencode' ? 'opencode' : activeClientTab.value === 'claude' ? 'claude' : 'codex'
+)
+
+const openCodeModelContext = computed(() =>
+  `${props.platform}|${props.baseUrl}|${props.apiKey}|${activeClientTab.value}`
+)
+
+watch(openCodeModelContext, () => {
+  resetOpenCodeModels()
 })
 
 // Icon components
@@ -612,6 +732,66 @@ function resetCodexModelManifest() {
   codexModelManifestState.value = 'idle'
   codexModelManifestContent.value = ''
   codexModelManifestModelCount.value = 0
+}
+
+function resetOpenCodeModels() {
+  openCodeModelsController?.abort()
+  openCodeModelsController = null
+  openCodeModelsRequestID += 1
+  openCodeModelsState.value = 'idle'
+  openCodeAvailableModelIds.value = []
+  selectedOpenCodeModelIds.value = []
+}
+
+const openCodeModelPriority: Partial<Record<GroupPlatform, string[]>> = {
+  openai: ['gpt-5.5', 'gpt-5.6', 'gpt-5.4-mini'],
+  anthropic: ['claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'claude-fable-5'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+  antigravity: ['claude-sonnet-4-6', 'gemini-3.1-pro-high', 'gemini-2.5-flash'],
+  grok: ['grok-4.5', 'grok-build-0.1', 'grok-4.20-multi-agent-0309'],
+  deepseek: ['deepseek-v4-pro', 'deepseek-chat'],
+  composite: ['gpt-5.5', 'claude-sonnet-4-6', 'gemini-2.5-pro']
+}
+
+function chooseOpenCodeDefaults(ids: string[]): string[] {
+  const priority = props.platform ? (openCodeModelPriority[props.platform] || []) : []
+  const preferred = priority.filter((id) => ids.includes(id))
+  return [...preferred, ...ids.filter((id) => !preferred.includes(id))].slice(0, 3)
+}
+
+async function loadOpenCodeModels() {
+  if (activeClientTab.value !== 'opencode' || !props.apiKey) return
+  openCodeModelsController?.abort()
+  const controller = new AbortController()
+  const requestID = ++openCodeModelsRequestID
+  openCodeModelsController = controller
+  openCodeModelsState.value = 'loading'
+  try {
+    const result = await fetchGatewayModels(
+      resolveLocalSetupEndpoint({
+        apiKey: props.apiKey,
+        baseUrl: props.baseUrl,
+        client: 'opencode',
+        os: 'unix',
+        platform: props.platform
+      }),
+      props.apiKey,
+      controller.signal
+    )
+    if (requestID !== openCodeModelsRequestID) return
+    const ids = result.map((item) => item.id)
+    openCodeAvailableModelIds.value = ids
+    selectedOpenCodeModelIds.value = chooseOpenCodeDefaults(ids)
+    openCodeModelsState.value = 'ready'
+  } catch (error) {
+    const errorName = error && typeof error === 'object' && 'name' in error
+      ? String((error as { name?: unknown }).name || '')
+      : ''
+    if (requestID !== openCodeModelsRequestID || errorName === 'AbortError') return
+    openCodeModelsState.value = 'error'
+  } finally {
+    if (requestID === openCodeModelsRequestID) openCodeModelsController = null
+  }
 }
 
 async function loadCodexModelManifest() {
@@ -1297,6 +1477,16 @@ goals = true`
   return buildOpenAICodexFileConfigs(configDir, configContent, apiKey)
 }
 
+function filterOpenCodeModels<T>(models: Record<string, T>): Record<string, T> {
+  if (!selectedOpenCodeModelIds.value.length) return models
+  const selected = new Set(selectedOpenCodeModelIds.value)
+  const filtered = Object.fromEntries(Object.entries(models).filter(([id]) => selected.has(id))) as Record<string, T>
+  for (const id of selected) {
+    if (!(id in filtered)) filtered[id] = { name: id } as T
+  }
+  return filtered
+}
+
 function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: string, pathLabel?: string): FileConfig {
   const provider: Record<string, any> = {
     [platform]: {
@@ -1786,24 +1976,24 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
 
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
-    provider[platform].models = geminiModels
+    provider[platform].models = filterOpenCodeModels(geminiModels)
   } else if (platform === 'anthropic') {
     provider[platform].npm = '@ai-sdk/anthropic'
   } else if (platform === 'antigravity-claude') {
     provider[platform].npm = '@ai-sdk/anthropic'
     provider[platform].name = 'Antigravity (Claude)'
-    provider[platform].models = claudeModels
+    provider[platform].models = filterOpenCodeModels(claudeModels)
   } else if (platform === 'antigravity-gemini') {
     provider[platform].npm = '@ai-sdk/google'
     provider[platform].name = 'Antigravity (Gemini)'
-    provider[platform].models = antigravityGeminiModels
+    provider[platform].models = filterOpenCodeModels(antigravityGeminiModels)
   } else if (platform === 'openai') {
-    provider[platform].models = openaiModels
+    provider[platform].models = filterOpenCodeModels(openaiModels)
   } else if (platform === 'grok') {
     // Custom provider pointing at Sub2API OpenAI-compatible Responses/Chat endpoints.
     provider[platform].npm = '@ai-sdk/openai-compatible'
     provider[platform].name = 'Grok via Sub2API'
-    provider[platform].models = grokModels
+    provider[platform].models = filterOpenCodeModels(grokModels)
   }
 
   const agent =
@@ -1837,6 +2027,35 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     content,
     hint: t('keys.useKeyModal.opencode.hint')
   }
+}
+
+const localSetupModelSelection = computed<string[] | undefined>(() => {
+  if (activeClientTab.value !== 'opencode' || openCodeModelsState.value !== 'ready') return undefined
+  const recommended = chooseOpenCodeDefaults(openCodeAvailableModelIds.value).slice().sort()
+  const selected = selectedOpenCodeModelIds.value.slice().sort()
+  return recommended.join('\u0000') === selected.join('\u0000')
+    ? undefined
+    : selectedOpenCodeModelIds.value
+})
+
+async function copyLocalSetupCommand() {
+  const success = await clipboardCopy(
+    buildLocalSetupCommand({
+      apiKey: props.apiKey,
+      baseUrl: props.baseUrl || window.location.origin,
+      client: localSetupClient.value,
+      codexWebsocket: activeClientTab.value === 'codex-ws',
+      opencodeModels: localSetupModelSelection.value,
+      os: setupOS.value,
+      platform: props.platform
+    }),
+    t('keys.useKeyModal.localSetup.copiedToast')
+  )
+  if (!success) return
+  copiedSetup.value = true
+  setTimeout(() => {
+    copiedSetup.value = false
+  }, 2000)
 }
 
 const copyContent = async (content: string, index: number) => {

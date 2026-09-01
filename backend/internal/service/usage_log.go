@@ -101,6 +101,51 @@ func ApplyLegacyRequestFields(requestType RequestType, fallbackStream bool, fall
 	}
 }
 
+// ClientRequestType describes the transport used by the client calling sub2api.
+// It is independent from RequestType, which records the effective upstream
+// execution type and may be ws_v2 for an SSE-to-WS bridge.
+type ClientRequestType int16
+
+const (
+	ClientRequestTypeUnknown ClientRequestType = 0
+	ClientRequestTypeSync    ClientRequestType = 1
+	ClientRequestTypeSSE     ClientRequestType = 2
+	ClientRequestTypeWS      ClientRequestType = 3
+)
+
+func (t ClientRequestType) Normalize() ClientRequestType {
+	switch t {
+	case ClientRequestTypeSync, ClientRequestTypeSSE, ClientRequestTypeWS:
+		return t
+	default:
+		return ClientRequestTypeUnknown
+	}
+}
+
+func (t ClientRequestType) String() string {
+	switch t.Normalize() {
+	case ClientRequestTypeSync:
+		return "sync"
+	case ClientRequestTypeSSE:
+		return "sse"
+	case ClientRequestTypeWS:
+		return "ws"
+	default:
+		return ""
+	}
+}
+
+func ClientRequestTypeFromInt16(v int16) ClientRequestType {
+	return ClientRequestType(v).Normalize()
+}
+
+func ClientRequestTypeFromStream(stream bool) ClientRequestType {
+	if stream {
+		return ClientRequestTypeSSE
+	}
+	return ClientRequestTypeSync
+}
+
 type UsageLog struct {
 	ID        int64
 	UserID    int64
@@ -173,8 +218,12 @@ type UsageLog struct {
 	// AccountStatsCost 账号统计定价预计算费用（nil = 使用默认公式 total_cost × account_rate_multiplier）
 	AccountStatsCost *float64
 
-	BillingType        int8
-	RequestType        RequestType
+	BillingType int8
+	RequestType RequestType
+	// ClientRequestType records the client ingress transport independently of
+	// the effective upstream RequestType. Unknown is preserved for ambiguous
+	// historical ws_v2 rows created before this field existed.
+	ClientRequestType  ClientRequestType
 	Stream             bool
 	OpenAIWSMode       bool
 	NativeCompactionV2 bool
@@ -225,6 +274,23 @@ func (u *UsageLog) EffectiveRequestType() RequestType {
 		return normalized
 	}
 	return RequestTypeFromLegacy(u.Stream, u.OpenAIWSMode)
+}
+
+func (u *UsageLog) EffectiveClientRequestType() ClientRequestType {
+	if u == nil {
+		return ClientRequestTypeUnknown
+	}
+	if requestType := u.ClientRequestType.Normalize(); requestType != ClientRequestTypeUnknown {
+		return requestType
+	}
+	switch u.EffectiveRequestType() {
+	case RequestTypeSync:
+		return ClientRequestTypeSync
+	case RequestTypeStream:
+		return ClientRequestTypeSSE
+	default:
+		return ClientRequestTypeUnknown
+	}
 }
 
 func (u *UsageLog) SyncRequestTypeAndLegacyFields() {
