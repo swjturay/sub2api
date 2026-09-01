@@ -122,9 +122,16 @@
         </template>
 
         <template #cell-request_type="{ row }">
-          <span data-testid="request-type" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="requestTypeBadgeClass(row)">
-            {{ requestTypeLabel(row) }}
-          </span>
+          <div data-testid="request-type" class="flex flex-wrap items-center gap-1">
+            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="requestTypeBadgeClass(row)">
+              {{ requestTypeLabel(row) }}
+            </span>
+            <span
+              v-if="row.native_compaction_v2"
+              data-testid="native-compaction-badge"
+              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
+            >{{ t('usage.nativeCompactionV2') }}</span>
+          </div>
         </template>
 
         <template #cell-group="{ row }">

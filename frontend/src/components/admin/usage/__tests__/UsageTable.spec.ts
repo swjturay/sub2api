@@ -60,8 +60,6 @@ const messages: Record<string, string> = {
   'usage.imageSizeUnknown': 'unknown',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageTotalPrice': 'Image total price',
-  'usage.stream': 'Stream',
-  'usage.sync': 'Sync',
   'usage.nativeCompactionV2': 'Compaction',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
@@ -188,7 +186,7 @@ describe('admin UsageTable tooltip', () => {
       template: `
         <div>
           <div v-for="row in data" :key="row.request_id">
-            <slot name="cell-stream" :row="row" />
+            <slot name="cell-request_type" :row="row" />
           </div>
         </div>
       `,
