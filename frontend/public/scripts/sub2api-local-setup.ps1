@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$scriptVersion = '2026.09.01'
+$scriptVersion = '2026.09.02'
 $pythonVersion = '3.14.7+20260825'
 $pythonAsset = 'cpython-3.14.7+20260825-x86_64-pc-windows-msvc-install_only.tar.gz'
 $pythonSha256 = 'a8a93fcf897f4c6ea4d120cf4a7ee4f98779d33a432a65b1af36a589c2f3d36c'
@@ -24,7 +24,7 @@ function Find-Python {
 function Get-PortablePython {
   $cacheRoot = Join-Path $env:LOCALAPPDATA "Sub2API\python\$pythonVersion"
   $pythonPath = Get-ChildItem -LiteralPath $cacheRoot -Filter 'python.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-  if (-not (Test-Path -LiteralPath $pythonPath)) {
+  if ([string]::IsNullOrWhiteSpace($pythonPath) -or -not (Test-Path -LiteralPath $pythonPath)) {
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
     $archive = Join-Path $cacheRoot 'python.tar.gz'
     $url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260825/$pythonAsset"
@@ -37,7 +37,7 @@ function Get-PortablePython {
     if ($LASTEXITCODE -ne 0) { Fail '便携 Python 解压失败' }
     $pythonPath = Get-ChildItem -LiteralPath $cacheRoot -Filter 'python.exe' -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
   }
-  if (-not (Test-Path -LiteralPath $pythonPath)) { Fail '便携 Python 解压后找不到 python.exe' }
+  if ([string]::IsNullOrWhiteSpace($pythonPath) -or -not (Test-Path -LiteralPath $pythonPath)) { Fail '便携 Python 解压后找不到 python.exe' }
   return $pythonPath
 }
 

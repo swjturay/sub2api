@@ -1,12 +1,15 @@
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).parents[1] / "sub2api-local-setup.py"
+WINDOWS_SCRIPT = Path(__file__).parents[1] / "sub2api-local-setup.ps1"
 SPEC = importlib.util.spec_from_file_location("sub2api_local_setup", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
@@ -14,6 +17,30 @@ SPEC.loader.exec_module(MODULE)
 
 
 class LocalSetupTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("powershell.exe"), "Windows PowerShell is required")
+    def test_windows_portable_python_branch_handles_an_empty_cache(self):
+        source = WINDOWS_SCRIPT.read_text(encoding="utf-8")
+        function_source = source.split("$client = $env:SUB2API_SETUP_CLIENT", 1)[0]
+        with tempfile.TemporaryDirectory() as root:
+            probe = Path(root) / "probe.ps1"
+            probe.write_text(
+                function_source
+                + "\nfunction Invoke-WebRequest { param([switch]$UseBasicParsing, $Uri, $OutFile) throw 'DOWNLOAD_REACHED' }\n"
+                + f"$env:LOCALAPPDATA = {json.dumps(root)}\n"
+                + "try { Get-PortablePython | Out-Null } catch { Write-Output $_.Exception.Message }\n",
+                encoding="utf-8-sig",
+            )
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("DOWNLOAD_REACHED", result.stdout)
+        self.assertNotIn("LiteralPath", result.stdout + result.stderr)
+
     def test_claude_update_preserves_unmanaged_settings(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "settings.json"

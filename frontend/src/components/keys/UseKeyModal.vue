@@ -28,29 +28,41 @@
           {{ platformDescription }}
         </p>
 
+        <!-- Client Tabs -->
+        <div v-if="clientTabs.length" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
+          <nav class="-mb-px flex min-w-max gap-4 sm:gap-6" aria-label="Client">
+            <button
+              v-for="tab in clientTabs"
+              :key="tab.id"
+              type="button"
+              @click="activeClientTab = tab.id"
+              :class="[
+                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeClientTab === tab.id
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              ]"
+            >
+              <span class="flex items-center gap-2">
+                <component :is="tab.icon" class="w-4 h-4" />
+                {{ tab.label }}
+              </span>
+            </button>
+          </nav>
+        </div>
+
         <section
           v-if="localSetupSupported"
           data-testid="local-setup"
           class="rounded-lg border border-primary-200 bg-primary-50/60 p-3 dark:border-primary-900/60 dark:bg-primary-950/20"
         >
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div class="min-w-0">
-              <h3 class="text-sm font-medium text-gray-900 dark:text-white">
-                {{ t('keys.useKeyModal.localSetup.title') }}
-              </h3>
-              <p class="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
-                {{ t('keys.useKeyModal.localSetup.description') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              data-testid="local-setup-copy"
-              class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
-              @click="copyLocalSetupCommand"
-            >
-              <Icon name="copy" size="sm" class="mr-1.5" />
-              {{ copiedSetup ? t('keys.useKeyModal.localSetup.copied') : t('keys.useKeyModal.localSetup.copy') }}
-            </button>
+          <div class="min-w-0">
+            <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+              {{ t('keys.useKeyModal.localSetup.title') }}
+            </h3>
+            <p class="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
+              {{ t('keys.useKeyModal.localSetup.description') }}
+            </p>
           </div>
 
           <div class="mt-3 flex flex-wrap gap-2" role="radiogroup" :aria-label="t('keys.useKeyModal.localSetup.osTitle')">
@@ -107,30 +119,18 @@
           <p class="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
             {{ t('keys.useKeyModal.localSetup.secretWarning') }}
           </p>
-        </section>
-
-        <!-- Client Tabs -->
-        <div v-if="clientTabs.length" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4 sm:gap-6" aria-label="Client">
+          <div class="mt-3 flex justify-end">
             <button
-              v-for="tab in clientTabs"
-              :key="tab.id"
               type="button"
-              @click="activeClientTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeClientTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
+              data-testid="local-setup-copy"
+              class="btn btn-primary min-h-9 px-3 text-xs"
+              @click="copyLocalSetupCommand"
             >
-              <span class="flex items-center gap-2">
-                <component :is="tab.icon" class="w-4 h-4" />
-                {{ tab.label }}
-              </span>
+              <Icon name="copy" size="sm" class="mr-1.5" />
+              {{ copiedSetup ? t('keys.useKeyModal.localSetup.copied') : t('keys.useKeyModal.localSetup.copy') }}
             </button>
-          </nav>
-        </div>
+          </div>
+        </section>
 
         <!-- Codex Authentication Mode -->
         <div
@@ -434,18 +434,7 @@ const codexManifestContext = computed(() => {
 
 // Reset tabs when platform changes
 const defaultClientTab = computed(() => {
-  switch (props.platform) {
-    case 'openai':
-      return 'codex'
-    case 'grok':
-      return 'grok'
-    case 'gemini':
-      return 'gemini'
-    case 'antigravity':
-      return 'claude'
-    default:
-      return 'claude'
-  }
+  return props.platform ? 'codex' : 'claude'
 })
 
 watch(() => props.platform, () => {
@@ -571,35 +560,35 @@ const clientTabs = computed((): TabConfig[] => {
     }
     case 'gemini':
       return [
-        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'antigravity':
       return [
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
-        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'grok':
       return [
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'grok', label: t('keys.useKeyModal.cliTabs.grokCli'), icon: TerminalIcon },
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
-        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'deepseek':
     case 'composite':
       return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     default:
       return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
   }

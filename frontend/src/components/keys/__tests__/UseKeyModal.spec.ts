@@ -47,6 +47,41 @@ describe('UseKeyModal', () => {
     saveAsMock.mockClear()
   })
 
+  it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'composite'] as const)(
+    'shows Codex first and places local setup after the Agent selector for %s groups',
+    (platform) => {
+      const wrapper = mount(UseKeyModal, {
+        props: {
+          show: true,
+          apiKey: `sk-${platform}-test`,
+          baseUrl: 'https://example.com/v1',
+          platform
+        },
+        global: {
+          stubs: {
+            BaseDialog: {
+              template: '<div><slot /><slot name="footer" /></div>'
+            },
+            Icon: {
+              template: '<span />'
+            }
+          }
+        }
+      })
+
+      const clientSelector = wrapper.get('nav[aria-label="Client"]')
+      const clientButtons = clientSelector.findAll('button')
+      expect(clientButtons[0].text()).toContain('keys.useKeyModal.cliTabs.codexCli')
+      expect(clientButtons[0].classes()).toContain('border-primary-500')
+
+      const setup = wrapper.get('[data-testid="local-setup"]')
+      expect(clientSelector.element.compareDocumentPosition(setup.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      const osSelector = setup.get('[role="radiogroup"]')
+      const copyButton = setup.get('[data-testid="local-setup-copy"]')
+      expect(osSelector.element.compareDocumentPosition(copyButton.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  )
+
   it('omits the attribution override from every standard Claude Code setup form', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
@@ -66,6 +101,13 @@ describe('UseKeyModal', () => {
         }
       }
     })
+
+    const claudeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.claudeCode')
+    )
+    expect(claudeTab).toBeDefined()
+    await claudeTab!.trigger('click')
+    await nextTick()
 
     for (const [shell, trafficSetting] of [
       ['macOS / Linux', 'export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1'],
@@ -116,6 +158,8 @@ describe('UseKeyModal', () => {
       button.text().includes('keys.useKeyModal.cliTabs.grokCli')
     )
     expect(grokTab).toBeDefined()
+    await grokTab!.trigger('click')
+    await nextTick()
 
     const allCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
     expect(allCode).toContain('GROK_MODELS_BASE_URL')

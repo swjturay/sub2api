@@ -25,15 +25,19 @@ describe('local setup command', () => {
     expect(command).not.toContain('--api-key')
   })
 
-  it('builds a PowerShell command with temporary cleanup and quote-safe values', () => {
+  it('runs the Windows setup in Windows PowerShell with quote-safe isolated environment values', () => {
     const command = buildLocalSetupCommand({ ...input, apiKey: "sk-o'hare", os: 'windows' })
-    expect(command).toContain("irm 'https://console.example.com/scripts/sub2api-local-setup.ps1' | iex")
-    expect(command).toContain("$env:SUB2API_SETUP_ENDPOINT='https://api.example.com'")
-    expect(command).toContain("$env:SUB2API_SETUP_API_KEY='sk-o''hare'")
+    expect(command.startsWith('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& { ')).toBe(true)
+    expect(command).toContain("`$env:SUB2API_SETUP_ENDPOINT='https://api.example.com'")
+    expect(command).toContain("`$env:SUB2API_SETUP_API_KEY='sk-o''hare'")
+    expect(command).toContain("`$env:SUB2API_SETUP_CLIENT='opencode'")
+    expect(command).toContain("`$env:SUB2API_SETUP_PLATFORM='openai'")
+    expect(command).toContain("Invoke-WebRequest -UseBasicParsing -Uri 'https://console.example.com/scripts/sub2api-local-setup.ps1' -OutFile `$setupScript")
+    expect(command).toContain('Get-Content -LiteralPath `$setupScript -Raw -Encoding UTF8 | Invoke-Expression')
+    expect(command).toContain('Remove-Item -LiteralPath `$setupDir -Recurse -Force')
     expect(command).toContain("'sk-o''hare'")
     expect(command).toContain('sub2api-local-setup.ps1')
-    expect(command).not.toContain('Invoke-WebRequest')
-    expect(command).not.toContain('powershell.exe')
+    expect(command).not.toContain('& { $env:')
   })
 
   it('keeps the common OpenAI Codex command free of optional mode flags', () => {

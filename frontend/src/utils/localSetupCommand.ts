@@ -74,21 +74,16 @@ export function buildLocalSetupCommand(input: LocalSetupCommandInput): string {
     return `curl -fsSL ${shellQuote(scriptUrl)} | bash -s -- ${endpointArg} ${apiKeyArg} ${shellQuote(clientArg)}${platformArg}${modelArg} --yes`
   }
 
-  const assignments = [
-    `$env:SUB2API_SETUP_ENDPOINT=${endpointArg}`,
-    `$env:SUB2API_SETUP_API_KEY=${apiKeyArg}`,
-    ...(input.client === 'codex' ? [] : [`$env:SUB2API_SETUP_CLIENT=${powerShellQuote(clientArg)}`]),
-    ...(input.client === 'codex' && input.codexWebsocket
-      ? ['$env:SUB2API_SETUP_CODEX_WEBSOCKET=\'true\'']
-      : []),
-    ...(input.platform && !((input.client === 'codex' && input.platform === 'openai') || (input.client !== 'codex' && input.platform === 'anthropic'))
-      ? [`$env:SUB2API_SETUP_PLATFORM=${powerShellQuote(input.platform)}`]
-      : []),
-    ...(input.opencodeModels?.length
-      ? [`$env:SUB2API_SETUP_OPENCODE_MODELS=${powerShellQuote(input.opencodeModels.join(','))}`]
-      : []),
+  const childAssignments = [
+    `\`$env:SUB2API_SETUP_ENDPOINT=${endpointArg}`,
+    `\`$env:SUB2API_SETUP_API_KEY=${apiKeyArg}`,
+    `\`$env:SUB2API_SETUP_CLIENT=${powerShellQuote(input.client)}`,
+    `\`$env:SUB2API_SETUP_CODEX_WEBSOCKET=${powerShellQuote(input.client === 'codex' && input.codexWebsocket ? 'true' : 'false')}`,
+    `\`$env:SUB2API_SETUP_PLATFORM=${powerShellQuote(input.platform || '')}`,
+    `\`$env:SUB2API_SETUP_OPENCODE_MODELS=${powerShellQuote(input.opencodeModels?.join(',') || '')}`
   ].join('; ')
-  return `& { ${assignments}; irm ${powerShellQuote(scriptUrl)} | iex }`
+  const childCommand = `& { \`$ErrorActionPreference='Stop'; ${childAssignments}; \`$setupDir=Join-Path ([IO.Path]::GetTempPath()) ('sub2api-command-' + [guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Force -Path \`$setupDir | Out-Null; try { \`$setupScript=Join-Path \`$setupDir 'setup.ps1'; Invoke-WebRequest -UseBasicParsing -Uri ${powerShellQuote(scriptUrl)} -OutFile \`$setupScript; Get-Content -LiteralPath \`$setupScript -Raw -Encoding UTF8 | Invoke-Expression } finally { Remove-Item -LiteralPath \`$setupDir -Recurse -Force -ErrorAction SilentlyContinue } }`
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${childCommand}"`
 }
 
 export function resolveLocalSetupEndpoint(input: LocalSetupCommandInput): string {
