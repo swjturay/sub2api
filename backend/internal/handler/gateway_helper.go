@@ -267,7 +267,18 @@ func (h *ConcurrencyHelper) AcquireUserSlotWithWait(c *gin.Context, userID int64
 	return h.acquireUserSlotWithWaitTimeout(c, userID, maxConcurrency, maxConcurrencyWait, isStream, streamStarted)
 }
 
+// AcquireUserSlotWithWaitNoHeartbeat waits for a user slot without committing
+// an SSE response while admission is pending. OpenAI clients need the final
+// HTTP 429 and Retry-After headers to remain writable on timeout.
+func (h *ConcurrencyHelper) AcquireUserSlotWithWaitNoHeartbeat(c *gin.Context, userID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
+	return h.acquireUserSlotWithWaitTimeoutMode(c, userID, maxConcurrency, maxConcurrencyWait, isStream, streamStarted, false)
+}
+
 func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	return h.acquireUserSlotWithWaitTimeoutMode(c, userID, maxConcurrency, timeout, isStream, streamStarted, true)
+}
+
+func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeoutMode(c *gin.Context, userID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, emitHeartbeat bool) (func(), error) {
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately
@@ -294,7 +305,7 @@ func (h *ConcurrencyHelper) acquireUserSlotWithWaitTimeout(c *gin.Context, userI
 	defer h.DecrementWaitCount(ctx, userID)
 
 	// Need to wait - handle streaming ping if needed
-	releaseFunc, err = h.waitForSlotWithPingTimeout(c, "user", userID, maxConcurrency, timeout, isStream, streamStarted, false)
+	releaseFunc, err = h.waitForSlotWithPingTimeoutMode(c, "user", userID, maxConcurrency, timeout, isStream, streamStarted, false, emitHeartbeat)
 	if err != nil {
 		return nil, err
 	}
@@ -347,6 +358,12 @@ func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID
 	return h.waitForSlotWithPing(c, "account", accountID, maxConcurrency, isStream, streamStarted)
 }
 
+// AcquireAccountSlotWithWaitTimeoutNoHeartbeat is the OpenAI admission variant
+// that keeps the response uncommitted until a slot is acquired or rejected.
+func (h *ConcurrencyHelper) AcquireAccountSlotWithWaitTimeoutNoHeartbeat(c *gin.Context, accountID int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool) (func(), error) {
+	return h.waitForSlotWithPingTimeoutMode(c, "account", accountID, maxConcurrency, timeout, isStream, streamStarted, true, false)
+}
+
 // waitForSlotWithPing waits for a concurrency slot, sending ping events for streaming requests.
 // streamStarted pointer is updated when streaming begins (for proper error handling by caller).
 func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string, id int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
@@ -355,6 +372,14 @@ func (h *ConcurrencyHelper) waitForSlotWithPing(c *gin.Context, slotType string,
 
 // waitForSlotWithPingTimeout waits for a concurrency slot with a custom timeout.
 func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool) (func(), error) {
+	return h.waitForSlotWithPingTimeoutMode(c, slotType, id, maxConcurrency, timeout, isStream, streamStarted, tryImmediate, true)
+}
+
+func (h *ConcurrencyHelper) waitForSlotWithPingTimeoutNoHeartbeat(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool) (func(), error) {
+	return h.waitForSlotWithPingTimeoutMode(c, slotType, id, maxConcurrency, timeout, isStream, streamStarted, tryImmediate, false)
+}
+
+func (h *ConcurrencyHelper) waitForSlotWithPingTimeoutMode(c *gin.Context, slotType string, id int64, maxConcurrency int, timeout time.Duration, isStream bool, streamStarted *bool, tryImmediate bool, emitHeartbeat bool) (func(), error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 
@@ -376,7 +401,7 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 	}
 
 	// Determine if ping is needed (streaming + ping format defined)
-	needPing := isStream && h.pingFormat != ""
+	needPing := emitHeartbeat && isStream && h.pingFormat != ""
 
 	var flusher http.Flusher
 	if needPing {

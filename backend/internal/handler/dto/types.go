@@ -501,8 +501,6 @@ type UsageLog struct {
 	ReasoningEffort *string `json:"reasoning_effort,omitempty"`
 	// InboundEndpoint is the client-facing API endpoint path, e.g. /v1/chat/completions.
 	InboundEndpoint *string `json:"inbound_endpoint,omitempty"`
-	// UpstreamEndpoint is the normalized upstream endpoint path, e.g. /v1/responses.
-	UpstreamEndpoint *string `json:"upstream_endpoint,omitempty"`
 
 	GroupID        *int64 `json:"group_id"`
 	SubscriptionID *int64 `json:"subscription_id"`
@@ -524,15 +522,19 @@ type UsageLog struct {
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
 
-	BillingType  int8   `json:"billing_type"`
-	RequestType  string `json:"request_type"`
-	Stream       bool   `json:"stream"`
-	OpenAIWSMode bool   `json:"openai_ws_mode"`
+	BillingType int8   `json:"billing_type"`
+	RequestType string `json:"request_type"`
+	// ClientRequestType is the transport used by the client calling sub2api.
+	ClientRequestType *string `json:"client_request_type,omitempty"`
+	Stream            bool    `json:"stream"`
+	OpenAIWSMode      bool    `json:"openai_ws_mode"`
 	// NativeCompactionV2 is true only for requests positively identified at
 	// runtime as the native OpenAI remote compaction v2 wire.
 	NativeCompactionV2 bool `json:"native_compaction_v2"`
 	DurationMs         *int `json:"duration_ms"`
 	FirstTokenMs       *int `json:"first_token_ms"`
+	// OutputTokensPerSecond is output-token throughput after the first token.
+	OutputTokensPerSecond *float64 `json:"output_tokens_per_second,omitempty"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`
@@ -572,6 +574,8 @@ type UsageLog struct {
 // AdminUsageLog 是管理员接口使用的 usage log DTO（包含管理员字段）。
 type AdminUsageLog struct {
 	UsageLog
+	// UpstreamEndpoint is the normalized upstream endpoint path, e.g. /v1/responses.
+	UpstreamEndpoint *string `json:"upstream_endpoint,omitempty"`
 
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Omitted when no mapping was applied (requested model was used as-is).

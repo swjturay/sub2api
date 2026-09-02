@@ -668,11 +668,13 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		LongContextBillingApplied: l.LongContextBillingApplied,
 		BillingType:               l.BillingType,
 		RequestType:               requestType.String(),
+		ClientRequestType:         clientRequestTypeStringPtr(l.EffectiveClientRequestType()),
 		Stream:                    stream,
 		OpenAIWSMode:              openAIWSMode,
 		NativeCompactionV2:        l.NativeCompactionV2,
 		DurationMs:                l.DurationMs,
 		FirstTokenMs:              l.FirstTokenMs,
+		OutputTokensPerSecond:     usageOutputTokensPerSecond(l),
 		ImageCount:                l.ImageCount,
 		ImageSize:                 l.ImageSize,
 		ImageInputSize:            l.ImageInputSize,
@@ -714,9 +716,9 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		return nil
 	}
 	usageLog := usageLogFromServiceUser(l)
-	usageLog.UpstreamEndpoint = l.UpstreamEndpoint
 	return &AdminUsageLog{
 		UsageLog:                usageLog,
+		UpstreamEndpoint:        l.UpstreamEndpoint,
 		UpstreamModel:           l.UpstreamModel,
 		UpstreamReasoningEffort: adminUpstreamReasoningEffort(l),
 		UpstreamResponseModel:   l.UpstreamResponseModel,
@@ -761,6 +763,27 @@ func derefString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func usageOutputTokensPerSecond(l *service.UsageLog) *float64 {
+	if l == nil || l.OutputTokens <= 1 || l.DurationMs == nil || l.FirstTokenMs == nil || l.ImageCount > 0 || l.VideoCount > 0 {
+
+		return nil
+	}
+	generationMs := *l.DurationMs - *l.FirstTokenMs
+	if generationMs <= 0 {
+		return nil
+	}
+	value := float64(l.OutputTokens-1) * 1000 / float64(generationMs)
+	return &value
+}
+
+func clientRequestTypeStringPtr(requestType service.ClientRequestType) *string {
+	value := requestType.String()
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func UsageCleanupTaskFromService(task *service.UsageCleanupTask) *UsageCleanupTask {

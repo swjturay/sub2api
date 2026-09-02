@@ -655,6 +655,23 @@ Or set `GATEWAY_OPENAI_WS_MODE_ROUTER_V2_ENABLED=true` in the environment.
 Use `http_bridge` for client-WebSocket/upstream-HTTP operation when rolling out
 or mitigating upstream WebSocket issues.
 
+To keep an HTTP/SSE client contract while using the upstream WebSocket pool,
+enable the explicit HTTP-ingress bridge and select `ctx_pool` on the account:
+
+```yaml
+gateway:
+  openai_ws:
+    http_ingress_enabled: true
+```
+
+The equivalent environment variable is
+`GATEWAY_OPENAI_WS_HTTP_INGRESS_ENABLED=true`.
+
+This first-stage bridge applies only to streaming `POST /v1/responses`.
+`passthrough` remains the native downstream WebSocket mode, and
+`http_bridge` remains the reverse WebSocket-to-HTTP mode. Compact, Chat
+Completions, and Anthropic Messages requests keep their existing transports.
+
 #### Force OpenAI upstream HTTP/SSE
 
 When an egress proxy or network repeatedly reconnects OpenAI Responses

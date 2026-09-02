@@ -37,6 +37,8 @@ frontend/node_modules/
 frontend/dist/
 *.local
 *.tsbuildinfo
+**/__pycache__/
+*.pyc
 vite.config.d.ts
 vite.config.js.timestamp-*
 
@@ -124,6 +126,10 @@ CLAUDE.md
 scripts
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+!frontend/public/scripts/
+!frontend/public/scripts/**
+frontend/public/scripts/**/__pycache__/
+frontend/public/scripts/**/*.pyc
 .code-review-state
 #openspec/
 code-reviews/
@@ -143,6 +149,7 @@ docs/*
 !docs/channel-monitor-v2-safe-defaults.md
 !docs/legal/
 !docs/legal/*.md
+!docs/openai-http-ingress-ws.md
 !docs/screenshots/
 docs/screenshots/*
 !docs/screenshots/mobile-account-actions-menu.png

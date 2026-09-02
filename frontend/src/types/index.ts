@@ -1655,6 +1655,7 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2' | 'cyber' | 'live'
+export type UsageTransportType = 'unknown' | 'sync' | 'sse' | 'ws'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
@@ -1668,7 +1669,6 @@ export interface UsageLog {
   service_tier?: string | null
   reasoning_effort?: string | null
   inbound_endpoint?: string | null
-  upstream_endpoint?: string | null
 
   group_id: number | null
   subscription_id: number | null
@@ -1691,11 +1691,13 @@ export interface UsageLog {
   billing_type: number
 
   request_type?: UsageRequestType
+  client_request_type?: UsageTransportType | null
   stream: boolean
   openai_ws_mode?: boolean
   native_compaction_v2: boolean
   duration_ms: number | null
   first_token_ms: number | null
+  output_tokens_per_second?: number | null
 
   // 图片生成字段
   image_count: number
@@ -1733,6 +1735,7 @@ export interface UsageLogAccountSummary {
 }
 
 export interface AdminUsageLog extends UsageLog {
+  upstream_endpoint?: string | null
   upstream_model?: string | null
   upstream_reasoning_effort?: string | null
   upstream_response_model?: string | null

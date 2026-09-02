@@ -105,15 +105,32 @@
         </template>
 
         <template #cell-endpoint="{ row }">
-          <div class="max-w-[320px] space-y-1 text-xs">
-            <div class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.inbound') }}:</span>
-              <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
+          <div class="max-w-[320px] space-y-1.5 text-xs">
+            <div class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+              <span data-testid="client-transport" class="inline-flex min-w-12 shrink-0 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="transportBadgeClass(resolveClientTransport(row))">
+                {{ transportLabel(resolveClientTransport(row)) }}
+              </span>
+              <span class="break-all pt-0.5">{{ row.inbound_endpoint?.trim() || '-' }}</span>
             </div>
-            <div v-if="showUpstreamEndpoint" class="break-all text-gray-700 dark:text-gray-300">
-              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.upstream') }}:</span>
-              <span class="ml-1">{{ row.upstream_endpoint?.trim() || '-' }}</span>
+            <div v-if="audience === 'admin'" class="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+              <span data-testid="upstream-transport" class="inline-flex min-w-12 shrink-0 justify-center rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="transportBadgeClass(resolveUpstreamTransport(row))">
+                {{ transportLabel(resolveUpstreamTransport(row)) }}
+              </span>
+              <span v-if="showUpstreamEndpoint" class="break-all pt-0.5">{{ row.upstream_endpoint?.trim() || '-' }}</span>
             </div>
+          </div>
+        </template>
+
+        <template #cell-request_type="{ row }">
+          <div data-testid="request-type" class="flex flex-wrap items-center gap-1">
+            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="requestTypeBadgeClass(row)">
+              {{ requestTypeLabel(row) }}
+            </span>
+            <span
+              v-if="row.native_compaction_v2"
+              data-testid="native-compaction-badge"
+              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
+            >{{ t('usage.nativeCompactionV2') }}</span>
           </div>
         </template>
 
@@ -124,19 +141,17 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
-        <template #cell-stream="{ row }">
-          <div class="flex flex-wrap items-center gap-1">
-            <span data-testid="request-type-badge" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getRequestTypeBadgeClass(row)">
-              {{ getRequestTypeLabel(row) }}
-            </span>
-            <span
-              v-if="row.native_compaction_v2"
-              data-testid="native-compaction-badge"
-              class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
-            >
-              {{ t('usage.nativeCompactionV2') }}
-            </span>
-          </div>
+        <template #cell-service_tier="{ row }">
+          <span v-if="row.service_tier?.trim()" class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="serviceTierBadgeClass(row.service_tier)">
+            {{ getUsageServiceTierLabel(row.service_tier, t) }}
+          </span>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
+        <template #cell-output_token_throughput="{ row }">
+          <span class="whitespace-nowrap text-sm font-medium tabular-nums text-gray-700 dark:text-gray-300">
+            {{ formatOutputTokenThroughput(row.output_tokens_per_second) }}
+          </span>
         </template>
 
         <template #cell-billing_mode="{ row }">
@@ -520,8 +535,15 @@ import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
-import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
-import { resolveUsageRequestType } from '@/utils/usageRequestType'
+import { getUsageServiceTierLabel, normalizeUsageServiceTier } from '@/utils/usageServiceTier'
+import {
+  formatUsageRequestType,
+  formatUsageTransport,
+  resolveClientFacingUsageRequestType,
+  resolveClientTransport,
+  resolveUpstreamTransport,
+  resolveUsageRequestType,
+} from '@/utils/usageRequestType'
 import {
   LATENCY_BAR_CLASSES,
   LATENCY_BAR_FROM_CLASSES,
@@ -565,7 +587,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
-import type { AdminUsageLog } from '@/types'
+import type { AdminUsageLog, UsageTransportType } from '@/types'
 import type { Column } from '@/components/common/types'
 
 interface Props {
@@ -577,6 +599,7 @@ interface Props {
   defaultSortOrder?: 'asc' | 'desc'
   showAccountBilling?: boolean
   showUpstreamEndpoint?: boolean
+  audience?: 'admin' | 'user'
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -588,6 +611,7 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   showAccountBilling: true,
   showUpstreamEndpoint: true,
+  audience: 'admin',
   flat: false
 })
 const emit = defineEmits<{
@@ -600,6 +624,7 @@ const appStore = useAppStore()
 const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
+const audience = props.audience
 const ipGeoBatchLoading = ref(false)
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
@@ -676,24 +701,43 @@ const tokenTooltipVisible = ref(false)
 const tokenTooltipPosition = ref({ x: 0, y: 0 })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
 
-const getRequestTypeLabel = (row: AdminUsageLog): string => {
-  const requestType = resolveUsageRequestType(row)
-  if (requestType === 'cyber') return t('usage.cyber')
-  if (requestType === 'live') return t('usage.live')
-  if (requestType === 'ws_v2') return t('usage.ws')
-  if (requestType === 'stream') return t('usage.stream')
-  if (requestType === 'sync') return t('usage.sync')
-  return t('usage.unknown')
+const transportLabel = (transport: UsageTransportType): string => formatUsageTransport(transport, t, '-')
+
+const transportBadgeClass = (transport: UsageTransportType): string => {
+  if (transport === 'sse') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+  if (transport === 'ws') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
+  if (transport === 'sync') return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+  return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
 }
 
-const getRequestTypeBadgeClass = (row: AdminUsageLog): string => {
-  const requestType = resolveUsageRequestType(row)
+const displayedRequestType = (row: AdminUsageLog) => (
+  audience === 'user' ? resolveClientFacingUsageRequestType(row) : resolveUsageRequestType(row)
+)
+
+const requestTypeLabel = (row: AdminUsageLog): string => formatUsageRequestType({
+  request_type: displayedRequestType(row),
+}, t)
+
+const requestTypeBadgeClass = (row: AdminUsageLog): string => {
+  const requestType = displayedRequestType(row)
   if (requestType === 'cyber') return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
   if (requestType === 'live') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
   if (requestType === 'ws_v2') return 'bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200'
   if (requestType === 'stream') return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
   if (requestType === 'sync') return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
   return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200'
+}
+
+const serviceTierBadgeClass = (serviceTier?: string | null): string => {
+  const normalized = normalizeUsageServiceTier(serviceTier)
+  if (normalized === 'priority') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200'
+  if (normalized === 'flex') return 'bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200'
+  return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+}
+
+const formatOutputTokenThroughput = (value?: number | null): string => {
+  if (value == null || !Number.isFinite(value) || value <= 0) return '-'
+  return `${value.toFixed(1)} tok/s`
 }
 
 

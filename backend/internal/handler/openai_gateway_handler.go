@@ -689,10 +689,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
 		account := selection.Account
-		if previousResponseID != "" && requestPlatform == service.PlatformOpenAI && !account.IsOpenAIApiKey() {
+		httpIngressWS := h.gatewayService.IsOpenAIHTTPIngressWSBridgeEnabled(c, account, reqStream, requireCompact)
+		if previousResponseID != "" && requestPlatform == service.PlatformOpenAI && !account.IsOpenAIApiKey() && !httpIngressWS {
 			// The public Responses HTTP API supports previous_response_id on API-key
-			// accounts. OAuth/SetupToken upstreams do not, so keep searching instead
-			// of silently deleting continuation state from a mixed account pool.
+			// accounts. OAuth/SetupToken upstreams do not on HTTP, so keep searching
+			// unless this request is explicitly bridged to the account's WS pool.
 			failedAccountIDs[account.ID] = struct{}{}
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -810,6 +811,22 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			})
 		}
 		if err != nil {
+			if result != nil && result.ClientDisconnect {
+				reqLog.Info("openai.client_disconnected",
+					zap.Int64("account_id", account.ID),
+					zap.Error(err),
+				)
+				submitResponsesUsage(result)
+				return
+			}
+			if failoverClientGone(c) {
+				reqLog.Info("openai.client_disconnected",
+					zap.Int64("account_id", account.ID),
+					zap.Error(err),
+				)
+				submitResponsesUsage(result)
+				return
+			}
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
@@ -1914,13 +1931,27 @@ func (h *OpenAIGatewayHandler) acquireResponsesUserSlot(
 	reqLog *zap.Logger,
 ) (func(), bool) {
 	ctx := c.Request.Context()
-	userReleaseFunc, err := h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
+	var userReleaseFunc func()
+	var err error
+	if openAIConcurrencyWaitShouldEmitHeartbeat(c) {
+		userReleaseFunc, err = h.concurrencyHelper.AcquireUserSlotWithWait(c, userID, userConcurrency, reqStream, streamStarted)
+	} else {
+		userReleaseFunc, err = h.concurrencyHelper.AcquireUserSlotWithWaitNoHeartbeat(c, userID, userConcurrency, reqStream, streamStarted)
+	}
 	if err != nil {
 		reqLog.Warn("openai.user_slot_acquire_failed", zap.Error(err))
 		h.handleConcurrencyError(c, err, "user", *streamStarted)
 		return nil, false
 	}
 	return wrapReleaseOnDone(ctx, userReleaseFunc), true
+}
+
+// OpenAI Responses/Chat Completions clients need the HTTP status and
+// Retry-After header when admission fails. Anthropic Messages retains its
+// existing heartbeat behavior because its client contract tolerates waiting
+// SSE frames. All other OpenAI gateway paths are pre-stream admission paths.
+func openAIConcurrencyWaitShouldEmitHeartbeat(c *gin.Context) bool {
+	return GetInboundEndpoint(c) == EndpointMessages
 }
 
 // openAISlotAcquireResult 是账号槽位获取的三态结果。
@@ -2098,6 +2129,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
+		writeConcurrencyRetryAfter(c, &WaitQueueFullError{SlotType: "account"}, *streamStarted)
 		writeError(http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later")
 		return nil, openAISlotAcquireFailed
 	}
@@ -2111,14 +2143,26 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	}
 	defer releaseWait()
 
-	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-		c,
-		account.ID,
-		selection.WaitPlan.MaxConcurrency,
-		selection.WaitPlan.Timeout,
-		reqStream,
-		streamStarted,
-	)
+	var accountReleaseFunc func()
+	if openAIConcurrencyWaitShouldEmitHeartbeat(c) {
+		accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+			c,
+			account.ID,
+			selection.WaitPlan.MaxConcurrency,
+			selection.WaitPlan.Timeout,
+			reqStream,
+			streamStarted,
+		)
+	} else {
+		accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeoutNoHeartbeat(
+			c,
+			account.ID,
+			selection.WaitPlan.MaxConcurrency,
+			selection.WaitPlan.Timeout,
+			reqStream,
+			streamStarted,
+		)
+	}
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		status, errType, message := concurrencyErrorResponse(err, "account")
@@ -2840,6 +2884,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						ChannelUsageFields: turnUsageFields,
 						PricingAt:          turnRecordPricingAt,
 						CyberBlocked:       cyberBlocked,
+						ClientRequestType:  service.ClientRequestTypeWS,
 					}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", account.ID),
@@ -3179,6 +3224,7 @@ func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, stream
 // handleConcurrencyError handles concurrency-related acquire errors.
 func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
 	status, errType, message := concurrencyErrorResponse(err, slotType)
+	writeConcurrencyRetryAfter(c, err, streamStarted)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 }
 
@@ -3410,6 +3456,10 @@ func (h *OpenAIGatewayHandler) ensureOpenAIStreamReadErrorResponse(c *gin.Contex
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。
 func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarted bool) bool {
 	if c == nil || c.Writer == nil {
+		return false
+	}
+	if c.Request != nil && errors.Is(c.Request.Context().Err(), context.Canceled) {
+		failoverClientGone(c)
 		return false
 	}
 	// 先停 compact 心跳再读 Writer 状态，避免与心跳 goroutine 竞争。
