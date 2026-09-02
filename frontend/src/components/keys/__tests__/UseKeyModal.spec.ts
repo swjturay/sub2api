@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
@@ -42,9 +42,90 @@ function readBlobAsText(blob: Blob): Promise<string> {
 }
 
 describe('UseKeyModal', () => {
+  beforeEach(() => {
+    vi.stubGlobal('navigator', {
+      platform: 'Linux x86_64',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64)'
+    })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     saveAsMock.mockClear()
+  })
+
+  it('selects the Windows option for the current browser and remaps it when the Agent changes', async () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      userAgentData: { platform: 'Windows' }
+    })
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-windows-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    let systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[1].text()).toBe('Windows')
+    expect(systemTabs[1].classes()).toContain('border-primary-500')
+    expect(wrapper.text().toLowerCase()).toContain('%userprofile%\\.codex\\config.toml')
+
+    const claudeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.claudeCode')
+    )
+    expect(claudeTab).toBeDefined()
+    await claudeTab!.trigger('click')
+    await nextTick()
+
+    systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[2].text()).toBe('PowerShell')
+    expect(systemTabs[2].classes()).toContain('border-primary-500')
+  })
+
+  it('keeps macOS and Linux browsers on the Unix option', () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Linux x86_64',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64)'
+    })
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-linux-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[0].text()).toBe('macOS / Linux')
+    expect(systemTabs[0].classes()).toContain('border-primary-500')
+    expect(wrapper.text()).toContain('~/.codex/config.toml')
   })
 
   it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'composite'] as const)(

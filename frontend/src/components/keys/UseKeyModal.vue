@@ -326,6 +326,7 @@ import { fetchCodexModelsManifest } from '@/api/codex'
 import { fetchGatewayModels } from '@/api/models'
 import type { GroupPlatform } from '@/types'
 import { getModelsByPlatform } from '@/composables/useModelWhitelist'
+import { isWindowsDevice } from '@/utils/device'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
@@ -411,15 +412,22 @@ const defaultClientTab = computed(() => {
   return props.platform ? 'codex' : 'claude'
 })
 
+function defaultSystemTab(client: string): string {
+  if (!isWindowsDevice()) return 'unix'
+  return ['codex', 'codex-ws', 'grok', 'opencode'].includes(client) ? 'windows' : 'powershell'
+}
+
 watch(() => props.platform, () => {
-  activeTab.value = 'unix'
-  activeClientTab.value = defaultClientTab.value
+  const client = defaultClientTab.value
+  activeClientTab.value = client
+  activeTab.value = defaultSystemTab(client)
   codexAuthMode.value = 'legacy'
 }, { immediate: true })
 
 watch(() => props.show, (show) => {
   if (show) {
     codexAuthMode.value = 'legacy'
+    activeTab.value = defaultSystemTab(activeClientTab.value)
   } else {
     resetCodexModelManifest()
     resetOpenCodeModels()
@@ -433,8 +441,8 @@ watch(codexManifestContext, (context, previousContext) => {
 })
 
 // Reset shell tab when client changes
-watch(activeClientTab, () => {
-  activeTab.value = 'unix'
+watch(activeClientTab, (client) => {
+  activeTab.value = defaultSystemTab(client)
   copiedSetup.value = false
 })
 
