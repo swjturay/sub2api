@@ -345,6 +345,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
 import { fetchGatewayModels } from '@/api/models'
 import type { GroupPlatform } from '@/types'
+import { getModelsByPlatform } from '@/composables/useModelWhitelist'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
@@ -753,10 +754,32 @@ const openCodeModelPriority: Partial<Record<GroupPlatform, string[]>> = {
   composite: ['gpt-5.5', 'claude-sonnet-4-6', 'gemini-2.5-pro']
 }
 
+function fallbackOpenCodeModelIds(platform: GroupPlatform | 'antigravity-claude' | 'antigravity-gemini' | null): string[] {
+  if (platform === 'antigravity-claude') return getModelsByPlatform('antigravity').filter((id) => id.startsWith('claude-'))
+  if (platform === 'antigravity-gemini') return getModelsByPlatform('antigravity').filter((id) => id.startsWith('gemini-'))
+  if (platform === 'composite') {
+    return [...new Set([
+      ...getModelsByPlatform('openai'),
+      ...getModelsByPlatform('anthropic'),
+      ...getModelsByPlatform('gemini'),
+      ...getModelsByPlatform('antigravity'),
+      ...getModelsByPlatform('grok')
+    ])]
+  }
+  return platform ? getModelsByPlatform(platform) : []
+}
+
 function chooseOpenCodeDefaults(ids: string[]): string[] {
   const priority = props.platform ? (openCodeModelPriority[props.platform] || []) : []
   const preferred = priority.filter((id) => ids.includes(id))
-  return [...preferred, ...ids.filter((id) => !preferred.includes(id))].slice(0, 3)
+  return [...preferred, ...ids.filter((id) => !preferred.includes(id))]
+}
+
+function hasManualOpenCodeSelection(): boolean {
+  if (openCodeModelsState.value !== 'ready' || !selectedOpenCodeModelIds.value.length) return false
+  const available = new Set(openCodeAvailableModelIds.value)
+  const selected = new Set(selectedOpenCodeModelIds.value)
+  return selected.size !== available.size || [...available].some((id) => !selected.has(id))
 }
 
 async function loadOpenCodeModels() {
@@ -779,7 +802,10 @@ async function loadOpenCodeModels() {
       controller.signal
     )
     if (requestID !== openCodeModelsRequestID) return
-    const ids = result.map((item) => item.id)
+    const ids = [...new Set([
+      ...fallbackOpenCodeModelIds(props.platform),
+      ...result.map((item) => item.id)
+    ])]
     openCodeAvailableModelIds.value = ids
     selectedOpenCodeModelIds.value = chooseOpenCodeDefaults(ids)
     openCodeModelsState.value = 'ready'
@@ -885,20 +911,22 @@ const currentFiles = computed((): FileConfig[] => {
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
-        return [generateOpenCodeConfig('anthropic', apiBase, apiKey)]
+        return [generateOpenCodeConfig('anthropic', apiBase, apiKey, undefined, 'anthropic')]
       case 'openai':
-        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, 'openai')]
       case 'gemini':
-        return [generateOpenCodeConfig('gemini', geminiBase, apiKey)]
+        return [generateOpenCodeConfig('gemini', geminiBase, apiKey, undefined, 'gemini')]
       case 'antigravity':
         return [
-          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
-          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
+          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)', 'antigravity-claude'),
+          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)', 'antigravity-gemini')
         ]
       case 'grok':
-        return [generateOpenCodeConfig('grok', apiBase, apiKey)]
+        return [generateOpenCodeConfig('grok', apiBase, apiKey, undefined, 'grok')]
+      case 'composite':
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, 'composite')]
       default:
-        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, props.platform || 'openai')]
     }
   }
 
@@ -1477,25 +1505,14 @@ goals = true`
   return buildOpenAICodexFileConfigs(configDir, configContent, apiKey)
 }
 
-function filterOpenCodeModels<T>(models: Record<string, T>): Record<string, T> {
-  if (!selectedOpenCodeModelIds.value.length) return models
-  const selected = new Set(selectedOpenCodeModelIds.value)
-  const filtered = Object.fromEntries(Object.entries(models).filter(([id]) => selected.has(id))) as Record<string, T>
-  for (const id of selected) {
-    if (!(id in filtered)) filtered[id] = { name: id } as T
-  }
-  return filtered
-}
-
-function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: string, pathLabel?: string): FileConfig {
-  const provider: Record<string, any> = {
-    [platform]: {
-      options: {
-        baseURL: baseUrl,
-        apiKey
-      }
-    }
-  }
+function generateOpenCodeConfig(
+  platform: string,
+  baseUrl: string,
+  apiKey: string,
+  pathLabel?: string,
+  sourcePlatform: string = platform
+): FileConfig {
+  const provider: Record<string, any> = {}
   const openaiModels = {
     'gpt-5.2': {
       name: 'GPT-5.2',
@@ -1974,26 +1991,85 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
 
-  if (platform === 'gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].models = filterOpenCodeModels(geminiModels)
-  } else if (platform === 'anthropic') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-  } else if (platform === 'antigravity-claude') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-    provider[platform].name = 'Antigravity (Claude)'
-    provider[platform].models = filterOpenCodeModels(claudeModels)
-  } else if (platform === 'antigravity-gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].name = 'Antigravity (Gemini)'
-    provider[platform].models = filterOpenCodeModels(antigravityGeminiModels)
-  } else if (platform === 'openai') {
-    provider[platform].models = filterOpenCodeModels(openaiModels)
-  } else if (platform === 'grok') {
-    // Custom provider pointing at Sub2API OpenAI-compatible Responses/Chat endpoints.
-    provider[platform].npm = '@ai-sdk/openai-compatible'
-    provider[platform].name = 'Grok via Sub2API'
-    provider[platform].models = filterOpenCodeModels(grokModels)
+  const modelCatalogs: Record<string, Record<string, any>> = {
+    openai: openaiModels,
+    anthropic: claudeModels,
+    gemini: geminiModels,
+    'antigravity-claude': claudeModels,
+    'antigravity-gemini': antigravityGeminiModels,
+    grok: grokModels
+  }
+  const allModelMetadata = Object.assign({}, openaiModels, claudeModels, antigravityGeminiModels, geminiModels, grokModels)
+  const fallbackIds = fallbackOpenCodeModelIds(sourcePlatform as GroupPlatform)
+  const discoveredIds = openCodeAvailableModelIds.value
+  const defaultIds = [...new Set([...fallbackIds, ...discoveredIds])]
+  const manualSelection = hasManualOpenCodeSelection()
+  const modelIds = manualSelection ? selectedOpenCodeModelIds.value : defaultIds
+  const groups = new Map<string, string[]>()
+
+  const providerFamilyForModel = (model: string): string => {
+    const normalized = model.trim().toLowerCase().replace(/^models\//, '')
+    const slash = normalized.indexOf('/')
+    const qualifiedProvider = slash > 0 ? normalized.slice(0, slash) : ''
+    const value = slash > 0 ? normalized.slice(slash + 1) : normalized
+    if (sourcePlatform === 'anthropic' || sourcePlatform === 'antigravity-claude') return 'anthropic'
+    if (sourcePlatform === 'gemini' || sourcePlatform === 'antigravity-gemini') return 'gemini'
+    if (sourcePlatform === 'grok') return 'grok'
+    if (sourcePlatform === 'deepseek') return 'deepseek'
+    if (qualifiedProvider === 'anthropic' || qualifiedProvider === 'claude' || value.startsWith('claude')) return 'anthropic'
+    if (qualifiedProvider === 'google' || qualifiedProvider === 'gemini' || value.startsWith('gemini')) return 'gemini'
+    if (qualifiedProvider === 'xai' || qualifiedProvider === 'grok' || value.startsWith('grok')) return 'grok'
+    if (qualifiedProvider === 'kimi' || qualifiedProvider === 'moonshot' || value.startsWith('kimi-') || value.startsWith('moonshot-')) return 'kimi'
+    if (qualifiedProvider === 'zhipu' || qualifiedProvider === 'glm' || value.startsWith('glm-')) return 'zhipu'
+    if (qualifiedProvider === 'deepseek' || value.startsWith('deepseek-')) return 'deepseek'
+    return 'openai'
+  }
+
+  const npmForFamily: Record<string, string> = {
+    openai: '@ai-sdk/openai',
+    anthropic: '@ai-sdk/anthropic',
+    gemini: '@ai-sdk/google',
+    grok: '@ai-sdk/openai-compatible',
+    kimi: '@ai-sdk/openai-compatible',
+    zhipu: '@ai-sdk/openai-compatible',
+    deepseek: '@ai-sdk/openai-compatible'
+  }
+  const baseURLForFamily = (family: string): string => {
+    if (family !== 'gemini') return baseUrl
+    const root = baseUrl.replace(/\/v1beta$|\/v1$/i, '')
+    return `${root}/v1beta`
+  }
+
+  for (const modelId of modelIds) {
+    const family = providerFamilyForModel(modelId)
+    const ids = groups.get(family) || []
+    ids.push(modelId)
+    groups.set(family, ids)
+  }
+
+  for (const [family, ids] of groups) {
+    const providerId = `shared-ai-${family}`
+    const models = Object.fromEntries(ids.map((id) => [id, allModelMetadata[id] || { name: id }]))
+    provider[providerId] = {
+      npm: npmForFamily[family] || '@ai-sdk/openai-compatible',
+      name: `Shared AI ${family}`,
+      options: {
+        baseURL: baseURLForFamily(family),
+        apiKey
+      },
+      models
+    }
+  }
+
+  if (!groups.size) {
+    const family = sourcePlatform === 'composite' ? 'openai' : providerFamilyForModel('')
+    const catalog = modelCatalogs[platform] || openaiModels
+    provider[`shared-ai-${family}`] = {
+      npm: npmForFamily[family] || '@ai-sdk/openai-compatible',
+      name: `Shared AI ${family}`,
+      options: { baseURL: baseURLForFamily(family), apiKey },
+      models: catalog
+    }
   }
 
   const agent =

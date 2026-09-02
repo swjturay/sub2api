@@ -20,7 +20,34 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCRIPT_VERSION = "2026.08.31"
+SCRIPT_VERSION = "2026.09.01"
+DEFAULT_OPENCODE_MODEL_IDS = {
+    "openai": [
+        "gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna",
+        "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark",
+        "codex-auto-review", "gpt-5.2", "gpt-image-1", "gpt-image-1.5", "gpt-image-2",
+    ],
+    "anthropic": [
+        "claude-fable-5", "claude-opus-4-5-20251101", "claude-opus-4-6",
+        "claude-opus-4-7", "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5",
+        "claude-sonnet-4-6", "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001",
+    ],
+    "gemini": [
+        "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-image",
+        "gemini-2.5-pro", "gemini-3.5-flash", "gemini-3-flash-preview",
+        "gemini-3-pro-preview", "gemini-3.1-pro-preview", "gemini-3.1-flash-image",
+    ],
+    "grok": [
+        "grok-4.5", "grok-build-0.1", "grok-4.20-multi-agent-0309",
+        "grok-4.3", "grok-composer-2.5-fast",
+    ],
+}
+DEFAULT_OPENCODE_MODEL_IDS["composite"] = list(dict.fromkeys(
+    DEFAULT_OPENCODE_MODEL_IDS["openai"]
+    + DEFAULT_OPENCODE_MODEL_IDS["anthropic"]
+    + DEFAULT_OPENCODE_MODEL_IDS["gemini"]
+    + DEFAULT_OPENCODE_MODEL_IDS["grok"]
+))
 BACKUP_RE = re.compile(r"^(?P<original>.+)\.sub2api-backup-(?P<stamp>\d{8}-\d{6})$")
 TOML_SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
 TOML_KEY_RE = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*=")
@@ -87,7 +114,11 @@ def discover_opencode_models(endpoint: str, api_key: str, platform: str) -> dict
                 if isinstance(item, dict) and (item.get("id") or item.get("name"))
             ]
         except (OSError, ValueError, urllib.error.URLError):
-            return {}
+            ids = list(DEFAULT_OPENCODE_MODEL_IDS.get(platform, DEFAULT_OPENCODE_MODEL_IDS["openai"]))
+        else:
+            ids = list(dict.fromkeys(
+                DEFAULT_OPENCODE_MODEL_IDS.get(platform, []) + ids
+            ))
 
     priority = {
         "openai": ["gpt-5.5", "gpt-5.6", "gpt-5.4-mini"],
@@ -101,7 +132,7 @@ def discover_opencode_models(endpoint: str, api_key: str, platform: str) -> dict
     unique = list(dict.fromkeys(ids))
     ordered = [item for item in priority.get(platform, []) if item in unique]
     ordered.extend(item for item in unique if item not in ordered)
-    return {item: {"name": item} for item in ordered[:3]}
+    return {item: {"name": item} for item in ordered}
 
 
 def fetch_codex_model_catalog(endpoint: str, api_key: str) -> str | None:
@@ -122,16 +153,47 @@ def fetch_codex_model_catalog(endpoint: str, api_key: str) -> str | None:
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
-def provider_name(platform: str) -> str:
+def model_family(model: str, platform: str) -> str:
+    normalized = model.strip().lower().removeprefix("models/")
+    qualified, separator, value = normalized.partition("/")
+    if not separator:
+        value = qualified
+    if platform in {"anthropic", "antigravity-claude"}:
+        return "anthropic"
+    if platform in {"gemini", "antigravity-gemini"}:
+        return "gemini"
+    if platform == "grok":
+        return "grok"
+    if platform == "deepseek":
+        return "deepseek"
+    if qualified in {"anthropic", "claude"} or value.startswith("claude"):
+        return "anthropic"
+    if qualified in {"google", "gemini"} or value.startswith("gemini"):
+        return "gemini"
+    if qualified in {"xai", "grok"} or value.startswith("grok"):
+        return "grok"
+    if qualified in {"kimi", "moonshot"} or value.startswith(("kimi-", "moonshot-")):
+        return "kimi"
+    if qualified in {"zhipu", "glm", "bigmodel"} or value.startswith("glm-"):
+        return "zhipu"
+    if qualified == "deepseek" or value.startswith("deepseek-"):
+        return "deepseek"
+    return "openai"
+
+
+def opencode_provider_endpoint(endpoint: str, family: str) -> str:
+    if family != "gemini":
+        return endpoint
+    root = re.sub(r"/v1beta$|/v1$", "", endpoint.rstrip("/"), flags=re.IGNORECASE)
+    return root + "/v1beta"
+
+
+def opencode_provider_npm(family: str) -> str:
     return {
-        "anthropic": "anthropic",
-        "openai": "openai",
-        "gemini": "gemini",
-        "antigravity": "antigravity-claude",
-        "grok": "grok",
-        "deepseek": "openai",
-        "composite": "openai",
-    }.get(platform, "openai")
+        "openai": "@ai-sdk/openai",
+        "anthropic": "@ai-sdk/anthropic",
+        "gemini": "@ai-sdk/google",
+    }.get(family, "@ai-sdk/openai-compatible")
 
 
 def normalize_endpoint(endpoint: str, client: str, platform: str) -> str:
@@ -292,18 +354,42 @@ def claude_update(path: Path, endpoint: str, api_key: str) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
 
-def opencode_update(path: Path, endpoint: str, api_key: str, platform: str, models: dict[str, Any]) -> str:
+def opencode_update(
+    path: Path,
+    endpoint: str,
+    api_key: str,
+    platform: str,
+    models: dict[str, Any],
+    manual_selection: bool = False,
+) -> str:
     value = load_json_object(path)
     providers = value.setdefault("provider", {})
     if not isinstance(providers, dict):
         fail(f"{path} 的 provider 必须是 JSON 对象")
-    name = provider_name(platform)
-    provider: dict[str, Any] = {
-        "options": {"baseURL": endpoint, "apiKey": api_key},
-    }
-    if models:
-        provider["models"] = models
-    providers[name] = provider
+    groups: dict[str, dict[str, Any]] = {}
+    for model, metadata in models.items():
+        family = model_family(model, platform)
+        groups.setdefault(family, {})[model] = metadata
+
+    for family, family_models in groups.items():
+        provider_name = f"shared-ai-{family}"
+        providers[provider_name] = {
+            "npm": opencode_provider_npm(family),
+            "name": f"Shared AI {family}",
+            "options": {
+                "baseURL": opencode_provider_endpoint(endpoint, family),
+                "apiKey": api_key,
+            },
+            "models": family_models,
+        }
+
+    legacy_names = {"openai", "anthropic", "gemini", "grok", "antigravity-claude", "antigravity-gemini"}
+    legacy_endpoints = {endpoint, opencode_provider_endpoint(endpoint, "gemini")}
+    for legacy_name in legacy_names:
+        existing = providers.get(legacy_name)
+        existing_options = existing.get("options") if isinstance(existing, dict) else None
+        if isinstance(existing_options, dict) and existing_options.get("baseURL") in legacy_endpoints:
+            providers.pop(legacy_name, None)
     value.setdefault("$schema", "https://opencode.ai/config.json")
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
 
@@ -379,7 +465,14 @@ def make_targets(client: str, endpoint: str, api_key: str, platform: str, models
     if client == "claude":
         return {root / ".claude" / "settings.json": claude_update(root / ".claude" / "settings.json", endpoint, api_key)}
     if client == "opencode":
-        return {root / ".config" / "opencode" / "opencode.json": opencode_update(root / ".config" / "opencode" / "opencode.json", endpoint, api_key, platform, models)}
+        return {root / ".config" / "opencode" / "opencode.json": opencode_update(
+            root / ".config" / "opencode" / "opencode.json",
+            endpoint,
+            api_key,
+            platform,
+            models,
+            bool(os.environ.get("SUB2API_SETUP_OPENCODE_MODELS", "").strip()),
+        )}
     mode = os.environ.get("SUB2API_SETUP_CODEX_AUTH_MODE", "api-key").strip() or "api-key"
     websocket = os.environ.get("SUB2API_SETUP_CODEX_WEBSOCKET", "false").lower() == "true"
     codex_path = root / ".codex" / "config.toml"

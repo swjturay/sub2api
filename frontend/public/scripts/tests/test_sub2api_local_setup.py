@@ -23,7 +23,7 @@ class LocalSetupTests(unittest.TestCase):
             self.assertEqual(result["env"]["CUSTOM"], "keep")
             self.assertEqual(result["env"]["ANTHROPIC_AUTH_TOKEN"], "sk-new")
 
-    def test_opencode_update_replaces_only_target_provider(self):
+    def test_opencode_update_uses_shared_provider_for_openai_models(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "opencode.json"
             path.write_text(json.dumps({"provider": {"other": {"options": {"apiKey": "keep"}}}}), encoding="utf-8")
@@ -35,8 +35,32 @@ class LocalSetupTests(unittest.TestCase):
                 {"gpt-test": {"name": "Test"}},
             ))
             self.assertEqual(result["provider"]["other"]["options"]["apiKey"], "keep")
-            self.assertEqual(result["provider"]["openai"]["options"]["apiKey"], "sk-new")
-            self.assertIn("gpt-test", result["provider"]["openai"]["models"])
+            self.assertEqual(result["provider"]["shared-ai-openai"]["options"]["apiKey"], "sk-new")
+            self.assertEqual(result["provider"]["shared-ai-openai"]["npm"], "@ai-sdk/openai")
+            self.assertIn("gpt-test", result["provider"]["shared-ai-openai"]["models"])
+            self.assertNotIn("openai", result["provider"])
+
+    def test_opencode_update_groups_composite_models_by_provider(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "opencode.json"
+            result = json.loads(MODULE.opencode_update(
+                path,
+                "https://api.example.test/v1",
+                "sk-new",
+                "composite",
+                {
+                    "gpt-5.5": {"name": "gpt-5.5"},
+                    "claude-sonnet-4-6": {"name": "claude-sonnet-4-6"},
+                    "gemini-2.5-pro": {"name": "gemini-2.5-pro"},
+                },
+            ))
+
+        providers = result["provider"]
+        self.assertEqual(set(providers), {"shared-ai-openai", "shared-ai-anthropic", "shared-ai-gemini"})
+        self.assertEqual(providers["shared-ai-openai"]["npm"], "@ai-sdk/openai")
+        self.assertEqual(providers["shared-ai-anthropic"]["npm"], "@ai-sdk/anthropic")
+        self.assertEqual(providers["shared-ai-gemini"]["npm"], "@ai-sdk/google")
+        self.assertEqual(providers["shared-ai-gemini"]["options"]["baseURL"], "https://api.example.test/v1beta")
 
     def test_codex_update_uses_nested_provider_section_and_valid_toml(self):
         with tempfile.TemporaryDirectory() as root:

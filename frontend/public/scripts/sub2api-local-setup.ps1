@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$scriptVersion = '2026.08.31'
+$scriptVersion = '2026.09.01'
 $pythonVersion = '3.14.7+20260825'
 $pythonAsset = 'cpython-3.14.7+20260825-x86_64-pc-windows-msvc-install_only.tar.gz'
 $pythonSha256 = 'a8a93fcf897f4c6ea4d120cf4a7ee4f98779d33a432a65b1af36a589c2f3d36c'

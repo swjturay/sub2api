@@ -138,7 +138,7 @@ export default {
         copiedToast: '一键配置命令已复制',
         osTitle: '选择操作系统',
         secretWarning: '命令中包含当前 API 密钥，请勿粘贴到公共聊天、工单或共享终端。',
-        openCodeModelsDescription: '可选的 OpenCode 模型（默认推荐最多 3 个）',
+        openCodeModelsDescription: '可选的 OpenCode 模型（默认使用完整目录；取消选择后生成 shared-ai-* provider）',
         modelsFetch: '获取可用模型',
         modelsRefresh: '刷新模型',
         modelsError: '暂时无法读取可用模型，仍可生成基础配置。',

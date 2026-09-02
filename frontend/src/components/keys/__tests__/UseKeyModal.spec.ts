@@ -8,6 +8,13 @@ const { copyToClipboardMock, saveAsMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({
+    global: {
+      t: (key: string) => key,
+      locale: { value: 'en' },
+      setLocaleMessage: vi.fn()
+    }
+  }),
   useI18n: () => ({
     t: (key: string) => key
   })
@@ -163,18 +170,18 @@ describe('UseKeyModal', () => {
     await nextTick()
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
-    expect(parsed.provider.grok.npm).toBe('@ai-sdk/openai-compatible')
-    expect(parsed.provider.grok.name).toBe('Grok via Sub2API')
-    expect(parsed.provider.grok.options).toEqual({
+    expect(parsed.provider['shared-ai-grok'].npm).toBe('@ai-sdk/openai-compatible')
+    expect(parsed.provider['shared-ai-grok'].name).toBe('Shared AI grok')
+    expect(parsed.provider['shared-ai-grok'].options).toEqual({
       baseURL: 'https://example.com/v1',
       apiKey: 'sk-grok-test'
     })
-    expect(parsed.provider.grok.models['grok-4.5']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
-    expect(parsed.provider.grok.models['grok-build-0.1']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-4.20-multi-agent-0309']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-composer-2.5-fast']).toBeDefined()
-    expect(parsed.provider.grok.models['gpt-5.6']).toBeUndefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.5']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.5'].limit.context).toBe(500000)
+    expect(parsed.provider['shared-ai-grok'].models['grok-build-0.1']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.20-multi-agent-0309']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-composer-2.5-fast']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['gpt-5.6']).toBeUndefined()
   })
 
   it('renders copyable Claude Code setup through the Grok Messages gateway', async () => {
@@ -469,9 +476,10 @@ describe('UseKeyModal', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid^="local-setup-os-"]')).toHaveLength(2)
-    expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(2)
-    expect(wrapper.findAll('input[type="checkbox"]')[1].element).toHaveProperty('checked', true)
-    await wrapper.findAll('input[type="checkbox"]')[1].setValue(false)
+    const modelCheckboxes = wrapper.find('[data-testid="local-setup"]').findAll('input[type="checkbox"]')
+    expect(modelCheckboxes.length).toBeGreaterThan(2)
+    expect(wrapper.get('input[value="gpt-custom"]').element).toHaveProperty('checked', true)
+    await wrapper.get('input[value="gpt-custom"]').setValue(false)
 
     await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
     expect(copyToClipboardMock).toHaveBeenCalledWith(
@@ -673,13 +681,50 @@ describe('UseKeyModal', () => {
     await nextTick()
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
-    const models = parsed.provider.openai.models
+    const models = parsed.provider['shared-ai-openai'].models
     for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
       expect(models[model]).toBeDefined()
       expect(models[model].variants).toHaveProperty('max')
       expect(models[model].variants).toHaveProperty('xhigh')
     }
     expect(models['gpt-5.6'].name).toBe('GPT-5.6 (Sol)')
+  })
+
+  it('uses shared-ai providers for Composite OpenCode models', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-composite-opencode-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const parsed = JSON.parse(wrapper.find('pre code').text())
+    expect(parsed.provider.openai).toBeUndefined()
+    expect(parsed.provider['shared-ai-openai'].npm).toBe('@ai-sdk/openai')
+    expect(parsed.provider['shared-ai-anthropic'].npm).toBe('@ai-sdk/anthropic')
+    expect(parsed.provider['shared-ai-gemini'].npm).toBe('@ai-sdk/google')
+    expect(parsed.provider['shared-ai-openai'].models['gpt-5.5']).toBeDefined()
+    expect(parsed.provider['shared-ai-anthropic'].models['claude-sonnet-4-6']).toBeDefined()
+    expect(parsed.provider['shared-ai-gemini'].models['gemini-2.5-pro']).toBeDefined()
   })
 
   it('renders Claude Fable 5 OpenCode config with adaptive thinking', async () => {
@@ -712,16 +757,50 @@ describe('UseKeyModal', () => {
 
     const claudeConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
-      .find((content) => content.includes('"antigravity-claude"'))
+      .find((content) => content.includes('"shared-ai-anthropic"'))
 
     expect(claudeConfig).toBeDefined()
     const parsed = JSON.parse(claudeConfig!)
-    const fable = parsed.provider['antigravity-claude'].models['claude-fable-5']
+    const fable = parsed.provider['shared-ai-anthropic'].models['claude-fable-5']
 
     expect(fable.name).toBe('Claude Fable 5')
     expect(fable.limit).toEqual({ context: 1048576, output: 128000 })
     expect(fable.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
+  })
+
+  it('keeps Antigravity Gemini fallback models in the shared-ai-gemini provider', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-antigravity-gemini-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'antigravity'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const configs = wrapper.findAll('pre code').map((code) => JSON.parse(code.text()))
+    const geminiConfig = configs.find((config) => config.provider['shared-ai-gemini'])
+    expect(geminiConfig).toBeDefined()
+    expect(geminiConfig.provider['shared-ai-gemini'].models['gemini-3.1-pro-high']).toBeDefined()
+    expect(geminiConfig.provider['shared-ai-gemini'].models['claude-fable-5']).toBeUndefined()
   })
 
   // Scenario: API Key users can fetch a routed group catalog and reference it from config.toml.

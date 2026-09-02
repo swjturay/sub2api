@@ -139,7 +139,7 @@ export default {
         copiedToast: 'Local setup command copied',
         osTitle: 'Operating system',
         secretWarning: 'The command contains this API key. Do not paste it into public chats, tickets, or shared terminals.',
-        openCodeModelsDescription: 'OpenCode models (up to 3 recommendations selected by default)',
+        openCodeModelsDescription: 'OpenCode models (the full catalog is used by default; a selection creates shared-ai-* providers)',
         modelsFetch: 'Fetch available models',
         modelsRefresh: 'Refresh models',
         modelsError: 'Available models could not be loaded. You can still generate the base configuration.',
