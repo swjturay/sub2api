@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCRIPT_VERSION = "2026.09.01"
+SCRIPT_VERSION = "2026.09.02"
 DEFAULT_OPENCODE_MODEL_IDS = {
     "openai": [
         "gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna",
@@ -415,12 +415,18 @@ def codex_update(
         "supports_standalone_web_search": "true",
     }
     remove: set[str] = set()
-    if routed or mode == "env":
+    if mode == "env":
         values.update({
             "requires_openai_auth": "false",
             "env_key": toml_string("SUB2API_API_KEY"),
         })
         remove.update({"experimental_bearer_token", "http_headers"})
+    elif routed:
+        values.update({
+            "requires_openai_auth": "false",
+            "experimental_bearer_token": toml_string(api_key),
+        })
+        remove.update({"env_key", "http_headers"})
     elif mode == "api-key":
         values.update({
             "requires_openai_auth": "false",

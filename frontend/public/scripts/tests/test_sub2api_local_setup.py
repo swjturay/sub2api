@@ -110,6 +110,25 @@ class LocalSetupTests(unittest.TestCase):
         self.assertTrue(parsed["features"]["image_generation"])
         self.assertTrue(parsed["features"]["goals"])
 
+    def test_routed_codex_writes_the_api_key_directly(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "config.toml"
+            result = MODULE.codex_update(
+                path,
+                "https://api.example.test/v1",
+                "sk-routed",
+                "composite",
+                "api-key",
+                False,
+            )
+
+        parsed = __import__("tomllib").loads(result)
+        provider = parsed["model_providers"]["sub2api"]
+        self.assertEqual(provider["experimental_bearer_token"], "sk-routed")
+        self.assertFalse(provider["requires_openai_auth"])
+        self.assertNotIn("env_key", provider)
+        self.assertNotIn("http_headers", provider)
+
     def test_upsert_rejects_duplicate_managed_toml_keys(self):
         with self.assertRaises(MODULE.SetupError):
             MODULE.upsert_toml_values(

@@ -51,6 +51,29 @@
           </nav>
         </div>
 
+        <!-- Shared OS/Shell Tabs -->
+        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
+          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
+            <button
+              v-for="tab in currentTabs"
+              :key="tab.id"
+              type="button"
+              @click="activeTab = tab.id"
+              :class="[
+                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeTab === tab.id
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              ]"
+            >
+              <span class="flex items-center gap-2">
+                <component :is="tab.icon" class="w-4 h-4" />
+                {{ tab.label }}
+              </span>
+            </button>
+          </nav>
+        </div>
+
         <section
           v-if="localSetupSupported"
           data-testid="local-setup"
@@ -63,26 +86,6 @@
             <p class="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
               {{ t('keys.useKeyModal.localSetup.description') }}
             </p>
-          </div>
-
-          <div class="mt-3 flex flex-wrap gap-2" role="radiogroup" :aria-label="t('keys.useKeyModal.localSetup.osTitle')">
-            <button
-              v-for="os in localSetupOSOptions"
-              :key="os.id"
-              type="button"
-              role="radio"
-              :data-testid="`local-setup-os-${os.id}`"
-              :aria-checked="setupOS === os.id"
-              :class="[
-                'rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                setupOS === os.id
-                  ? 'border-primary-500 bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
-                  : 'border-gray-200 bg-transparent text-gray-600 hover:border-primary-300 dark:border-dark-600 dark:text-dark-300'
-              ]"
-              @click="setupOS = os.id"
-            >
-              {{ os.label }}
-            </button>
           </div>
 
           <div v-if="activeClientTab === 'opencode'" class="mt-3 border-t border-primary-100 pt-3 dark:border-primary-900/50">
@@ -189,29 +192,6 @@
             <Icon name="exclamationCircle" size="sm" class="mt-0.5 flex-shrink-0" />
             <p>{{ t('keys.useKeyModal.openai.authModeApiKeyRestartNotice') }}</p>
           </div>
-        </div>
-
-        <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
-            <button
-              v-for="tab in currentTabs"
-              :key="tab.id"
-              type="button"
-              @click="activeTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
-            >
-              <span class="flex items-center gap-2">
-                <component :is="tab.icon" class="w-4 h-4" />
-                {{ tab.label }}
-              </span>
-            </button>
-          </nav>
         </div>
 
         <!-- Code Blocks (Stacked for multi-file platforms) -->
@@ -394,7 +374,6 @@ const copiedIndex = ref<number | null>(null)
 const copiedSetup = ref(false)
 const activeTab = ref<string>('unix')
 const activeClientTab = ref<string>('claude')
-const setupOS = ref<LocalSetupOS>('unix')
 type CodexAuthMode = 'legacy' | 'api-key'
 const codexAuthMode = ref<CodexAuthMode>('legacy')
 type CodexModelManifestState = 'idle' | 'loading' | 'ready' | 'error'
@@ -409,11 +388,6 @@ const openCodeAvailableModelIds = ref<string[]>([])
 const selectedOpenCodeModelIds = ref<string[]>([])
 let openCodeModelsController: AbortController | null = null
 let openCodeModelsRequestID = 0
-
-const localSetupOSOptions: Array<{ id: LocalSetupOS; label: string }> = [
-  { id: 'unix', label: 'macOS / Linux' },
-  { id: 'windows', label: 'Windows PowerShell' }
-]
 
 const showCodexModelCatalog = computed(() =>
   props.show &&
@@ -441,7 +415,6 @@ watch(() => props.platform, () => {
   activeTab.value = 'unix'
   activeClientTab.value = defaultClientTab.value
   codexAuthMode.value = 'legacy'
-  setupOS.value = 'unix'
 }, { immediate: true })
 
 watch(() => props.show, (show) => {
@@ -607,20 +580,20 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
-
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
   (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws')
 )
 
 const currentTabs = computed(() => {
-  if (!showShellTabs.value) return []
-  if (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws' || activeClientTab.value === 'grok') {
+  if (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws' || activeClientTab.value === 'grok' || activeClientTab.value === 'opencode') {
     return openaiTabs
   }
   return shellTabs
 })
+
+const showShellTabs = computed(() => currentTabs.value.length > 0)
+const localSetupOS = computed<LocalSetupOS>(() => activeTab.value === 'unix' ? 'unix' : 'windows')
 
 const platformDescription = computed(() => {
   if (activeClientTab.value === 'codex' &&
@@ -1332,29 +1305,12 @@ image_edit_model_override = "grok-imagine-edit"
 }
 
 function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
-  // Codex config reference: wire_api = "responses" only; prefer env_key over experimental_bearer_token.
+  // Codex config reference: wire_api = "responses" only.
   // Non-OpenAI gateways should set supports_websockets = false (HTTP/SSE).
   const shell = activeTab.value
   const isWindowsPath = shell === 'windows' || shell === 'cmd' || shell === 'powershell'
   const configDir = isWindowsPath ? '%userprofile%\\.codex' : '~/.codex'
   const model = selectCodexCatalogModel('grok-4.5')
-
-  let envPath: string
-  let envContent: string
-  switch (shell) {
-    case 'cmd':
-      envPath = 'Command Prompt'
-      envContent = `set SUB2API_API_KEY=${apiKey}`
-      break
-    case 'powershell':
-    case 'windows':
-      envPath = 'PowerShell'
-      envContent = `$env:SUB2API_API_KEY="${apiKey}"`
-      break
-    default:
-      envPath = 'Terminal'
-      envContent = `export SUB2API_API_KEY="${apiKey}"`
-  }
 
   const configContent = `# Codex CLI → Sub2API Grok group
 # Docs: Codex config reference (model_providers.*, wire_api = "responses")
@@ -1376,10 +1332,7 @@ model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
 [model_providers.sub2api]
 name = "Sub2API Grok"
 base_url = "${baseUrl}"
-# Prefer env_key (variable NAME). Do not combine with experimental_bearer_token.
-env_key = "SUB2API_API_KEY"
-# Fallback only if you cannot set env (discouraged — keeps secret on disk):
-# experimental_bearer_token = "${apiKey}"
+experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 # API-key providers: do not require ChatGPT OAuth login
 requires_openai_auth = false
@@ -1390,14 +1343,11 @@ supports_websockets = false
 # [features]
 # goals = true`
 
-  return [
-    { path: envPath, content: envContent },
-    {
-      path: joinConfigPath(configDir, 'config.toml', isWindowsPath),
-      content: configContent,
-      hint: t('keys.useKeyModal.grok.codexConfigTomlHint')
-    }
-  ]
+  return [{
+    path: joinConfigPath(configDir, 'config.toml', isWindowsPath),
+    content: configContent,
+    hint: t('keys.useKeyModal.grok.codexConfigTomlHint')
+  }]
 }
 
 function generateRoutedCodexFiles(
@@ -1432,10 +1382,6 @@ function generateRoutedCodexFiles(
     composite: 'Composite'
   }
   const label = labels[platform]
-  const envContent = isWindows
-    ? `$env:SUB2API_API_KEY="${apiKey}"`
-    : `export SUB2API_API_KEY="${apiKey}"`
-
   const configContent = `# Codex CLI -> Sub2API ${label} group
 model_provider = "sub2api"
 model = "${model}"
@@ -1446,23 +1392,20 @@ model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
 [model_providers.sub2api]
 name = "Sub2API ${label}"
 base_url = "${baseUrl}"
-env_key = "SUB2API_API_KEY"
+experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false`
 
-  return [
-    { path: isWindows ? 'PowerShell' : 'Terminal', content: envContent },
-    {
-      path: joinConfigPath(configDir, 'config.toml', isWindows),
-      content: configContent,
-      hint: t(
-        platform === 'deepseek' || platform === 'composite'
-          ? `keys.useKeyModal.${platform}.codexConfigTomlHint`
-          : 'keys.useKeyModal.routedCodex.configTomlHint'
-      )
-    }
-  ]
+  return [{
+    path: joinConfigPath(configDir, 'config.toml', isWindows),
+    content: configContent,
+    hint: t(
+      platform === 'deepseek' || platform === 'composite'
+        ? `keys.useKeyModal.${platform}.codexConfigTomlHint`
+        : 'keys.useKeyModal.routedCodex.configTomlHint'
+    )
+  }]
 }
 
 function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
@@ -2127,7 +2070,7 @@ async function copyLocalSetupCommand() {
       client: localSetupClient.value,
       codexWebsocket: activeClientTab.value === 'codex-ws',
       opencodeModels: localSetupModelSelection.value,
-      os: setupOS.value,
+      os: localSetupOS.value,
       platform: props.platform
     }),
     t('keys.useKeyModal.localSetup.copiedToast')

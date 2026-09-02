@@ -48,7 +48,7 @@ describe('UseKeyModal', () => {
   })
 
   it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'composite'] as const)(
-    'shows Codex first and places local setup after the Agent selector for %s groups',
+    'shows Codex first and shares one OS selector across setup modes for %s groups',
     (platform) => {
       const wrapper = mount(UseKeyModal, {
         props: {
@@ -74,11 +74,11 @@ describe('UseKeyModal', () => {
       expect(clientButtons[0].text()).toContain('keys.useKeyModal.cliTabs.codexCli')
       expect(clientButtons[0].classes()).toContain('border-primary-500')
 
+      const osSelector = wrapper.get('nav[aria-label="Tabs"]')
       const setup = wrapper.get('[data-testid="local-setup"]')
-      expect(clientSelector.element.compareDocumentPosition(setup.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-      const osSelector = setup.get('[role="radiogroup"]')
-      const copyButton = setup.get('[data-testid="local-setup-copy"]')
-      expect(osSelector.element.compareDocumentPosition(copyButton.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(clientSelector.element.compareDocumentPosition(osSelector.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(osSelector.element.compareDocumentPosition(setup.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(setup.find('[role="radiogroup"]').exists()).toBe(false)
     }
   )
 
@@ -365,7 +365,8 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('model_provider = "sub2api"')
     expect(configToml).toContain('model = "grok-4.5"')
     expect(configToml).toContain('base_url = "https://example.com/v1"')
-    expect(configToml).toContain('env_key = "SUB2API_API_KEY"')
+    expect(configToml).toContain('experimental_bearer_token = "sk-grok-codex-test"')
+    expect(configToml).not.toContain('env_key')
     expect(configToml).toContain('wire_api = "responses"')
     // API-key provider: Codex must not require a ChatGPT OAuth login.
     expect(configToml).toContain('requires_openai_auth = false')
@@ -373,12 +374,10 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('grok-4.20-multi-agent-0309 (text / web_search)')
     expect(configToml).toContain('grok-imagine-image')
     expect(configToml).toContain('grok-imagine-video')
-    // Hardcoded bearer is only a commented fallback when env cannot be set.
-    expect(configToml).toMatch(/# experimental_bearer_token = "sk-grok-codex-test"/)
     expect(configToml).not.toContain('supports_websockets = true')
     expect(configToml).not.toContain('responses_websockets_v2')
     expect(wrapper.text()).not.toContain('auth.json')
-    expect(codeBlocks.join('\n')).toContain('SUB2API_API_KEY')
+    expect(codeBlocks.join('\n')).not.toContain('SUB2API_API_KEY')
 
     const windowsTab = wrapper.findAll('button').find(
       (button) => button.text().trim() === 'Windows'
@@ -519,15 +518,17 @@ describe('UseKeyModal', () => {
     await wrapper.get('[data-testid="local-setup-models-fetch"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.findAll('[data-testid^="local-setup-os-"]')).toHaveLength(2)
+    const osTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(osTabs).toHaveLength(2)
     const modelCheckboxes = wrapper.find('[data-testid="local-setup"]').findAll('input[type="checkbox"]')
     expect(modelCheckboxes.length).toBeGreaterThan(2)
     expect(wrapper.get('input[value="gpt-custom"]').element).toHaveProperty('checked', true)
     await wrapper.get('input[value="gpt-custom"]').setValue(false)
 
+    await osTabs[1].trigger('click')
     await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
     expect(copyToClipboardMock).toHaveBeenCalledWith(
-      expect.stringContaining('sub2api-local-setup.sh'),
+      expect.stringContaining('powershell.exe -NoProfile -ExecutionPolicy Bypass'),
       'keys.useKeyModal.localSetup.copiedToast'
     )
   })
@@ -904,7 +905,8 @@ describe('UseKeyModal', () => {
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
     expect(unixConfig).toContain('model_catalog_json = "~/.codex/codex-models.json"')
-    expect(unixConfig).toContain('env_key = "SUB2API_API_KEY"')
+    expect(unixConfig).toContain('experimental_bearer_token = "sk-composite-test"')
+    expect(unixConfig).not.toContain('env_key')
 
     await wrapper.get('[data-testid="codex-model-catalog-fetch"]').trigger('click')
     await flushPromises()
@@ -982,6 +984,8 @@ describe('UseKeyModal', () => {
         .find((content) => content.includes('[model_providers.sub2api]'))
       expect(config).toContain('model_catalog_json = "~/.codex/codex-models.json"')
       expect(config).toContain('base_url = "https://example.com/v1"')
+      expect(config).toContain(`experimental_bearer_token = "sk-${platform}-test"`)
+      expect(config).not.toContain('env_key')
       expect(config).toContain('wire_api = "responses"')
     }
   )
