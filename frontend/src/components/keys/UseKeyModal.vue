@@ -401,6 +401,7 @@ const codexModelCatalogPath = computed(() => {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   return joinConfigPath(configDir, 'codex-models.json', isWindows)
 })
+const codexModelCatalogConfigPath = 'codex-models.json'
 
 const codexManifestContext = computed(() => {
   if (!showCodexModelCatalog.value) return ''
@@ -1112,7 +1113,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1328,7 +1329,7 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 
 model_provider = "sub2api"
 model = "${model}"
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 # Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
@@ -1395,7 +1396,7 @@ model_provider = "sub2api"
 model = "${model}"
 review_model = "${model}"
 disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 
 [model_providers.sub2api]
 name = "Sub2API ${label}"
@@ -1427,7 +1428,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 

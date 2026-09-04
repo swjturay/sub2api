@@ -25,19 +25,35 @@ describe('local setup command', () => {
     expect(command).not.toContain('--api-key')
   })
 
-  it('runs the Windows setup in Windows PowerShell with quote-safe isolated environment values', () => {
+  it('builds a short PowerShell installer command with quote-safe positional values', () => {
     const command = buildLocalSetupCommand({ ...input, apiKey: "sk-o'hare", os: 'windows' })
-    expect(command.startsWith('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& { ')).toBe(true)
-    expect(command).toContain("`$env:SUB2API_SETUP_ENDPOINT='https://api.example.com'")
-    expect(command).toContain("`$env:SUB2API_SETUP_API_KEY='sk-o''hare'")
-    expect(command).toContain("`$env:SUB2API_SETUP_CLIENT='opencode'")
-    expect(command).toContain("`$env:SUB2API_SETUP_PLATFORM='openai'")
-    expect(command).toContain("Invoke-WebRequest -UseBasicParsing -Uri 'https://console.example.com/scripts/sub2api-local-setup.ps1' -OutFile `$setupScript")
-    expect(command).toContain('Get-Content -LiteralPath `$setupScript -Raw -Encoding UTF8 | Invoke-Expression')
-    expect(command).toContain('Remove-Item -LiteralPath `$setupDir -Recurse -Force')
-    expect(command).toContain("'sk-o''hare'")
-    expect(command).toContain('sub2api-local-setup.ps1')
-    expect(command).not.toContain('& { $env:')
+    expect(command).toBe(
+      "& ([scriptblock]::Create((irm 'https://console.example.com/scripts/sub2api-local-setup.ps1'))) 'https://api.example.com' 'sk-o''hare' 'opencode' 'openai' --yes"
+    )
+    expect(command.length).toBeLessThan(300)
+    expect(command).not.toContain('powershell.exe')
+    expect(command).not.toContain('SUB2API_SETUP_')
+    expect(command).not.toContain('Invoke-WebRequest')
+    expect(command).not.toContain('Remove-Item')
+  })
+
+  it('passes Codex WebSocket mode and OpenCode model selections positionally on Windows', () => {
+    const websocket = buildLocalSetupCommand({
+      ...input,
+      client: 'codex',
+      codexWebsocket: true,
+      platform: 'openai',
+      os: 'windows'
+    })
+    expect(websocket).toContain("'codex-ws' --yes")
+    expect(websocket).not.toContain("'openai' --yes")
+
+    const opencode = buildLocalSetupCommand({
+      ...input,
+      opencodeModels: ['gpt-5.5', 'gpt-5.6'],
+      os: 'windows'
+    })
+    expect(opencode).toContain("'opencode' 'openai' --models 'gpt-5.5,gpt-5.6' --yes")
   })
 
   it('keeps the common OpenAI Codex command free of optional mode flags', () => {

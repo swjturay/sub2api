@@ -445,6 +445,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model_provider = "sub2api"')
     expect(configToml).toContain('model = "grok-4.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).toContain('base_url = "https://example.com/v1"')
     expect(configToml).toContain('experimental_bearer_token = "sk-grok-codex-test"')
     expect(configToml).not.toContain('env_key')
@@ -498,6 +499,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
     expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
@@ -609,7 +611,7 @@ describe('UseKeyModal', () => {
     await osTabs[1].trigger('click')
     await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
     expect(copyToClipboardMock).toHaveBeenCalledWith(
-      expect.stringContaining('powershell.exe -NoProfile -ExecutionPolicy Bypass'),
+      expect.stringContaining("& ([scriptblock]::Create((irm 'http://localhost:3000/scripts/sub2api-local-setup.ps1')))"),
       'keys.useKeyModal.localSetup.copiedToast'
     )
   })
@@ -648,6 +650,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
     expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
@@ -985,7 +988,7 @@ describe('UseKeyModal', () => {
     const unixConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
-    expect(unixConfig).toContain('model_catalog_json = "~/.codex/codex-models.json"')
+    expect(unixConfig).toContain('model_catalog_json = "codex-models.json"')
     expect(unixConfig).toContain('experimental_bearer_token = "sk-composite-test"')
     expect(unixConfig).not.toContain('env_key')
 
@@ -1025,9 +1028,7 @@ describe('UseKeyModal', () => {
     const windowsConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
-    expect(windowsConfig).toContain(
-      'model_catalog_json = "%userprofile%\\\\.codex\\\\codex-models.json"'
-    )
+    expect(windowsConfig).toContain('model_catalog_json = "codex-models.json"')
   })
 
   it.each(['anthropic', 'gemini', 'antigravity', 'kimi', 'zhipu'] as const)(
@@ -1063,7 +1064,7 @@ describe('UseKeyModal', () => {
       const config = wrapper.findAll('pre code')
         .map((code) => code.text())
         .find((content) => content.includes('[model_providers.sub2api]'))
-      expect(config).toContain('model_catalog_json = "~/.codex/codex-models.json"')
+      expect(config).toContain('model_catalog_json = "codex-models.json"')
       expect(config).toContain('base_url = "https://example.com/v1"')
       expect(config).toContain(`experimental_bearer_token = "sk-${platform}-test"`)
       expect(config).not.toContain('env_key')
