@@ -51,6 +51,90 @@
           </nav>
         </div>
 
+        <!-- Shared OS/Shell Tabs -->
+        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
+          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
+            <button
+              v-for="tab in currentTabs"
+              :key="tab.id"
+              type="button"
+              @click="activeTab = tab.id"
+              :class="[
+                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                activeTab === tab.id
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              ]"
+            >
+              <span class="flex items-center gap-2">
+                <component :is="tab.icon" class="w-4 h-4" />
+                {{ tab.label }}
+              </span>
+            </button>
+          </nav>
+        </div>
+
+        <section
+          v-if="localSetupSupported"
+          data-testid="local-setup"
+          class="rounded-lg border border-primary-200 bg-primary-50/60 p-3 dark:border-primary-900/60 dark:bg-primary-950/20"
+        >
+          <div class="min-w-0">
+            <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+              {{ t('keys.useKeyModal.localSetup.title') }}
+            </h3>
+            <p class="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-400">
+              {{ t('keys.useKeyModal.localSetup.description') }}
+            </p>
+          </div>
+
+          <div v-if="activeClientTab === 'opencode'" class="mt-3 border-t border-primary-100 pt-3 dark:border-primary-900/50">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-xs text-gray-600 dark:text-gray-400">
+                {{ t('keys.useKeyModal.localSetup.openCodeModelsDescription') }}
+              </p>
+              <button
+                type="button"
+                data-testid="local-setup-models-fetch"
+                class="btn btn-secondary min-h-8 px-2.5 text-xs"
+                :disabled="openCodeModelsState === 'loading'"
+                @click="loadOpenCodeModels"
+              >
+                <Icon name="refresh" size="sm" class="mr-1" :class="openCodeModelsState === 'loading' ? 'animate-spin' : ''" />
+                {{ openCodeModelsState === 'ready' ? t('keys.useKeyModal.localSetup.modelsRefresh') : t('keys.useKeyModal.localSetup.modelsFetch') }}
+              </button>
+            </div>
+            <div v-if="openCodeAvailableModelIds.length" class="mt-2 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2">
+              <label
+                v-for="model in openCodeAvailableModelIds"
+                :key="model"
+                class="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs text-gray-700 hover:bg-white/70 dark:text-gray-200 dark:hover:bg-dark-800/70"
+              >
+                <input v-model="selectedOpenCodeModelIds" type="checkbox" :value="model" class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600" />
+                <span class="truncate font-mono">{{ model }}</span>
+              </label>
+            </div>
+            <p v-else-if="openCodeModelsState === 'error'" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+              {{ t('keys.useKeyModal.localSetup.modelsError') }}
+            </p>
+          </div>
+
+          <p class="mt-3 text-xs leading-5 text-amber-700 dark:text-amber-300">
+            {{ t('keys.useKeyModal.localSetup.secretWarning') }}
+          </p>
+          <div class="mt-3 flex justify-end">
+            <button
+              type="button"
+              data-testid="local-setup-copy"
+              class="btn btn-primary min-h-9 px-3 text-xs"
+              @click="copyLocalSetupCommand"
+            >
+              <Icon name="copy" size="sm" class="mr-1.5" />
+              {{ copiedSetup ? t('keys.useKeyModal.localSetup.copied') : t('keys.useKeyModal.localSetup.copy') }}
+            </button>
+          </div>
+        </section>
+
         <!-- Codex Authentication Mode -->
         <div
           v-if="showCodexAuthMode"
@@ -108,29 +192,6 @@
             <Icon name="exclamationCircle" size="sm" class="mt-0.5 flex-shrink-0" />
             <p>{{ t('keys.useKeyModal.openai.authModeApiKeyRestartNotice') }}</p>
           </div>
-        </div>
-
-        <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="overflow-x-auto border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex min-w-max gap-4" aria-label="Tabs">
-            <button
-              v-for="tab in currentTabs"
-              :key="tab.id"
-              type="button"
-              @click="activeTab = tab.id"
-              :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
-              ]"
-            >
-              <span class="flex items-center gap-2">
-                <component :is="tab.icon" class="w-4 h-4" />
-                {{ tab.label }}
-              </span>
-            </button>
-          </nav>
         </div>
 
         <!-- Code Blocks (Stacked for multi-file platforms) -->
@@ -262,13 +323,22 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
+import { fetchGatewayModels } from '@/api/models'
 import type { GroupPlatform } from '@/types'
+import { getModelsByPlatform } from '@/composables/useModelWhitelist'
+import { isWindowsDevice } from '@/utils/device'
 import {
   findCodexCatalogModel,
   formatCodexReasoningEffortTomlLine,
   parseCodexCatalogModels,
   selectCodexConfigReasoningEffort
 } from '@/utils/codexCatalogConfig'
+import {
+  buildLocalSetupCommand,
+  resolveLocalSetupEndpoint,
+  type LocalSetupClient,
+  type LocalSetupOS
+} from '@/utils/localSetupCommand'
 
 interface Props {
   show: boolean
@@ -302,6 +372,7 @@ const { t } = useI18n()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const copiedIndex = ref<number | null>(null)
+const copiedSetup = ref(false)
 const activeTab = ref<string>('unix')
 const activeClientTab = ref<string>('claude')
 type CodexAuthMode = 'legacy' | 'api-key'
@@ -312,6 +383,12 @@ const codexModelManifestContent = ref('')
 const codexModelManifestModelCount = ref(0)
 let codexModelManifestController: AbortController | null = null
 let codexModelManifestRequestID = 0
+type OpenCodeModelsState = 'idle' | 'loading' | 'ready' | 'error'
+const openCodeModelsState = ref<OpenCodeModelsState>('idle')
+const openCodeAvailableModelIds = ref<string[]>([])
+const selectedOpenCodeModelIds = ref<string[]>([])
+let openCodeModelsController: AbortController | null = null
+let openCodeModelsRequestID = 0
 
 const showCodexModelCatalog = computed(() =>
   props.show &&
@@ -324,6 +401,7 @@ const codexModelCatalogPath = computed(() => {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   return joinConfigPath(configDir, 'codex-models.json', isWindows)
 })
+const codexModelCatalogConfigPath = 'codex-models.json'
 
 const codexManifestContext = computed(() => {
   if (!showCodexModelCatalog.value) return ''
@@ -332,31 +410,28 @@ const codexManifestContext = computed(() => {
 
 // Reset tabs when platform changes
 const defaultClientTab = computed(() => {
-  switch (props.platform) {
-    case 'openai':
-      return 'codex'
-    case 'grok':
-      return 'grok'
-    case 'gemini':
-      return 'gemini'
-    case 'antigravity':
-      return 'claude'
-    default:
-      return 'claude'
-  }
+  return props.platform ? 'codex' : 'claude'
 })
 
+function defaultSystemTab(client: string): string {
+  if (!isWindowsDevice()) return 'unix'
+  return ['codex', 'codex-ws', 'grok', 'opencode'].includes(client) ? 'windows' : 'powershell'
+}
+
 watch(() => props.platform, () => {
-  activeTab.value = 'unix'
-  activeClientTab.value = defaultClientTab.value
+  const client = defaultClientTab.value
+  activeClientTab.value = client
+  activeTab.value = defaultSystemTab(client)
   codexAuthMode.value = 'legacy'
 }, { immediate: true })
 
 watch(() => props.show, (show) => {
   if (show) {
     codexAuthMode.value = 'legacy'
+    activeTab.value = defaultSystemTab(activeClientTab.value)
   } else {
     resetCodexModelManifest()
+    resetOpenCodeModels()
   }
 })
 
@@ -367,8 +442,25 @@ watch(codexManifestContext, (context, previousContext) => {
 })
 
 // Reset shell tab when client changes
-watch(activeClientTab, () => {
-  activeTab.value = 'unix'
+watch(activeClientTab, (client) => {
+  activeTab.value = defaultSystemTab(client)
+  copiedSetup.value = false
+})
+
+const localSetupSupported = computed(() =>
+  ['claude', 'codex', 'codex-ws', 'opencode'].includes(activeClientTab.value)
+)
+
+const localSetupClient = computed<LocalSetupClient>(() =>
+  activeClientTab.value === 'opencode' ? 'opencode' : activeClientTab.value === 'claude' ? 'claude' : 'codex'
+)
+
+const openCodeModelContext = computed(() =>
+  `${props.platform}|${props.baseUrl}|${props.apiKey}|${activeClientTab.value}`
+)
+
+watch(openCodeModelContext, () => {
+  resetOpenCodeModels()
 })
 
 // Icon components
@@ -450,35 +542,35 @@ const clientTabs = computed((): TabConfig[] => {
     }
     case 'gemini':
       return [
-        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'antigravity':
       return [
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'gemini', label: t('keys.useKeyModal.cliTabs.geminiCli'), icon: SparkleIcon },
-        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'grok':
       return [
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'grok', label: t('keys.useKeyModal.cliTabs.grokCli'), icon: TerminalIcon },
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
-        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'deepseek':
     case 'composite':
       return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     default:
       return [
-        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
   }
@@ -497,20 +589,20 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
-
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
   (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws')
 )
 
 const currentTabs = computed(() => {
-  if (!showShellTabs.value) return []
-  if (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws' || activeClientTab.value === 'grok') {
+  if (activeClientTab.value === 'codex' || activeClientTab.value === 'codex-ws' || activeClientTab.value === 'grok' || activeClientTab.value === 'opencode') {
     return openaiTabs
   }
   return shellTabs
 })
+
+const showShellTabs = computed(() => currentTabs.value.length > 0)
+const localSetupOS = computed<LocalSetupOS>(() => activeTab.value === 'unix' ? 'unix' : 'windows')
 
 const platformDescription = computed(() => {
   if (activeClientTab.value === 'codex' &&
@@ -614,6 +706,91 @@ function resetCodexModelManifest() {
   codexModelManifestModelCount.value = 0
 }
 
+function resetOpenCodeModels() {
+  openCodeModelsController?.abort()
+  openCodeModelsController = null
+  openCodeModelsRequestID += 1
+  openCodeModelsState.value = 'idle'
+  openCodeAvailableModelIds.value = []
+  selectedOpenCodeModelIds.value = []
+}
+
+const openCodeModelPriority: Partial<Record<GroupPlatform, string[]>> = {
+  openai: ['gpt-5.5', 'gpt-5.6', 'gpt-5.4-mini'],
+  anthropic: ['claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'claude-fable-5'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+  antigravity: ['claude-sonnet-4-6', 'gemini-3.1-pro-high', 'gemini-2.5-flash'],
+  grok: ['grok-4.5', 'grok-build-0.1', 'grok-4.20-multi-agent-0309'],
+  deepseek: ['deepseek-v4-pro', 'deepseek-chat'],
+  composite: ['gpt-5.5', 'claude-sonnet-4-6', 'gemini-2.5-pro']
+}
+
+function fallbackOpenCodeModelIds(platform: GroupPlatform | 'antigravity-claude' | 'antigravity-gemini' | null): string[] {
+  if (platform === 'antigravity-claude') return getModelsByPlatform('antigravity').filter((id) => id.startsWith('claude-'))
+  if (platform === 'antigravity-gemini') return getModelsByPlatform('antigravity').filter((id) => id.startsWith('gemini-'))
+  if (platform === 'composite') {
+    return [...new Set([
+      ...getModelsByPlatform('openai'),
+      ...getModelsByPlatform('anthropic'),
+      ...getModelsByPlatform('gemini'),
+      ...getModelsByPlatform('antigravity'),
+      ...getModelsByPlatform('grok')
+    ])]
+  }
+  return platform ? getModelsByPlatform(platform) : []
+}
+
+function chooseOpenCodeDefaults(ids: string[]): string[] {
+  const priority = props.platform ? (openCodeModelPriority[props.platform] || []) : []
+  const preferred = priority.filter((id) => ids.includes(id))
+  return [...preferred, ...ids.filter((id) => !preferred.includes(id))]
+}
+
+function hasManualOpenCodeSelection(): boolean {
+  if (openCodeModelsState.value !== 'ready' || !selectedOpenCodeModelIds.value.length) return false
+  const available = new Set(openCodeAvailableModelIds.value)
+  const selected = new Set(selectedOpenCodeModelIds.value)
+  return selected.size !== available.size || [...available].some((id) => !selected.has(id))
+}
+
+async function loadOpenCodeModels() {
+  if (activeClientTab.value !== 'opencode' || !props.apiKey) return
+  openCodeModelsController?.abort()
+  const controller = new AbortController()
+  const requestID = ++openCodeModelsRequestID
+  openCodeModelsController = controller
+  openCodeModelsState.value = 'loading'
+  try {
+    const result = await fetchGatewayModels(
+      resolveLocalSetupEndpoint({
+        apiKey: props.apiKey,
+        baseUrl: props.baseUrl,
+        client: 'opencode',
+        os: 'unix',
+        platform: props.platform
+      }),
+      props.apiKey,
+      controller.signal
+    )
+    if (requestID !== openCodeModelsRequestID) return
+    const ids = [...new Set([
+      ...fallbackOpenCodeModelIds(props.platform),
+      ...result.map((item) => item.id)
+    ])]
+    openCodeAvailableModelIds.value = ids
+    selectedOpenCodeModelIds.value = chooseOpenCodeDefaults(ids)
+    openCodeModelsState.value = 'ready'
+  } catch (error) {
+    const errorName = error && typeof error === 'object' && 'name' in error
+      ? String((error as { name?: unknown }).name || '')
+      : ''
+    if (requestID !== openCodeModelsRequestID || errorName === 'AbortError') return
+    openCodeModelsState.value = 'error'
+  } finally {
+    if (requestID === openCodeModelsRequestID) openCodeModelsController = null
+  }
+}
+
 async function loadCodexModelManifest() {
   if (!showCodexModelCatalog.value || !props.apiKey) return
 
@@ -705,20 +882,22 @@ const currentFiles = computed((): FileConfig[] => {
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
-        return [generateOpenCodeConfig('anthropic', apiBase, apiKey)]
+        return [generateOpenCodeConfig('anthropic', apiBase, apiKey, undefined, 'anthropic')]
       case 'openai':
-        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, 'openai')]
       case 'gemini':
-        return [generateOpenCodeConfig('gemini', geminiBase, apiKey)]
+        return [generateOpenCodeConfig('gemini', geminiBase, apiKey, undefined, 'gemini')]
       case 'antigravity':
         return [
-          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
-          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
+          generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)', 'antigravity-claude'),
+          generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)', 'antigravity-gemini')
         ]
       case 'grok':
-        return [generateOpenCodeConfig('grok', apiBase, apiKey)]
+        return [generateOpenCodeConfig('grok', apiBase, apiKey, undefined, 'grok')]
+      case 'composite':
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, 'composite')]
       default:
-        return [generateOpenCodeConfig('openai', apiBase, apiKey)]
+        return [generateOpenCodeConfig('openai', apiBase, apiKey, undefined, props.platform || 'openai')]
     }
   }
 
@@ -934,7 +1113,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1135,29 +1314,12 @@ image_edit_model_override = "grok-imagine-edit"
 }
 
 function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
-  // Codex config reference: wire_api = "responses" only; prefer env_key over experimental_bearer_token.
+  // Codex config reference: wire_api = "responses" only.
   // Non-OpenAI gateways should set supports_websockets = false (HTTP/SSE).
   const shell = activeTab.value
   const isWindowsPath = shell === 'windows' || shell === 'cmd' || shell === 'powershell'
   const configDir = isWindowsPath ? '%userprofile%\\.codex' : '~/.codex'
   const model = selectCodexCatalogModel('grok-4.5')
-
-  let envPath: string
-  let envContent: string
-  switch (shell) {
-    case 'cmd':
-      envPath = 'Command Prompt'
-      envContent = `set SUB2API_API_KEY=${apiKey}`
-      break
-    case 'powershell':
-    case 'windows':
-      envPath = 'PowerShell'
-      envContent = `$env:SUB2API_API_KEY="${apiKey}"`
-      break
-    default:
-      envPath = 'Terminal'
-      envContent = `export SUB2API_API_KEY="${apiKey}"`
-  }
 
   const configContent = `# Codex CLI → Sub2API Grok group
 # Docs: Codex config reference (model_providers.*, wire_api = "responses")
@@ -1167,7 +1329,7 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 
 model_provider = "sub2api"
 model = "${model}"
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 # Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
@@ -1179,10 +1341,7 @@ model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
 [model_providers.sub2api]
 name = "Sub2API Grok"
 base_url = "${baseUrl}"
-# Prefer env_key (variable NAME). Do not combine with experimental_bearer_token.
-env_key = "SUB2API_API_KEY"
-# Fallback only if you cannot set env (discouraged — keeps secret on disk):
-# experimental_bearer_token = "${apiKey}"
+experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 # API-key providers: do not require ChatGPT OAuth login
 requires_openai_auth = false
@@ -1193,14 +1352,11 @@ supports_websockets = false
 # [features]
 # goals = true`
 
-  return [
-    { path: envPath, content: envContent },
-    {
-      path: joinConfigPath(configDir, 'config.toml', isWindowsPath),
-      content: configContent,
-      hint: t('keys.useKeyModal.grok.codexConfigTomlHint')
-    }
-  ]
+  return [{
+    path: joinConfigPath(configDir, 'config.toml', isWindowsPath),
+    content: configContent,
+    hint: t('keys.useKeyModal.grok.codexConfigTomlHint')
+  }]
 }
 
 function generateRoutedCodexFiles(
@@ -1235,37 +1391,30 @@ function generateRoutedCodexFiles(
     composite: 'Composite'
   }
   const label = labels[platform]
-  const envContent = isWindows
-    ? `$env:SUB2API_API_KEY="${apiKey}"`
-    : `export SUB2API_API_KEY="${apiKey}"`
-
   const configContent = `# Codex CLI -> Sub2API ${label} group
 model_provider = "sub2api"
 model = "${model}"
 review_model = "${model}"
 disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 
 [model_providers.sub2api]
 name = "Sub2API ${label}"
 base_url = "${baseUrl}"
-env_key = "SUB2API_API_KEY"
+experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false`
 
-  return [
-    { path: isWindows ? 'PowerShell' : 'Terminal', content: envContent },
-    {
-      path: joinConfigPath(configDir, 'config.toml', isWindows),
-      content: configContent,
-      hint: t(
-        platform === 'deepseek' || platform === 'composite'
-          ? `keys.useKeyModal.${platform}.codexConfigTomlHint`
-          : 'keys.useKeyModal.routedCodex.configTomlHint'
-      )
-    }
-  ]
+  return [{
+    path: joinConfigPath(configDir, 'config.toml', isWindows),
+    content: configContent,
+    hint: t(
+      platform === 'deepseek' || platform === 'composite'
+        ? `keys.useKeyModal.${platform}.codexConfigTomlHint`
+        : 'keys.useKeyModal.routedCodex.configTomlHint'
+    )
+  }]
 }
 
 function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
@@ -1279,7 +1428,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${codexModelCatalogConfigPath}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1297,15 +1446,14 @@ goals = true`
   return buildOpenAICodexFileConfigs(configDir, configContent, apiKey)
 }
 
-function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: string, pathLabel?: string): FileConfig {
-  const provider: Record<string, any> = {
-    [platform]: {
-      options: {
-        baseURL: baseUrl,
-        apiKey
-      }
-    }
-  }
+function generateOpenCodeConfig(
+  platform: string,
+  baseUrl: string,
+  apiKey: string,
+  pathLabel?: string,
+  sourcePlatform: string = platform
+): FileConfig {
+  const provider: Record<string, any> = {}
   const openaiModels = {
     'gpt-5.2': {
       name: 'GPT-5.2',
@@ -1800,26 +1948,85 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
 
-  if (platform === 'gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].models = geminiModels
-  } else if (platform === 'anthropic') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-  } else if (platform === 'antigravity-claude') {
-    provider[platform].npm = '@ai-sdk/anthropic'
-    provider[platform].name = 'Antigravity (Claude)'
-    provider[platform].models = claudeModels
-  } else if (platform === 'antigravity-gemini') {
-    provider[platform].npm = '@ai-sdk/google'
-    provider[platform].name = 'Antigravity (Gemini)'
-    provider[platform].models = antigravityGeminiModels
-  } else if (platform === 'openai') {
-    provider[platform].models = openaiModels
-  } else if (platform === 'grok') {
-    // Custom provider pointing at Sub2API OpenAI-compatible Responses/Chat endpoints.
-    provider[platform].npm = '@ai-sdk/openai-compatible'
-    provider[platform].name = 'Grok via Sub2API'
-    provider[platform].models = grokModels
+  const modelCatalogs: Record<string, Record<string, any>> = {
+    openai: openaiModels,
+    anthropic: claudeModels,
+    gemini: geminiModels,
+    'antigravity-claude': claudeModels,
+    'antigravity-gemini': antigravityGeminiModels,
+    grok: grokModels
+  }
+  const allModelMetadata = Object.assign({}, openaiModels, claudeModels, antigravityGeminiModels, geminiModels, grokModels)
+  const fallbackIds = fallbackOpenCodeModelIds(sourcePlatform as GroupPlatform)
+  const discoveredIds = openCodeAvailableModelIds.value
+  const defaultIds = [...new Set([...fallbackIds, ...discoveredIds])]
+  const manualSelection = hasManualOpenCodeSelection()
+  const modelIds = manualSelection ? selectedOpenCodeModelIds.value : defaultIds
+  const groups = new Map<string, string[]>()
+
+  const providerFamilyForModel = (model: string): string => {
+    const normalized = model.trim().toLowerCase().replace(/^models\//, '')
+    const slash = normalized.indexOf('/')
+    const qualifiedProvider = slash > 0 ? normalized.slice(0, slash) : ''
+    const value = slash > 0 ? normalized.slice(slash + 1) : normalized
+    if (sourcePlatform === 'anthropic' || sourcePlatform === 'antigravity-claude') return 'anthropic'
+    if (sourcePlatform === 'gemini' || sourcePlatform === 'antigravity-gemini') return 'gemini'
+    if (sourcePlatform === 'grok') return 'grok'
+    if (sourcePlatform === 'deepseek') return 'deepseek'
+    if (qualifiedProvider === 'anthropic' || qualifiedProvider === 'claude' || value.startsWith('claude')) return 'anthropic'
+    if (qualifiedProvider === 'google' || qualifiedProvider === 'gemini' || value.startsWith('gemini')) return 'gemini'
+    if (qualifiedProvider === 'xai' || qualifiedProvider === 'grok' || value.startsWith('grok')) return 'grok'
+    if (qualifiedProvider === 'kimi' || qualifiedProvider === 'moonshot' || value.startsWith('kimi-') || value.startsWith('moonshot-')) return 'kimi'
+    if (qualifiedProvider === 'zhipu' || qualifiedProvider === 'glm' || value.startsWith('glm-')) return 'zhipu'
+    if (qualifiedProvider === 'deepseek' || value.startsWith('deepseek-')) return 'deepseek'
+    return 'openai'
+  }
+
+  const npmForFamily: Record<string, string> = {
+    openai: '@ai-sdk/openai',
+    anthropic: '@ai-sdk/anthropic',
+    gemini: '@ai-sdk/google',
+    grok: '@ai-sdk/openai-compatible',
+    kimi: '@ai-sdk/openai-compatible',
+    zhipu: '@ai-sdk/openai-compatible',
+    deepseek: '@ai-sdk/openai-compatible'
+  }
+  const baseURLForFamily = (family: string): string => {
+    if (family !== 'gemini') return baseUrl
+    const root = baseUrl.replace(/\/v1beta$|\/v1$/i, '')
+    return `${root}/v1beta`
+  }
+
+  for (const modelId of modelIds) {
+    const family = providerFamilyForModel(modelId)
+    const ids = groups.get(family) || []
+    ids.push(modelId)
+    groups.set(family, ids)
+  }
+
+  for (const [family, ids] of groups) {
+    const providerId = `shared-ai-${family}`
+    const models = Object.fromEntries(ids.map((id) => [id, allModelMetadata[id] || { name: id }]))
+    provider[providerId] = {
+      npm: npmForFamily[family] || '@ai-sdk/openai-compatible',
+      name: `Shared AI ${family}`,
+      options: {
+        baseURL: baseURLForFamily(family),
+        apiKey
+      },
+      models
+    }
+  }
+
+  if (!groups.size) {
+    const family = sourcePlatform === 'composite' ? 'openai' : providerFamilyForModel('')
+    const catalog = modelCatalogs[platform] || openaiModels
+    provider[`shared-ai-${family}`] = {
+      npm: npmForFamily[family] || '@ai-sdk/openai-compatible',
+      name: `Shared AI ${family}`,
+      options: { baseURL: baseURLForFamily(family), apiKey },
+      models: catalog
+    }
   }
 
   const agent =
@@ -1853,6 +2060,35 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     content,
     hint: t('keys.useKeyModal.opencode.hint')
   }
+}
+
+const localSetupModelSelection = computed<string[] | undefined>(() => {
+  if (activeClientTab.value !== 'opencode' || openCodeModelsState.value !== 'ready') return undefined
+  const recommended = chooseOpenCodeDefaults(openCodeAvailableModelIds.value).slice().sort()
+  const selected = selectedOpenCodeModelIds.value.slice().sort()
+  return recommended.join('\u0000') === selected.join('\u0000')
+    ? undefined
+    : selectedOpenCodeModelIds.value
+})
+
+async function copyLocalSetupCommand() {
+  const success = await clipboardCopy(
+    buildLocalSetupCommand({
+      apiKey: props.apiKey,
+      baseUrl: props.baseUrl || window.location.origin,
+      client: localSetupClient.value,
+      codexWebsocket: activeClientTab.value === 'codex-ws',
+      opencodeModels: localSetupModelSelection.value,
+      os: localSetupOS.value,
+      platform: props.platform
+    }),
+    t('keys.useKeyModal.localSetup.copiedToast')
+  )
+  if (!success) return
+  copiedSetup.value = true
+  setTimeout(() => {
+    copiedSetup.value = false
+  }, 2000)
 }
 
 const copyContent = async (content: string, index: number) => {
