@@ -131,6 +131,19 @@ export default {
       title: 'Use API Key',
       description:
         'Add the following environment variables to your terminal profile or run directly in terminal to configure API access.',
+      localSetup: {
+        title: 'Configure local client',
+        description: 'Download and run a setup script that backs up and updates the current user-level client configuration.',
+        copy: 'Copy setup command',
+        copied: 'Command copied',
+        copiedToast: 'Local setup command copied',
+        osTitle: 'Operating system',
+        secretWarning: 'The command contains this API key. Do not paste it into public chats, tickets, or shared terminals.',
+        openCodeModelsDescription: 'OpenCode models (the full catalog is used by default; a selection creates shared-ai-* providers)',
+        modelsFetch: 'Fetch available models',
+        modelsRefresh: 'Refresh models',
+        modelsError: 'Available models could not be loaded. You can still generate the base configuration.',
+      },
       copy: 'Copy',
       copied: 'Copied',
       note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
@@ -151,7 +164,7 @@ export default {
       cliTabs: {
         claudeCode: 'Claude Code',
         geminiCli: 'Gemini CLI',
-        codexCli: 'Codex CLI',
+        codexCli: 'Codex CLI / App',
         codexCliWs: 'Codex CLI (WebSocket)',
         grokCli: 'Grok CLI',
         opencode: 'OpenCode',
@@ -176,7 +189,7 @@ export default {
         configTomlHint:
           'Official path: ~/.grok/config.toml (or $GROK_HOME). Fill [endpoints] (models_base_url / models_list_url / xai_api_base_url / cli_chat_proxy_base_url), [auth] preferred_method=api_key, [models], [session], and [features] image/video overrides. Prefer env_key over api_key; every text model needs api_backend=responses. Back up before merge, then run grok inspect.',
         codexConfigTomlHint:
-          'Official Codex: wire_api = "responses" only; prefer env_key over experimental_bearer_token; supports_websockets = false for non-OpenAI gateways (Sub2API can still accept client WS and bridge to HTTP/SSE). Back up ~/.codex/config.toml before merge.',
+          'Official Codex: wire_api = "responses" only; the API key is written to experimental_bearer_token; supports_websockets = false for non-OpenAI gateways (Sub2API can still accept client WS and bridge to HTTP/SSE). Back up ~/.codex/config.toml before merging, and do not commit the file containing the key.',
         note:
           'Export GROK_MODELS_BASE_URL and XAI_API_KEY, save the full config.toml (endpoints/auth/models/session/features) as ~/.grok/config.toml, run grok inspect, then /model grok-4.5 (or grok-build-0.1 for coding).',
         noteWindows:
@@ -184,26 +197,26 @@ export default {
         claudeNote:
           'Choose one method: terminal env for this session, or ~/.claude/settings.json for persistence. Do not commit files that contain your API key.',
         codexNote:
-          'Export SUB2API_API_KEY, save config.toml under ~/.codex (mkdir -p ~/.codex). Prefer env_key auth; do not commit secrets.',
+          'Save config.toml under ~/.codex (mkdir -p ~/.codex), then restart Codex. The file contains the API key; do not commit it.',
         codexNoteWindows:
-          'Set $env:SUB2API_API_KEY, save config.toml under %USERPROFILE%\\.codex. Prefer env_key auth; do not commit secrets.',
+          'Save config.toml under %USERPROFILE%\\.codex, then restart Codex. The file contains the API key; do not commit it.',
       },
       deepseek: {
         description: 'Configure Claude Code, Codex, or OpenCode through the current DeepSeek group.',
         codexDescription: 'Configure Codex with API key authentication through the current DeepSeek group.',
         codexConfigTomlHint: 'Download the model catalog below, save both files under the Codex config directory, and restart Codex.',
-        codexNote: 'Export SUB2API_API_KEY before starting Codex. The downloaded catalog contains model metadata only, not your API key.',
+        codexNote: 'The API key is written to config.toml; the downloaded catalog contains model metadata only. Protect the config file and restart Codex after saving it.',
       },
       composite: {
         description: 'Configure supported clients through the current Composite routing group.',
         codexDescription: 'Configure Codex with API key authentication and the complete model catalog for this Composite group.',
         codexConfigTomlHint: 'Download the model catalog below, save both files under the Codex config directory, and restart Codex.',
-        codexNote: 'Export SUB2API_API_KEY before starting Codex. Model requests are routed by the selected catalog slug.',
+        codexNote: 'The API key is written to config.toml, and model requests are routed by the selected catalog slug. Protect the config file and restart Codex after saving it.',
       },
       routedCodex: {
         description: 'Configure Codex with the complete model catalog for the current routed group.',
         configTomlHint: 'Download the model catalog below, save both files under the Codex config directory, and restart Codex.',
-        note: 'Export SUB2API_API_KEY before starting Codex. The downloaded catalog contains model metadata only, not your API key.',
+        note: 'The API key is written to config.toml; the downloaded catalog contains model metadata only. Protect the config file and restart Codex after saving it.',
       },
       codexModelCatalog: {
         title: 'Codex model catalog',

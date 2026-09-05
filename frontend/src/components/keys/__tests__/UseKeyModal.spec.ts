@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
@@ -8,6 +8,13 @@ const { copyToClipboardMock, saveAsMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({
+    global: {
+      t: (key: string) => key,
+      locale: { value: 'en' },
+      setLocaleMessage: vi.fn()
+    }
+  }),
   useI18n: () => ({
     t: (key: string) => key
   })
@@ -35,10 +42,126 @@ function readBlobAsText(blob: Blob): Promise<string> {
 }
 
 describe('UseKeyModal', () => {
+  beforeEach(() => {
+    vi.stubGlobal('navigator', {
+      platform: 'Linux x86_64',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64)'
+    })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     saveAsMock.mockClear()
   })
+
+  it('selects the Windows option for the current browser and remaps it when the Agent changes', async () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Win32',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      userAgentData: { platform: 'Windows' }
+    })
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-windows-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    let systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[1].text()).toBe('Windows')
+    expect(systemTabs[1].classes()).toContain('border-primary-500')
+    expect(wrapper.text().toLowerCase()).toContain('%userprofile%\\.codex\\config.toml')
+
+    const claudeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.claudeCode')
+    )
+    expect(claudeTab).toBeDefined()
+    await claudeTab!.trigger('click')
+    await nextTick()
+
+    systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[2].text()).toBe('PowerShell')
+    expect(systemTabs[2].classes()).toContain('border-primary-500')
+  })
+
+  it('keeps macOS and Linux browsers on the Unix option', () => {
+    vi.stubGlobal('navigator', {
+      platform: 'Linux x86_64',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64)'
+    })
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-linux-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const systemTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(systemTabs[0].text()).toBe('macOS / Linux')
+    expect(systemTabs[0].classes()).toContain('border-primary-500')
+    expect(wrapper.text()).toContain('~/.codex/config.toml')
+  })
+
+  it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'composite'] as const)(
+    'shows Codex first and shares one OS selector across setup modes for %s groups',
+    (platform) => {
+      const wrapper = mount(UseKeyModal, {
+        props: {
+          show: true,
+          apiKey: `sk-${platform}-test`,
+          baseUrl: 'https://example.com/v1',
+          platform
+        },
+        global: {
+          stubs: {
+            BaseDialog: {
+              template: '<div><slot /><slot name="footer" /></div>'
+            },
+            Icon: {
+              template: '<span />'
+            }
+          }
+        }
+      })
+
+      const clientSelector = wrapper.get('nav[aria-label="Client"]')
+      const clientButtons = clientSelector.findAll('button')
+      expect(clientButtons[0].text()).toContain('keys.useKeyModal.cliTabs.codexCli')
+      expect(clientButtons[0].classes()).toContain('border-primary-500')
+
+      const osSelector = wrapper.get('nav[aria-label="Tabs"]')
+      const setup = wrapper.get('[data-testid="local-setup"]')
+      expect(clientSelector.element.compareDocumentPosition(osSelector.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(osSelector.element.compareDocumentPosition(setup.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(setup.find('[role="radiogroup"]').exists()).toBe(false)
+    }
+  )
 
   it('omits the attribution override from every standard Claude Code setup form', async () => {
     const wrapper = mount(UseKeyModal, {
@@ -59,6 +182,13 @@ describe('UseKeyModal', () => {
         }
       }
     })
+
+    const claudeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.claudeCode')
+    )
+    expect(claudeTab).toBeDefined()
+    await claudeTab!.trigger('click')
+    await nextTick()
 
     for (const [shell, trafficSetting] of [
       ['macOS / Linux', 'export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1'],
@@ -109,6 +239,8 @@ describe('UseKeyModal', () => {
       button.text().includes('keys.useKeyModal.cliTabs.grokCli')
     )
     expect(grokTab).toBeDefined()
+    await grokTab!.trigger('click')
+    await nextTick()
 
     const allCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
     expect(allCode).toContain('GROK_MODELS_BASE_URL')
@@ -163,18 +295,18 @@ describe('UseKeyModal', () => {
     await nextTick()
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
-    expect(parsed.provider.grok.npm).toBe('@ai-sdk/openai-compatible')
-    expect(parsed.provider.grok.name).toBe('Grok via Sub2API')
-    expect(parsed.provider.grok.options).toEqual({
+    expect(parsed.provider['shared-ai-grok'].npm).toBe('@ai-sdk/openai-compatible')
+    expect(parsed.provider['shared-ai-grok'].name).toBe('Shared AI grok')
+    expect(parsed.provider['shared-ai-grok'].options).toEqual({
       baseURL: 'https://example.com/v1',
       apiKey: 'sk-grok-test'
     })
-    expect(parsed.provider.grok.models['grok-4.5']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
-    expect(parsed.provider.grok.models['grok-build-0.1']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-4.20-multi-agent-0309']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-composer-2.5-fast']).toBeDefined()
-    expect(parsed.provider.grok.models['gpt-5.6']).toBeUndefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.5']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.5'].limit.context).toBe(500000)
+    expect(parsed.provider['shared-ai-grok'].models['grok-build-0.1']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-4.20-multi-agent-0309']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['grok-composer-2.5-fast']).toBeDefined()
+    expect(parsed.provider['shared-ai-grok'].models['gpt-5.6']).toBeUndefined()
   })
 
   it('renders copyable Claude Code setup through the Grok Messages gateway', async () => {
@@ -313,8 +445,10 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model_provider = "sub2api"')
     expect(configToml).toContain('model = "grok-4.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).toContain('base_url = "https://example.com/v1"')
-    expect(configToml).toContain('env_key = "SUB2API_API_KEY"')
+    expect(configToml).toContain('experimental_bearer_token = "sk-grok-codex-test"')
+    expect(configToml).not.toContain('env_key')
     expect(configToml).toContain('wire_api = "responses"')
     // API-key provider: Codex must not require a ChatGPT OAuth login.
     expect(configToml).toContain('requires_openai_auth = false')
@@ -322,12 +456,10 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('grok-4.20-multi-agent-0309 (text / web_search)')
     expect(configToml).toContain('grok-imagine-image')
     expect(configToml).toContain('grok-imagine-video')
-    // Hardcoded bearer is only a commented fallback when env cannot be set.
-    expect(configToml).toMatch(/# experimental_bearer_token = "sk-grok-codex-test"/)
     expect(configToml).not.toContain('supports_websockets = true')
     expect(configToml).not.toContain('responses_websockets_v2')
     expect(wrapper.text()).not.toContain('auth.json')
-    expect(codeBlocks.join('\n')).toContain('SUB2API_API_KEY')
+    expect(codeBlocks.join('\n')).not.toContain('SUB2API_API_KEY')
 
     const windowsTab = wrapper.findAll('button').find(
       (button) => button.text().trim() === 'Windows'
@@ -367,6 +499,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
     expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
@@ -435,6 +568,54 @@ describe('UseKeyModal', () => {
     )
   })
 
+  it('copies a local setup command and selects available OpenCode models', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'gpt-5.5' }, { id: 'gpt-custom' }] })
+    }))
+
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-local-setup',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await wrapper.get('[data-testid="local-setup-models-fetch"]').trigger('click')
+    await flushPromises()
+
+    const osTabs = wrapper.get('nav[aria-label="Tabs"]').findAll('button')
+    expect(osTabs).toHaveLength(2)
+    const modelCheckboxes = wrapper.find('[data-testid="local-setup"]').findAll('input[type="checkbox"]')
+    expect(modelCheckboxes.length).toBeGreaterThan(2)
+    expect(wrapper.get('input[value="gpt-custom"]').element).toHaveProperty('checked', true)
+    await wrapper.get('input[value="gpt-custom"]').setValue(false)
+
+    await osTabs[1].trigger('click')
+    await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
+    expect(copyToClipboardMock).toHaveBeenCalledWith(
+      expect.stringContaining("& ([scriptblock]::Create((irm 'http://localhost:3000/scripts/sub2api-local-setup.ps1')))"),
+      'keys.useKeyModal.localSetup.copiedToast'
+    )
+  })
+
   it('keeps legacy OpenAI Codex WebSocket config as the default', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
@@ -469,6 +650,7 @@ describe('UseKeyModal', () => {
     expect(configToml).toBeDefined()
     expect(configToml).toContain('model = "gpt-5.5"')
     expect(configToml).toContain('review_model = "gpt-5.5"')
+    expect(configToml).toContain('model_catalog_json = "codex-models.json"')
     expect(configToml).not.toContain('model = "gpt-5.4"')
     expect(configToml).not.toContain('model_context_window')
     expect(configToml).not.toContain('model_auto_compact_token_limit')
@@ -628,7 +810,7 @@ describe('UseKeyModal', () => {
     await nextTick()
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
-    const models = parsed.provider.openai.models
+    const models = parsed.provider['shared-ai-openai'].models
     for (const model of ['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
       expect(models[model]).toBeDefined()
       expect(models[model].variants).toHaveProperty('max')
@@ -647,6 +829,43 @@ describe('UseKeyModal', () => {
       options: { store: false },
       variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
     })
+  })
+
+  it('uses shared-ai providers for Composite OpenCode models', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-composite-opencode-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'composite'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const parsed = JSON.parse(wrapper.find('pre code').text())
+    expect(parsed.provider.openai).toBeUndefined()
+    expect(parsed.provider['shared-ai-openai'].npm).toBe('@ai-sdk/openai')
+    expect(parsed.provider['shared-ai-anthropic'].npm).toBe('@ai-sdk/anthropic')
+    expect(parsed.provider['shared-ai-gemini'].npm).toBe('@ai-sdk/google')
+    expect(parsed.provider['shared-ai-openai'].models['gpt-5.5']).toBeDefined()
+    expect(parsed.provider['shared-ai-anthropic'].models['claude-sonnet-4-6']).toBeDefined()
+    expect(parsed.provider['shared-ai-gemini'].models['gemini-2.5-pro']).toBeDefined()
   })
 
   it('renders Claude Fable 5 OpenCode config with adaptive thinking', async () => {
@@ -679,21 +898,50 @@ describe('UseKeyModal', () => {
 
     const claudeConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
-      .find((content) => content.includes('"antigravity-claude"'))
+      .find((content) => content.includes('"shared-ai-anthropic"'))
 
     expect(claudeConfig).toBeDefined()
     const parsed = JSON.parse(claudeConfig!)
-    const fable51 = parsed.provider['antigravity-claude'].models['claude-fable-5-1']
-    const fable = parsed.provider['antigravity-claude'].models['claude-fable-5']
+    const fable = parsed.provider['shared-ai-anthropic'].models['claude-fable-5']
 
-    expect(fable51.name).toBe('Claude Fable 5.1')
-    expect(fable51.limit).toEqual({ context: 1048576, output: 128000 })
-    expect(fable51.options.thinking).toEqual({ type: 'adaptive' })
-    expect(fable51.options.thinking).not.toHaveProperty('budgetTokens')
     expect(fable.name).toBe('Claude Fable 5')
     expect(fable.limit).toEqual({ context: 1048576, output: 128000 })
     expect(fable.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
+  })
+
+  it('keeps Antigravity Gemini fallback models in the shared-ai-gemini provider', async () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-antigravity-gemini-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'antigravity'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await nextTick()
+
+    const configs = wrapper.findAll('pre code').map((code) => JSON.parse(code.text()))
+    const geminiConfig = configs.find((config) => config.provider['shared-ai-gemini'])
+    expect(geminiConfig).toBeDefined()
+    expect(geminiConfig.provider['shared-ai-gemini'].models['gemini-3.1-pro-high']).toBeDefined()
+    expect(geminiConfig.provider['shared-ai-gemini'].models['claude-fable-5']).toBeUndefined()
   })
 
   // Scenario: API Key users can fetch a routed group catalog and reference it from config.toml.
@@ -752,8 +1000,9 @@ describe('UseKeyModal', () => {
     const unixConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
-    expect(unixConfig).toContain('model_catalog_json = "~/.codex/codex-models.json"')
-    expect(unixConfig).toContain('env_key = "SUB2API_API_KEY"')
+    expect(unixConfig).toContain('model_catalog_json = "codex-models.json"')
+    expect(unixConfig).toContain('experimental_bearer_token = "sk-composite-test"')
+    expect(unixConfig).not.toContain('env_key')
 
     await wrapper.get('[data-testid="codex-model-catalog-fetch"]').trigger('click')
     await flushPromises()
@@ -791,9 +1040,7 @@ describe('UseKeyModal', () => {
     const windowsConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
-    expect(windowsConfig).toContain(
-      'model_catalog_json = "%userprofile%\\\\.codex\\\\codex-models.json"'
-    )
+    expect(windowsConfig).toContain('model_catalog_json = "codex-models.json"')
   })
 
   it.each(['anthropic', 'gemini', 'antigravity', 'kimi', 'zhipu'] as const)(
@@ -829,8 +1076,10 @@ describe('UseKeyModal', () => {
       const config = wrapper.findAll('pre code')
         .map((code) => code.text())
         .find((content) => content.includes('[model_providers.sub2api]'))
-      expect(config).toContain('model_catalog_json = "~/.codex/codex-models.json"')
+      expect(config).toContain('model_catalog_json = "codex-models.json"')
       expect(config).toContain('base_url = "https://example.com/v1"')
+      expect(config).toContain(`experimental_bearer_token = "sk-${platform}-test"`)
+      expect(config).not.toContain('env_key')
       expect(config).toContain('wire_api = "responses"')
     }
   )

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectIOSDevice, detectMobileDevice } from '../device'
+import { detectIOSDevice, detectMobileDevice, detectWindowsDevice } from '../device'
 
 describe('detectMobileDevice', () => {
   it('prefers userAgentData.mobile when available', () => {
@@ -91,5 +91,31 @@ describe('detectIOSDevice', () => {
         maxTouchPoints: 0,
       },
     })).toBe(false)
+  })
+})
+
+describe('detectWindowsDevice', () => {
+  it('prefers the high-entropy platform hint when available', () => {
+    expect(detectWindowsDevice({
+      navigator: {
+        userAgent: 'Mozilla/5.0',
+        userAgentData: { platform: 'Windows' },
+      },
+    })).toBe(true)
+  })
+
+  it('recognizes legacy Win32 navigator platforms', () => {
+    expect(detectWindowsDevice({ navigator: { platform: 'Win32' } })).toBe(true)
+  })
+
+  it('falls back to the Windows user agent token', () => {
+    expect(detectWindowsDevice({
+      navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+    })).toBe(true)
+  })
+
+  it('keeps macOS and Linux platforms as non-Windows', () => {
+    expect(detectWindowsDevice({ navigator: { platform: 'MacIntel' } })).toBe(false)
+    expect(detectWindowsDevice({ navigator: { platform: 'Linux x86_64' } })).toBe(false)
   })
 })
