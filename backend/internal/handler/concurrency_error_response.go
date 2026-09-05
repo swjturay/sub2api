@@ -12,6 +12,12 @@ import (
 
 const statusClientClosedRequest = 499
 
+// defaultConcurrencyRetryAfterSeconds is the client-facing backoff for a
+// bounded concurrency wait or a full wait queue. It is deliberately shorter
+// than maxConcurrencyWait: the latter is the server's maximum admission wait,
+// not a promise that the slot will remain occupied for that whole duration.
+const defaultConcurrencyRetryAfterSeconds = 5
+
 const (
 	gatewayQueueFullCode        = "gateway_queue_full"
 	gatewayConcurrencyLimitCode = "gateway_concurrency_limit"
