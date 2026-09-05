@@ -401,8 +401,6 @@ const codexModelCatalogPath = computed(() => {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   return joinConfigPath(configDir, 'codex-models.json', isWindows)
 })
-const codexModelCatalogConfigPath = 'codex-models.json'
-
 const codexManifestContext = computed(() => {
   if (!showCodexModelCatalog.value) return ''
   return `${props.platform}|${props.baseUrl}|${props.apiKey}`
@@ -1129,7 +1127,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${codexModelCatalogConfigPath}"
+web_search = "live"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1137,9 +1135,13 @@ windows_wsl_setup_acknowledged = true
 name = "OpenAI"
 base_url = "${baseUrl}"
 wire_api = "responses"
+supports_websockets = false
+supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
 
 [features]
+remote_compaction_v2 = true
+image_generation = true
 goals = true`
 
   return buildOpenAICodexFileConfigs(configDir, configContent, apiKey)
@@ -1343,9 +1345,10 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 # Text models only. Image/video: grok-imagine-image / grok-imagine-video on media endpoints.
 # Switch model: grok-4.5 | grok-4.3 | grok-build-0.1 | grok-4.20-multi-agent-0309 (text / web_search)
 
-model_provider = "sub2api"
+model_provider = "OpenAI"
 model = "${model}"
-model_catalog_json = "${codexModelCatalogConfigPath}"
+web_search = "live"
+network_access = "enabled"
 # Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
@@ -1354,8 +1357,8 @@ model_catalog_json = "${codexModelCatalogConfigPath}"
 # network_access = "enabled"
 # windows_wsl_setup_acknowledged = true
 
-[model_providers.sub2api]
-name = "Sub2API Grok"
+[model_providers.OpenAI]
+name = "OpenAI"
 base_url = "${baseUrl}"
 experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
@@ -1363,10 +1366,13 @@ wire_api = "responses"
 requires_openai_auth = false
 # Grok/Sub2API path is HTTP/SSE; disable WS (Codex may otherwise try WebSocket first)
 supports_websockets = false
+supports_standalone_web_search = true
+http_headers = { "x-openai-actor-authorization" = "local-image-extension" }
 
-# Optional:
-# [features]
-# goals = true`
+[features]
+remote_compaction_v2 = true
+image_generation = true
+goals = true`
 
   return [{
     path: joinConfigPath(configDir, 'config.toml', isWindowsPath),
@@ -1409,20 +1415,28 @@ function generateRoutedCodexFiles(
     composite: 'Composite'
   }
   const label = labels[platform]
-  const configContent = `# Codex CLI -> Sub2API ${label} group
-model_provider = "sub2api"
+const configContent = `# Codex CLI -> Sub2API ${label} group
+model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
 disable_response_storage = true
-model_catalog_json = "${codexModelCatalogConfigPath}"
+web_search = "live"
+network_access = "enabled"
 
-[model_providers.sub2api]
-name = "Sub2API ${label}"
+[model_providers.OpenAI]
+name = "OpenAI"
 base_url = "${baseUrl}"
 experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 requires_openai_auth = false
-supports_websockets = false`
+supports_websockets = false
+supports_standalone_web_search = true
+http_headers = { "x-openai-actor-authorization" = "local-image-extension" }
+
+[features]
+remote_compaction_v2 = true
+image_generation = true
+goals = true`
 
   return [{
     path: joinConfigPath(configDir, 'config.toml', isWindows),
@@ -1446,7 +1460,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${codexModelCatalogConfigPath}"
+web_search = "live"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1455,10 +1469,13 @@ name = "OpenAI"
 base_url = "${baseUrl}"
 wire_api = "responses"
 supports_websockets = true
+supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
 
 [features]
 responses_websockets_v2 = true
+remote_compaction_v2 = true
+image_generation = true
 goals = true`
 
   return buildOpenAICodexFileConfigs(configDir, configContent, apiKey)

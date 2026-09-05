@@ -92,10 +92,15 @@ class LocalSetupTests(unittest.TestCase):
     def test_codex_update_uses_nested_provider_section_and_valid_toml(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "config.toml"
-            path.write_text("model_provider = \"legacy\"\n\n[features]\ngoals = true\n", encoding="utf-8")
-            result = MODULE.codex_update(path, "https://api.example.test/v1", "sk-new", "openai", "api-key", False)
+            path.write_text(
+                "model_provider = \"legacy\"\nmodel_catalog_json = \"codex-models.json\"\n\n"
+                "[model_providers.sub2api]\nname = \"Sub2API\"\n\n[features]\ngoals = true\n",
+                encoding="utf-8",
+            )
+            result = MODULE.codex_update(path, "https://api.example.test/v1", "sk-new", "composite", "api-key", False)
         parsed = __import__("tomllib").loads(result)
         self.assertEqual(parsed["model_provider"], "OpenAI")
+        self.assertNotIn("model_catalog_json", parsed)
         self.assertEqual(parsed["model"], "gpt-5.6-terra")
         self.assertNotIn("review_model", parsed)
         self.assertTrue(parsed["disable_response_storage"])
@@ -106,6 +111,7 @@ class LocalSetupTests(unittest.TestCase):
         self.assertEqual(parsed["model_providers"]["OpenAI"]["base_url"], "https://api.example.test/v1")
         self.assertEqual(parsed["model_providers"]["OpenAI"]["experimental_bearer_token"], "sk-new")
         self.assertTrue(parsed["model_providers"]["OpenAI"]["supports_standalone_web_search"])
+        self.assertNotIn("sub2api", parsed["model_providers"])
         self.assertTrue(parsed["features"]["remote_compaction_v2"])
         self.assertTrue(parsed["features"]["image_generation"])
         self.assertTrue(parsed["features"]["goals"])
@@ -123,11 +129,12 @@ class LocalSetupTests(unittest.TestCase):
             )
 
         parsed = __import__("tomllib").loads(result)
-        provider = parsed["model_providers"]["sub2api"]
+        provider = parsed["model_providers"]["OpenAI"]
         self.assertEqual(provider["experimental_bearer_token"], "sk-routed")
         self.assertFalse(provider["requires_openai_auth"])
+        self.assertEqual(provider["name"], "OpenAI")
+        self.assertEqual(provider["http_headers"]["x-openai-actor-authorization"], "local-image-extension")
         self.assertNotIn("env_key", provider)
-        self.assertNotIn("http_headers", provider)
 
     def test_upsert_rejects_duplicate_managed_toml_keys(self):
         with self.assertRaises(MODULE.SetupError):
@@ -152,8 +159,10 @@ class LocalSetupTests(unittest.TestCase):
                 MODULE.apply_setup(type("Args", (), {"yes": True, "dry_run": False, "skip_doctor": True})())
                 parsed = __import__("tomllib").loads((Path(root) / ".codex/config.toml").read_text())
                 self.assertEqual(parsed["model_provider"], "OpenAI")
+                self.assertNotIn("model_catalog_json", parsed)
                 self.assertFalse(parsed["model_providers"]["OpenAI"]["requires_openai_auth"])
                 self.assertEqual(parsed["model_providers"]["OpenAI"]["experimental_bearer_token"], "sk-new")
+                self.assertFalse((Path(root) / ".codex/codex-models.json").exists())
             finally:
                 os.environ.clear()
                 os.environ.update(original)
