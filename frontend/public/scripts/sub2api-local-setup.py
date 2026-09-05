@@ -15,12 +15,12 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCRIPT_VERSION = "2026.09.02"
+SCRIPT_VERSION = "2026.09.05"
 DEFAULT_OPENCODE_MODEL_IDS = {
     "openai": [
         "gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna",
@@ -133,24 +133,6 @@ def discover_opencode_models(endpoint: str, api_key: str, platform: str) -> dict
     ordered = [item for item in priority.get(platform, []) if item in unique]
     ordered.extend(item for item in unique if item not in ordered)
     return {item: {"name": item} for item in ordered}
-
-
-def fetch_codex_model_catalog(endpoint: str, api_key: str) -> str | None:
-    request_url = endpoint.rstrip("/") + "/models?" + urlencode({"client_version": "0.152.0"})
-    request = urllib.request.Request(
-        request_url,
-        headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=20) as response:
-            payload = json.load(response)
-    except (OSError, ValueError, urllib.error.URLError) as exc:
-        log(f"警告: Codex 模型目录获取失败，将保留已有目录: {exc}")
-        return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
-        log("警告: Codex 模型目录响应格式无效，将保留已有目录")
-        return None
-    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
 def model_family(model: str, platform: str) -> str:
@@ -313,6 +295,17 @@ def upsert_toml_values(
     return result + ("\n" if had_final_newline else "")
 
 
+def remove_toml_section(text: str, section: str) -> str:
+    """Remove one obsolete TOML section while retaining all other text."""
+    lines = text.splitlines()
+    bounds = find_section(lines, section)
+    if bounds is None:
+        return text
+    start, end = bounds
+    result = "\n".join(lines[:start] + lines[end:])
+    return result + ("\n" if text.endswith("\n") else "")
+
+
 def validate_json(text: str, path: Path) -> None:
     try:
         json.loads(text)
@@ -404,9 +397,12 @@ def codex_update(
     catalog_path: Path | None = None,
 ) -> str:
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    routed = platform != "openai"
-    section = "model_providers.sub2api" if routed else "model_providers.OpenAI"
-    provider_label = "Sub2API" if routed else "OpenAI"
+    # Codex always speaks the OpenAI Responses protocol. The upstream group
+    # remains an implementation detail of the gateway, so keep the client
+    # provider identity stable for native Codex capabilities.
+    section = "model_providers.OpenAI"
+    provider_label = "OpenAI"
+    text = remove_toml_section(text, "model_providers.sub2api")
     values = {
         "name": toml_string(provider_label),
         "base_url": toml_string(endpoint),
@@ -421,12 +417,6 @@ def codex_update(
             "env_key": toml_string("SUB2API_API_KEY"),
         })
         remove.update({"experimental_bearer_token", "http_headers"})
-    elif routed:
-        values.update({
-            "requires_openai_auth": "false",
-            "experimental_bearer_token": toml_string(api_key),
-        })
-        remove.update({"env_key", "http_headers"})
     elif mode == "api-key":
         values.update({
             "requires_openai_auth": "false",
@@ -442,7 +432,7 @@ def codex_update(
         text,
         None,
         {
-            "model_provider": toml_string("sub2api" if routed else "OpenAI"),
+            "model_provider": toml_string("OpenAI"),
             "model": toml_string("gpt-5.6-terra"),
             "web_search": toml_string("live"),
             "disable_response_storage": "true",
@@ -453,12 +443,9 @@ def codex_update(
             "windows_wsl_setup_acknowledged",
             "model_context_window",
             "model_auto_compact_token_limit",
+            "model_catalog_json",
         },
     )
-    if catalog_path is not None:
-        text = upsert_toml_values(text, None, {
-            "model_catalog_json": toml_string(str(catalog_path)),
-        })
     text = upsert_toml_values(text, section, values, remove)
     return upsert_toml_values(text, "features", {
         "remote_compaction_v2": "true",
@@ -482,14 +469,7 @@ def make_targets(client: str, endpoint: str, api_key: str, platform: str, models
     mode = os.environ.get("SUB2API_SETUP_CODEX_AUTH_MODE", "api-key").strip() or "api-key"
     websocket = os.environ.get("SUB2API_SETUP_CODEX_WEBSOCKET", "false").lower() == "true"
     codex_path = root / ".codex" / "config.toml"
-    catalog_path = root / ".codex" / "codex-models.json"
-    catalog = fetch_codex_model_catalog(endpoint, api_key)
-    catalog_available = catalog is not None or catalog_path.exists()
-    if catalog_available:
-        log(f"Codex 模型目录: {catalog_path}")
     targets: dict[Path, str] = {}
-    if catalog is not None:
-        targets[catalog_path] = catalog
     targets[codex_path] = codex_update(
         codex_path,
         endpoint,
@@ -497,7 +477,6 @@ def make_targets(client: str, endpoint: str, api_key: str, platform: str, models
         platform,
         mode,
         websocket,
-        catalog_path if catalog_available else None,
     )
     if mode == "legacy":
         targets[root / ".codex" / "auth.json"] = json.dumps({"OPENAI_API_KEY": api_key}, indent=2) + "\n"
