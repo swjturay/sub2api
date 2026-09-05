@@ -61,6 +61,10 @@ jobs:
             VERSION=${{ inputs.version }}
             COMMIT=${{ inputs.source_sha }}
             DATE=${{ github.run_started_at }}
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ inputs.source_sha }}
+            org.opencontainers.image.source=https://github.com/swjturay/sub2api
           cache-from: type=gha,scope=cce-clean-amd64
           cache-to: type=gha,mode=max,scope=cce-clean-amd64
 
