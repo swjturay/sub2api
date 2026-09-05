@@ -15,7 +15,7 @@ on:
         description: Runtime version embedded in the image
         required: true
         type: string
-        default: 0.2.0-clean-codex
+        default: 0.2.1-clean-codex
 
 permissions:
   contents: read
