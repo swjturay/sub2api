@@ -208,23 +208,23 @@ export default {
       deepseek: {
         description: '通过当前 DeepSeek 分组配置 Claude Code、Codex 或 OpenCode。',
         codexDescription: '使用 API Key 配置 Codex，并通过当前 DeepSeek 分组发送请求。',
-        codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
-        codexNote: 'API Key 已写入 config.toml；下载的模型目录只包含模型元数据。请保护配置文件并在保存后重启 Codex。'
+        codexConfigTomlHint: '将下方 config.toml 保存到 Codex 配置目录后重启 Codex；Codex 使用内置模型目录，无需额外下载文件。',
+        codexNote: 'API Key 已写入 config.toml；Codex 使用内置模型目录，无需配置 model_catalog_json。请保护配置文件并在保存后重启 Codex。'
       },
       composite: {
         description: '通过当前 Composite 路由分组配置受支持的客户端。',
-        codexDescription: '使用 API Key 和当前 Composite 分组的完整模型目录配置 Codex。',
-        codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
-        codexNote: 'API Key 已写入 config.toml；分组会根据目录中选中的模型路由请求。请保护配置文件并在保存后重启 Codex。'
+        codexDescription: '使用 API Key 和当前 Composite 分组配置 Codex。',
+        codexConfigTomlHint: '将下方 config.toml 保存到 Codex 配置目录后重启 Codex；Codex 使用内置模型目录，无需额外下载文件。',
+        codexNote: 'API Key 已写入 config.toml；Codex 使用内置模型目录，无需配置 model_catalog_json。请保护配置文件并在保存后重启 Codex。'
       },
       routedCodex: {
-        description: '使用当前路由分组的完整模型目录配置 Codex。',
-        configTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
-        note: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
+        description: '使用当前路由分组配置 Codex。',
+        configTomlHint: '将下方 config.toml 保存到 Codex 配置目录后重启 Codex；Codex 使用内置模型目录，无需额外下载文件。',
+        note: 'API Key 已写入 config.toml；Codex 使用内置模型目录，无需配置 model_catalog_json。请保护配置文件并在保存后重启 Codex。'
       },
       codexModelCatalog: {
         title: 'Codex 模型目录',
-        description: '使用当前 API Key 获取目录，并保存到 config.toml 引用的路径。',
+        description: '可选获取模型列表，用于选择默认模型；Codex 配置不再引用外部模型目录文件。',
         fetch: '获取目录',
         retry: '重试',
         download: '下载目录',
