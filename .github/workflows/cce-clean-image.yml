@@ -1,6 +1,9 @@
 name: CCE clean branch image
 
 on:
+  push:
+    branches:
+      - codex/build-cce-clean-05dc09da
   workflow_dispatch:
     inputs:
       source_ref:
@@ -28,14 +31,14 @@ jobs:
       - name: Checkout exact clean source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}
           fetch-depth: 1
 
       - name: Verify exact source commit
         run: |
-          test "$(git rev-parse HEAD)" = "${{ inputs.source_sha }}"
-          echo "source_ref=${{ inputs.source_ref }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "source_sha=${{ inputs.source_sha }}" >> "$GITHUB_STEP_SUMMARY"
+          test "$(git rev-parse HEAD)" = "${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}"
+          echo "source_ref=${{ inputs.source_ref || 'codex/cce-sub2api-v0.2.0-clean' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "source_sha=${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -54,17 +57,17 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/swjturay/sub2api:cce-v0.2.0-clean-${{ inputs.source_sha }}
+          tags: ghcr.io/swjturay/sub2api:cce-v0.2.0-clean-${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}
           build-args: |
-            VERSION=${{ inputs.version }}
-            COMMIT=${{ inputs.source_sha }}
+            VERSION=${{ inputs.version || '0.2.0-clean' }}
+            COMMIT=${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}
             DATE=${{ github.event.repository.updated_at }}
           cache-from: type=gha,scope=cce-v0.2.0-clean-amd64
           cache-to: type=gha,mode=max,scope=cce-v0.2.0-clean-amd64
 
       - name: Export immutable image archive
         run: |
-          image="ghcr.io/swjturay/sub2api:cce-v0.2.0-clean-${{ inputs.source_sha }}"
+          image="ghcr.io/swjturay/sub2api:cce-v0.2.0-clean-${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}"
           docker pull --platform linux/amd64 "$image"
           docker image inspect "$image" --format '{{.Os}}/{{.Architecture}} {{index .RepoDigests 0}}'
           docker save "$image" | gzip -1 > /tmp/sub2api-cce-v0.2.0-clean.tar.gz
@@ -73,7 +76,7 @@ jobs:
       - name: Upload immutable image archive
         uses: actions/upload-artifact@v4
         with:
-          name: sub2api-cce-v0.2.0-clean-${{ inputs.source_sha }}
+          name: sub2api-cce-v0.2.0-clean-${{ inputs.source_sha || '05dc09da73cde1bf6d22b0be2ed0804f7e13248b' }}
           path: /tmp/sub2api-cce-v0.2.0-clean.tar.gz
           if-no-files-found: error
           retention-days: 7
