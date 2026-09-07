@@ -1218,14 +1218,7 @@ func (h *GatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
 		return
 	}
-	etag := service.CodexModelsManifestETag(body)
-	c.Header("ETag", etag)
-	if service.CodexModelsManifestETagMatches(c.GetHeader("If-None-Match"), etag) {
-		c.Status(http.StatusNotModified)
-		c.Writer.WriteHeaderNow()
-		return
-	}
-	c.Data(http.StatusOK, "application/json", body)
+	writeCodexModelsManifestResponse(c, &service.CodexModelsManifest{Body: body})
 }
 
 func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *service.Group, platformOverride string) []string {
