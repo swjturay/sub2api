@@ -25,21 +25,66 @@ class LocalSetupTests(unittest.TestCase):
             probe = Path(root) / "probe.ps1"
             probe.write_text(
                 function_source
-                + "\nfunction Invoke-WebRequest { param([switch]$UseBasicParsing, $Uri, $OutFile) throw 'DOWNLOAD_REACHED' }\n"
+                + "\nfunction Invoke-WebRequest { param([switch]$UseBasicParsing, $Uri, $OutFile, $TimeoutSec) throw 'DOWNLOAD_REACHED' }\n"
+                + "function Start-Sleep { param($Seconds) }\n"
+                + "$env:SUB2API_SETUP_USE_CURL = 'false'\n"
                 + f"$env:LOCALAPPDATA = {json.dumps(root)}\n"
-                + "try { Get-PortablePython | Out-Null } catch { Write-Output $_.Exception.Message }\n",
+                + "try { Get-PortablePython 'https://example.test' | Out-Null } catch { Write-Output $_.Exception.Message }\n",
                 encoding="utf-8-sig",
             )
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
                 capture_output=True,
-                text=True,
+                encoding="utf-8", errors="replace",
                 check=False,
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("DOWNLOAD_REACHED", result.stdout)
         self.assertNotIn("LiteralPath", result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("powershell.exe"), "Windows PowerShell is required")
+    def test_windows_download_retries_with_a_bounded_timeout_and_atomic_output(self):
+        source = WINDOWS_SCRIPT.read_text(encoding="utf-8")
+        function_source = source.split("function Find-Python", 1)[0]
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / "download.bin"
+            probe = Path(root) / "probe.ps1"
+            probe.write_text(
+                function_source
+                + "\n$script:attempts = 0\n"
+                + "function Start-Sleep { param($Seconds) }\n"
+                + "function Invoke-WebRequest { param([switch]$UseBasicParsing, $Uri, $OutFile, $TimeoutSec)\n"
+                + "  $script:attempts += 1\n"
+                + "  if ($TimeoutSec -ne 7) { throw 'BAD_TIMEOUT' }\n"
+                + "  if ($script:attempts -eq 1) { throw 'TRANSIENT_FAILURE' }\n"
+                + "  [IO.File]::WriteAllBytes($OutFile, [byte[]](1, 2, 3))\n"
+                + "}\n"
+                + "$env:SUB2API_SETUP_USE_CURL = 'false'\n"
+                + f"Invoke-SetupDownload -Uri 'https://example.test/file' -OutFile {json.dumps(str(output))} -Label '测试文件' -TimeoutSec 7\n"
+                + "Write-Output ('ATTEMPTS=' + $script:attempts)\n",
+                encoding="utf-8-sig",
+            )
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
+                capture_output=True,
+                encoding="utf-8", errors="replace",
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("ATTEMPTS=2", result.stdout)
+            self.assertEqual(output.read_bytes(), bytes((1, 2, 3)))
+
+    def test_windows_downloads_have_stage_labels_and_curl_time_limits(self):
+        source = WINDOWS_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("正在下载${Label}", source)
+        self.assertIn("--connect-timeout 15", source)
+        self.assertIn("--max-time $TimeoutSec", source)
+        self.assertIn("$attempt -le 3", source)
+        self.assertIn("$ProgressPreference = 'SilentlyContinue'", source)
+        self.assertIn("本站便携 Python（约 11 MiB，首次运行需要）", source)
+        self.assertIn("https://www.python.org/ftp/python/$pythonVersion/$pythonAsset", source)
 
     def test_claude_update_preserves_unmanaged_settings(self):
         with tempfile.TemporaryDirectory() as root:

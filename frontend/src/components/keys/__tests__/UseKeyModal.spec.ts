@@ -611,7 +611,7 @@ describe('UseKeyModal', () => {
     await osTabs[1].trigger('click')
     await wrapper.get('[data-testid="local-setup-copy"]').trigger('click')
     expect(copyToClipboardMock).toHaveBeenCalledWith(
-      expect.stringContaining("& ([scriptblock]::Create((irm 'http://localhost:3000/scripts/sub2api-local-setup.ps1')))"),
+      expect.stringContaining("& ([scriptblock]::Create((irm -UseBasicParsing -TimeoutSec 30 'http://localhost:3000/scripts/sub2api-local-setup.ps1')))"),
       'keys.useKeyModal.localSetup.copiedToast'
     )
   })

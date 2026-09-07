@@ -80,7 +80,7 @@ export function buildLocalSetupCommand(input: LocalSetupCommandInput): string {
     args.push('--models', powerShellQuote(input.opencodeModels.join(',')))
   }
   args.push('--yes')
-  return `& ([scriptblock]::Create((irm ${powerShellQuote(scriptUrl)}))) ${args.join(' ')}`
+  return `& ([scriptblock]::Create((irm -UseBasicParsing -TimeoutSec 30 ${powerShellQuote(scriptUrl)}))) ${args.join(' ')}`
 }
 
 export function resolveLocalSetupEndpoint(input: LocalSetupCommandInput): string {
