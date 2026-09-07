@@ -28,7 +28,7 @@ describe('local setup command', () => {
   it('builds a short PowerShell installer command with quote-safe positional values', () => {
     const command = buildLocalSetupCommand({ ...input, apiKey: "sk-o'hare", os: 'windows' })
     expect(command).toBe(
-      "& ([scriptblock]::Create((irm 'https://console.example.com/scripts/sub2api-local-setup.ps1'))) 'https://api.example.com' 'sk-o''hare' 'opencode' 'openai' --yes"
+      "& ([scriptblock]::Create((irm -UseBasicParsing -TimeoutSec 30 'https://console.example.com/scripts/sub2api-local-setup.ps1'))) 'https://api.example.com' 'sk-o''hare' 'opencode' 'openai' --yes"
     )
     expect(command.length).toBeLessThan(300)
     expect(command).not.toContain('powershell.exe')
