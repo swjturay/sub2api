@@ -18,6 +18,52 @@ SPEC.loader.exec_module(MODULE)
 
 class LocalSetupTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("powershell.exe"), "Windows PowerShell is required")
+    def test_windows_codex_command_preserves_args_and_does_not_exit_host(self):
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            fake_python = root_path / "python.cmd"
+            fake_python.write_text(
+                "@echo off\r\n"
+                "if \"%~1\"==\"-c\" exit /b 0\r\n"
+                "echo PY_HELPER_REACHED\r\n"
+                "exit /b 23\r\n",
+                encoding="ascii",
+            )
+            probe = root_path / "probe.ps1"
+            probe.write_text(
+                "function Invoke-WebRequest {\n"
+                "  param([switch]$UseBasicParsing, $Uri, $OutFile)\n"
+                "  [IO.File]::WriteAllText($OutFile, '# fixture')\n"
+                "}\n"
+                f"$source = [IO.File]::ReadAllText({json.dumps(str(WINDOWS_SCRIPT))})\n"
+                "try {\n"
+                "  & ([scriptblock]::Create($source)) 'https://api.example.test' 'sk-REDACTED' 'codex' --yes\n"
+                "} catch {\n"
+                "  Write-Output ('CAUGHT: ' + $_.Exception.Message)\n"
+                "}\n"
+                "Write-Output 'HOST_SURVIVED'\n",
+                encoding="utf-8-sig",
+            )
+            env = os.environ.copy()
+            env["PATH"] = root
+            env["SUB2API_SETUP_CONFIG_DIR"] = root
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                env=env,
+            )
+
+        output = result.stdout + result.stderr
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("PY_HELPER_REACHED", output)
+        self.assertIn("HOST_SURVIVED", output)
+        self.assertNotIn("System.Char", output)
+
+    @unittest.skipUnless(shutil.which("powershell.exe"), "Windows PowerShell is required")
     def test_windows_portable_python_branch_handles_an_empty_cache(self):
         source = WINDOWS_SCRIPT.read_text(encoding="utf-8")
         function_source = source.split("$client = $env:SUB2API_SETUP_CLIENT", 1)[0]
