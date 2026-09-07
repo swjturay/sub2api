@@ -46,17 +46,17 @@ $endpointArg = $null
 $apiKeyArg = $null
 if ([string]::IsNullOrWhiteSpace($env:SUB2API_SETUP_ENDPOINT) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
   $endpointArg = $args[0]
-  $args = $args | Select-Object -Skip 1
+  $args = @($args | Select-Object -Skip 1)
 }
 if ([string]::IsNullOrWhiteSpace($env:SUB2API_SETUP_API_KEY) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
   $apiKeyArg = $args[0]
-  $args = $args | Select-Object -Skip 1
+  $args = @($args | Select-Object -Skip 1)
 }
 if ($endpointArg) { $env:SUB2API_SETUP_ENDPOINT = $endpointArg }
 if ($apiKeyArg) { $env:SUB2API_SETUP_API_KEY = $apiKeyArg }
 if ([string]::IsNullOrWhiteSpace($client) -and $args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
   $client = $args[0]
-  $args = $args | Select-Object -Skip 1
+  $args = @($args | Select-Object -Skip 1)
 }
 $client = if ([string]::IsNullOrWhiteSpace($client)) { 'codex' } else { $client.ToLowerInvariant() }
 switch ($client) {
@@ -68,7 +68,7 @@ switch ($client) {
 }
 if ($args.Count -gt 0 -and -not $args[0].StartsWith('-')) {
   $env:SUB2API_SETUP_PLATFORM = $args[0]
-  $args = $args | Select-Object -Skip 1
+  $args = @($args | Select-Object -Skip 1)
 }
 
 $python = Find-Python
@@ -89,7 +89,7 @@ try {
   Invoke-WebRequest -UseBasicParsing -Uri $helperUrl -OutFile $helper
   Write-Host '[sub2api] 配置解析器已下载，开始执行'
   & $python $helper @args
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  if ($LASTEXITCODE -ne 0) { Fail "配置解析器执行失败，退出码: $LASTEXITCODE" }
 } finally {
   Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
