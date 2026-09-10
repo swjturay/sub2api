@@ -210,8 +210,8 @@ export default {
       minimax: {
         description: 'Configure Claude Code, Codex, or OpenCode through the current MiniMax group.',
         codexDescription: 'Configure Codex with API key authentication through the current MiniMax group.',
-        codexConfigTomlHint: 'Download the model catalog below, save both files under the Codex config directory, and restart Codex.',
-        codexNote: 'Export SUB2API_API_KEY before starting Codex. The downloaded catalog contains model metadata only, not your API key.',
+        codexConfigTomlHint: 'Save the config.toml below under the Codex config directory and restart Codex; Codex uses its built-in model catalog, so no extra file is required.',
+        codexNote: 'The API key is written to config.toml; Codex uses its built-in model catalog and does not need model_catalog_json. Protect the config file and restart Codex after saving it.',
       },
       composite: {
         description: 'Configure supported clients through the current Composite routing group.',

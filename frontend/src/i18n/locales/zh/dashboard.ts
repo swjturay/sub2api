@@ -214,8 +214,8 @@ export default {
       minimax: {
         description: '通过当前 MiniMax 分组配置 Claude Code、Codex 或 OpenCode。',
         codexDescription: '使用 API Key 配置 Codex，并通过当前 MiniMax 分组发送请求。',
-        codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
-        codexNote: '启动 Codex 前先导出 SUB2API_API_KEY。下载的目录只包含模型元数据，不包含 API Key。'
+        codexConfigTomlHint: '将下方 config.toml 保存到 Codex 配置目录后重启 Codex；Codex 使用内置模型目录，无需额外下载文件。',
+        codexNote: 'API Key 已写入 config.toml；Codex 使用内置模型目录，无需配置 model_catalog_json。请保护配置文件并在保存后重启 Codex。'
       },
       composite: {
         description: '通过当前 Composite 路由分组配置受支持的客户端。',

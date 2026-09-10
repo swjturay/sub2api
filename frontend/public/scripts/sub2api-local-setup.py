@@ -41,6 +41,12 @@ DEFAULT_OPENCODE_MODEL_IDS = {
         "grok-4.5", "grok-build-0.1", "grok-4.20-multi-agent-0309",
         "grok-4.3", "grok-composer-2.5-fast",
     ],
+    "minimax": [
+        "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed",
+        "MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1",
+        "MiniMax-M2.1-highspeed", "MiniMax-M2", "abab6.5-chat",
+        "abab6.5s-chat", "abab6.5s-chat-pro", "abab6-chat", "abab5.5-chat", "abab5.5s-chat",
+    ],
 }
 DEFAULT_OPENCODE_MODEL_IDS["composite"] = list(dict.fromkeys(
     DEFAULT_OPENCODE_MODEL_IDS["openai"]
@@ -127,6 +133,7 @@ def discover_opencode_models(endpoint: str, api_key: str, platform: str) -> dict
         "antigravity": ["claude-sonnet-4-6", "gemini-3.1-pro-high", "gemini-2.5-flash"],
         "grok": ["grok-4.5", "grok-build-0.1", "grok-4.20-multi-agent-0309"],
         "deepseek": ["deepseek-v4-pro", "deepseek-chat"],
+        "minimax": ["MiniMax-M3", "MiniMax-M2.7"],
         "composite": ["gpt-5.5", "claude-sonnet-4-6", "gemini-2.5-pro"],
     }
     unique = list(dict.fromkeys(ids))
@@ -148,6 +155,8 @@ def model_family(model: str, platform: str) -> str:
         return "grok"
     if platform == "deepseek":
         return "deepseek"
+    if platform == "minimax":
+        return "minimax"
     if qualified in {"anthropic", "claude"} or value.startswith("claude"):
         return "anthropic"
     if qualified in {"google", "gemini"} or value.startswith("gemini"):
@@ -160,6 +169,8 @@ def model_family(model: str, platform: str) -> str:
         return "zhipu"
     if qualified == "deepseek" or value.startswith("deepseek-"):
         return "deepseek"
+    if qualified == "minimax" or value.startswith(("minimax-", "abab")):
+        return "minimax"
     return "openai"
 
 

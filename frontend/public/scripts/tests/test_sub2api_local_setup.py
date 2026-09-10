@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -17,6 +18,27 @@ SPEC.loader.exec_module(MODULE)
 
 
 class LocalSetupTests(unittest.TestCase):
+    def test_minimax_opencode_uses_compatible_provider_for_native_and_composite_groups(self):
+        for platform in ("minimax", "composite"):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as root:
+                models = {"MiniMax-M3": {"name": "MiniMax-M3"}, "minimax/custom": {"name": "Custom"}}
+                result = json.loads(MODULE.opencode_update(
+                    Path(root) / "opencode.json", "https://api.example.test/v1", "sk-test", platform, models,
+                ))
+                provider = result["provider"]["shared-ai-minimax"]
+                self.assertEqual(provider["npm"], "@ai-sdk/openai-compatible")
+                self.assertEqual(provider["options"]["baseURL"], "https://api.example.test/v1")
+                self.assertEqual(set(provider["models"]), set(models))
+                self.assertNotIn("shared-ai-openai", result["provider"])
+
+    def test_minimax_discovery_failure_keeps_minimax_fallbacks(self):
+        with patch.dict(os.environ, {"SUB2API_SETUP_OPENCODE_MODELS": ""}), patch.object(
+            MODULE.urllib.request, "urlopen", side_effect=OSError("offline")
+        ):
+            models = MODULE.discover_opencode_models("https://api.example.test/v1", "sk-test", "minimax")
+        self.assertEqual(next(iter(models)), "MiniMax-M3")
+        self.assertNotIn("gpt-5.5", models)
+
     @unittest.skipUnless(shutil.which("powershell.exe"), "Windows PowerShell is required")
     def test_windows_codex_command_preserves_args_and_does_not_exit_host(self):
         with tempfile.TemporaryDirectory() as root:

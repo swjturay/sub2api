@@ -215,6 +215,31 @@ describe('UseKeyModal', () => {
     }
   })
 
+  it.each(['minimax', 'composite'] as const)('keeps MiniMax OpenCode models in a compatible provider for %s', async (platform) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'MiniMax-M3' }, { id: 'minimax/custom' }] })
+    }))
+    const wrapper = mount(UseKeyModal, {
+      props: { show: true, apiKey: 'sk-minimax-test', baseUrl: 'https://example.com/v1', platform },
+      global: { stubs: { BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' }, Icon: true } }
+    })
+    const tab = wrapper.findAll('button').find((button) => button.text().includes('keys.useKeyModal.cliTabs.opencode'))
+    expect(tab).toBeDefined()
+    await tab!.trigger('click')
+    await wrapper.get('[data-testid="local-setup-models-fetch"]').trigger('click')
+    await flushPromises()
+    const content = wrapper.findAll('pre code').map((code) => code.text()).find((code) => code.includes('"provider"'))
+    const config = JSON.parse(content!)
+    const provider = config.provider['shared-ai-minimax']
+    expect(provider?.npm).toBe('@ai-sdk/openai-compatible')
+    expect(provider.options.baseURL).toBe('https://example.com/v1')
+    expect(provider.models['MiniMax-M3']).toBeDefined()
+    expect(provider.models['minimax/custom']).toBeDefined()
+    expect(config.provider['shared-ai-openai']?.models['MiniMax-M3']).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('renders Grok Build and OpenCode setup for Grok groups', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

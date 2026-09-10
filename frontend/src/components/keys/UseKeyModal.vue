@@ -731,6 +731,7 @@ const openCodeModelPriority: Partial<Record<GroupPlatform, string[]>> = {
   antigravity: ['claude-sonnet-4-6', 'gemini-3.1-pro-high', 'gemini-2.5-flash'],
   grok: ['grok-4.5', 'grok-build-0.1', 'grok-4.20-multi-agent-0309'],
   deepseek: ['deepseek-v4-pro', 'deepseek-chat'],
+  minimax: ['MiniMax-M3', 'MiniMax-M2.7'],
   composite: ['gpt-5.5', 'claude-sonnet-4-6', 'gemini-2.5-pro']
 }
 
@@ -2042,12 +2043,14 @@ function generateOpenCodeConfig(
     if (sourcePlatform === 'gemini' || sourcePlatform === 'antigravity-gemini') return 'gemini'
     if (sourcePlatform === 'grok') return 'grok'
     if (sourcePlatform === 'deepseek') return 'deepseek'
+    if (sourcePlatform === 'minimax') return 'minimax'
     if (qualifiedProvider === 'anthropic' || qualifiedProvider === 'claude' || value.startsWith('claude')) return 'anthropic'
     if (qualifiedProvider === 'google' || qualifiedProvider === 'gemini' || value.startsWith('gemini')) return 'gemini'
     if (qualifiedProvider === 'xai' || qualifiedProvider === 'grok' || value.startsWith('grok')) return 'grok'
     if (qualifiedProvider === 'kimi' || qualifiedProvider === 'moonshot' || value.startsWith('kimi-') || value.startsWith('moonshot-')) return 'kimi'
     if (qualifiedProvider === 'zhipu' || qualifiedProvider === 'glm' || value.startsWith('glm-')) return 'zhipu'
     if (qualifiedProvider === 'deepseek' || value.startsWith('deepseek-')) return 'deepseek'
+    if (qualifiedProvider === 'minimax' || value.startsWith('minimax-') || value.startsWith('abab')) return 'minimax'
     return 'openai'
   }
 
@@ -2058,7 +2061,8 @@ function generateOpenCodeConfig(
     grok: '@ai-sdk/openai-compatible',
     kimi: '@ai-sdk/openai-compatible',
     zhipu: '@ai-sdk/openai-compatible',
-    deepseek: '@ai-sdk/openai-compatible'
+    deepseek: '@ai-sdk/openai-compatible',
+    minimax: '@ai-sdk/openai-compatible'
   }
   const baseURLForFamily = (family: string): string => {
     if (family !== 'gemini') return baseUrl
