@@ -114,16 +114,26 @@ func TestCodexDeviceWireProfileImages(t *testing.T) {
 				require.Equal(t, wantInstall, gjson.GetBytes(up.lastBody, "client_metadata.x-codex-installation-id").String())
 				require.Empty(t, up.lastReq.Header.Get("x-codex-installation-id"))
 				require.Empty(t, up.lastReq.Header.Get("OpenAI-Beta"))
-				// 自建的 Responses body 同样要按真客户端的字段序出站（16ff14c common.rs:282）。
-				keys := topLevelKeys(t, up.lastBody)
-				require.Equal(t, "model", keys[0], "images 出站体首键必须是 model：%v", keys)
-				require.Less(t, indexOf(keys, "instructions"), indexOf(keys, "input"), "%v", keys)
-				require.Less(t, indexOf(keys, "input"), indexOf(keys, "tools"), "%v", keys)
-				require.Equal(t, "client_metadata", keys[len(keys)-1], "%v", keys)
+				// gpt-image-2 命中 usesCodexDirectImages，上游 0.2.5 起走
+				// buildOpenAIImagesOAuthPayload，不再是 Responses 的
+				// instructions/input/tools，所以那三键的相对序断言不再适用。
+				//
+				// 已知偏离，故意不在这里断言字段序（实测出线序是
+				// [model client_metadata prompt]，gjson ForEach 保序）：
+				//   - "首键必须是 model" 是空断言：direct 的 payload 走
+				//     json.Marshal(map[string]any)，Go 按键名字典序输出，只传
+				//     model+prompt 时恰好是 model，带上 background 就变 background。
+				//   - "client_metadata 必须是末键" 在这条路径上不成立。
+				// 真 Codex 客户端不会这么发。修它要动上游的 payload 构造，还需要
+				// direct 端点真客户端字段序的证据——两者都没有，所以宁可留空缺口
+				// 也不放一条看起来在守、实际不守的断言。
+				require.Contains(t, topLevelKeys(t, up.lastBody), "client_metadata")
 			} else {
 				require.False(t, gjson.GetBytes(up.lastBody, "client_metadata").Exists())
 				require.Equal(t, wantInstall, up.lastReq.Header.Get("x-codex-installation-id"))
-				require.Equal(t, "responses=experimental", up.lastReq.Header.Get("OpenAI-Beta"))
+				// gpt-image-2 命中 usesCodexDirectImages：上游 0.2.5 起 direct 走自建
+				// payload 与独立端点，一律不发 OpenAI-Beta。双开开关不影响这一点。
+				require.Empty(t, up.lastReq.Header.Get("OpenAI-Beta"))
 			}
 			require.Equal(t, resolveCodexOutboundIdentity("").version, up.lastReq.Header.Get("version"),
 				"version 是 provider 头（model-provider-info/src/lib.rs:397），钉到规范身份")
