@@ -442,6 +442,22 @@ func TestWaitForSlotWithPingTimeout_TimeoutAndStreamPing(t *testing.T) {
 	})
 }
 
+func TestWaitForSlotWithPingTimeoutNoHeartbeat_TimeoutLeavesResponseUncommitted(t *testing.T) {
+	cache := &helperConcurrencyCacheStub{accountSeq: []bool{false, false, false}}
+	helper := NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatComment, 5*time.Millisecond)
+	c, rec := newHelperTestContext(http.MethodPost, EndpointResponses)
+	streamStarted := false
+
+	release, err := helper.waitForSlotWithPingTimeoutNoHeartbeat(c, "account", 101, 2, 35*time.Millisecond, true, &streamStarted, true)
+	require.Nil(t, release)
+	var cErr *ConcurrencyError
+	require.ErrorAs(t, err, &cErr)
+	require.True(t, cErr.IsTimeout)
+	require.False(t, streamStarted)
+	require.False(t, rec.Flushed)
+	require.Empty(t, rec.Body.String())
+}
+
 func TestWaitForSlotWithPingTimeout_ParentContextCanceled(t *testing.T) {
 	cache := &helperConcurrencyCacheStub{
 		accountSeq: []bool{false},
