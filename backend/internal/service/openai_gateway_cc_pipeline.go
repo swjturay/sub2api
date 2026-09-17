@@ -220,6 +220,9 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
+	// OpenCode 身份收口：在账号级覆写之前把下游客户端指纹收敛为网关身份，
+	// 避免上游按客户端种类分别建立签名（见 applyOpenCodeGoUpstreamIdentity）。
+	applyOpenCodeGoUpstreamIdentityForAccount(account, upstreamReq.Header)
 	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
 	// 使配置值获得除共享传输层强制头之外的最高优先级。
 	account.ApplyHeaderOverrides(upstreamReq.Header)

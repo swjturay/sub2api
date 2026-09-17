@@ -1510,6 +1510,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("content-type", "application/json")
 	}
 
+	// OpenCode 身份收口：本路径用于 OpenCode Go / Zen 的 responses 协议模型
+	// （grok-* / gpt-* / muse-spark-*）。这些账号是 apikey 类型，不走上面的
+	// Codex 身份收口，入站 UA 会经 openaiAllowedHeaders 白名单直达上游，
+	// 因此必须在此收敛下游客户端指纹。
+	applyOpenCodeGoUpstreamIdentityForAccount(account, req.Header)
+
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, req.Header, body, openCodeSessionHintBody(promptCacheKey))

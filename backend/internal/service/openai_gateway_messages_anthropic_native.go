@@ -208,6 +208,9 @@ func (s *OpenAIGatewayService) buildNativeAnthropicUpstreamRequest(
 		setHeaderRaw(req.Header, "anthropic-version", "2023-06-01")
 	}
 
+	// OpenCode 身份收口：本路径对 OpenCode Go / Zen 账号复用 Anthropic Messages
+	// 端点，同样必须收敛下游客户端指纹（见 applyOpenCodeGoUpstreamIdentity）。
+	applyOpenCodeGoUpstreamIdentityForAccount(account, req.Header)
 	// 账号级请求头覆写（最终生效，覆盖上面所有来源的同名头）
 	account.ApplyHeaderOverrides(req.Header)
 	payloads := append([][]byte{body}, sessionBodies...)

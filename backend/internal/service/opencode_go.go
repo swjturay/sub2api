@@ -328,3 +328,64 @@ func openCodeGoQuotaURL(baseURL string) string {
 	}
 	return base + openCodeGoUsagePath
 }
+
+// openCodeGoUpstreamUserAgent 是 OpenCode Go / Zen 账号的规范出站 User-Agent。
+//
+// 该平台的 Cloudflare 按其 "browser signature" 对本网关放行的任意客户端 UA 单独
+// 判定：2026-09-17 生产复现中，Python-urllib/3.11–3.14 被稳定返回 1010
+// (browser_signature_banned, retryable=false)，而同一出口换 UA 即 200。原实现把
+// 下游客户端 UA 透传给上游，等于让上游按客户端种类分别建立指纹：一个被封的客户端
+// 会在 180 分钟窗口内累计 3 次账号级 403 并最终永久停调账号，而该 UA 与账号无关。
+//
+// 因此 OpenCode 账号统一使用本网关身份出站，不再暴露下游客户端种类。
+// 需要固定为其它值时使用账号级请求头覆写（header_overrides.user-agent），
+// 它在身份收口之后应用，优先级更高。
+const openCodeGoUpstreamUserAgent = "sub2api-opencode-go/1.0"
+
+// openCodeGoClientFingerprintHeaders 是下游客户端身份头（小写）。
+// 这些头不承载 OpenCode 上游协议语义，只用于区分发起方是哪个客户端/SDK/终端，
+// 与 User-Agent 同属一类指纹，故在 OpenCode 出站前一并清除。
+var openCodeGoClientFingerprintHeaders = []string{
+	"x-stainless-lang",
+	"x-stainless-package-version",
+	"x-stainless-os",
+	"x-stainless-arch",
+	"x-stainless-runtime",
+	"x-stainless-runtime-version",
+	"x-stainless-retry-count",
+	"x-stainless-timeout",
+	"x-stainless-helper-method",
+	"x-app",
+	"anthropic-dangerous-direct-browser-access",
+	"accept-language",
+	"sec-fetch-mode",
+	"x-claude-code-session-id",
+}
+
+// applyOpenCodeGoUpstreamIdentity 把 OpenCode Go / Zen 出站请求收敛到网关规范身份，
+// 消除下游客户端指纹。非 OpenCode 账号为 no-op。
+//
+// 调用位置不变式：必须在本账号的通用请求头覆写（ApplyHeaderOverrides）之前调用，
+// 使管理员显式配置的 header_overrides 仍然拥有最终优先级——与 Grok CLI 身份头
+// 的既有顺序一致。
+func applyOpenCodeGoUpstreamIdentity(h http.Header) {
+	if h == nil {
+		return
+	}
+	for _, name := range openCodeGoClientFingerprintHeaders {
+		for existing := range h {
+			if strings.EqualFold(existing, name) {
+				delete(h, existing)
+			}
+		}
+	}
+	h.Set("User-Agent", openCodeGoUpstreamUserAgent)
+}
+
+// applyOpenCodeGoUpstreamIdentityForAccount 按账号平台门控的便捷入口。
+func applyOpenCodeGoUpstreamIdentityForAccount(account *Account, h http.Header) {
+	if account == nil || !account.IsOpenCodeGo() {
+		return
+	}
+	applyOpenCodeGoUpstreamIdentity(h)
+}
