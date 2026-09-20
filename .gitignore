@@ -37,6 +37,8 @@ frontend/node_modules/
 frontend/dist/
 *.local
 *.tsbuildinfo
+**/__pycache__/
+*.pyc
 vite.config.d.ts
 vite.config.js.timestamp-*
 
@@ -124,6 +126,10 @@ CLAUDE.md
 scripts
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+!frontend/public/scripts/
+!frontend/public/scripts/**
+frontend/public/scripts/**/__pycache__/
+frontend/public/scripts/**/*.pyc
 .code-review-state
 #openspec/
 code-reviews/
@@ -133,7 +139,6 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
-!docs/ANTIGRAVITY_ATTRIBUTION_429.md
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md

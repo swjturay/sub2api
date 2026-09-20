@@ -1,5 +1,6 @@
 interface NavigatorUADataLike {
   mobile?: boolean
+  platform?: string
 }
 
 interface NavigatorLike {
@@ -21,6 +22,7 @@ interface DeviceDetectionEnvironment {
 const MOBILE_UA_RE = /\b(Mobi|Android|iPhone|iPod|Windows Phone|webOS|BlackBerry|IEMobile)\b/i
 const TABLET_UA_RE = /\b(iPad|Tablet)\b/i
 const IOS_UA_RE = /\b(iPhone|iPad|iPod)\b/i
+const WINDOWS_RE = /\bWindows\b|\bWin(?:32|64)\b/i
 
 function matchesQuery(
   matchMedia: DeviceDetectionEnvironment['matchMedia'],
@@ -78,4 +80,21 @@ export function isIOSDevice(): boolean {
   if (typeof navigator === 'undefined') return false
 
   return detectIOSDevice({ navigator })
+}
+
+export function detectWindowsDevice(env: DeviceDetectionEnvironment = {}): boolean {
+  const nav = env.navigator
+  if (!nav) return false
+
+  return WINDOWS_RE.test([
+    nav.userAgentData?.platform || '',
+    nav.platform || '',
+    nav.userAgent || '',
+  ].join(' '))
+}
+
+export function isWindowsDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+
+  return detectWindowsDevice({ navigator })
 }
