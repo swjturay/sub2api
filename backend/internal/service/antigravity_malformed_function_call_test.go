@@ -57,6 +57,7 @@ func TestAntigravityMalformedFunctionCallStreaming(t *testing.T) {
 					if name == "responses" {
 						require.Equal(t, 1, strings.Count(rec.Body.String(), "event: response.failed"))
 						require.Contains(t, rec.Body.String(), `"status":"failed"`)
+						require.Contains(t, rec.Body.String(), `"code":"server_error"`)
 					}
 				}
 				require.NotContains(t, rec.Body.String(), "message_stop")

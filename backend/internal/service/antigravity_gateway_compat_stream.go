@@ -106,7 +106,7 @@ func (a *antigravityResponsesStreamAdapter) WriteError(writer *antigravityClient
 				Model:     state.Model,
 				Status:    "failed",
 				Output:    append([]apicompat.ResponsesOutput{}, state.Outputs...),
-				Error:     &apicompat.ResponsesError{Code: "upstream_error", Message: reason},
+				Error:     &apicompat.ResponsesError{Code: "server_error", Message: reason},
 			},
 		}, writer)
 		state.SequenceNumber++
