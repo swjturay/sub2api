@@ -499,7 +499,7 @@ func (s *OpenAIGatewayService) buildInputTokensUpstreamRequest(
 	// api.openai.com，2026-09-20 审计）。OAuth / setup-token 账号在别的出站面都收口成
 	// 规范 Codex 身份，这一条不该是例外——accept-language 保留不动。
 	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersWithUA(req.Header, account.GetOpenAIUserAgent())
+		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
 	}
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）

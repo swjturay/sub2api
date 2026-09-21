@@ -12,30 +12,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 出站 User-Agent 的边界：任何打到 ChatGPT / OpenAI 的请求都不该带客户端自报的身份，
-// 也不该让 net/http 的 Go-http-client 默认值代表本服务。
-//
-// 这几条都是 2026-09-20 审计用端到端测试实测出来的洞，之前一条覆盖都没有：
-//   - setup-token 的 alpha search 整块身份缺失，线上实收 "Go-http-client/1.1"
-//   - count_tokens 显式拷贝客户端 UA，线上实收 "claude-cli/1.0.60 (external, cli)"
-//
-// 「线上实收」而不是只看 req.Header：Go 的默认 UA 是写请求时才补的，头里查不到。
-
-// outboundUserAgent 把请求真的发给一个 httptest 服务端，返回服务端看到的 User-Agent。
+// Read the UA on the wire: net/http supplies its default only during dispatch.
 func outboundUserAgent(t *testing.T, req *http.Request) string {
 	t.Helper()
 	got := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got <- r.Header.Get("User-Agent")
+		got <- r.UserAgent()
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
-
-	sendURL, err := http.NewRequest(req.Method, srv.URL, nil)
+	send := req.Clone(context.Background())
+	target, err := http.NewRequest(req.Method, srv.URL, nil)
 	require.NoError(t, err)
-	sendURL.Header = req.Header.Clone()
-
-	resp, err := srv.Client().Do(sendURL)
+	send.URL = target.URL
+	resp, err := srv.Client().Do(send)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	return <-got
@@ -54,80 +44,100 @@ func newOutboundUAGinContext(t *testing.T, clientUA string) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", http.NoBody)
-	req.Header.Set("User-Agent", clientUA)
-	req.Header.Set("Accept-Language", "zh-CN")
-	c.Request = req
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", http.NoBody)
+	c.Request.Header.Set("User-Agent", clientUA)
+	c.Request.Header.Set("Accept-Language", "zh-CN")
 	return c
 }
 
-// TestAlphaSearchSetupTokenCarriesCodexIdentity 钉住 L2a：openAIAlphaSearchURL 对
-// setup-token 返回的同样是 chatgpt.com，身份块不能只认 oauth。
 func TestAlphaSearchSetupTokenCarriesCodexIdentity(t *testing.T) {
 	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
 		t.Run(accountType, func(t *testing.T) {
-			svc := &OpenAIGatewayService{}
 			account := newOutboundUATestAccount(t, accountType)
-
-			url, err := svc.openAIAlphaSearchURL(account)
+			svc := &OpenAIGatewayService{}
+			c := newOutboundUAGinContext(t, "curl/8.5.0")
+			req, err := svc.buildOpenAIAlphaSearchRequest(context.Background(), c, account, []byte("{}"), "offline-token")
 			require.NoError(t, err)
-			require.Contains(t, url, "chatgpt.com", "前提：这个类型确实打 chatgpt.com")
-
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, http.NoBody)
-			require.NoError(t, err)
-			req.Header.Set("Authorization", "Bearer offline-token")
-			if account.UsesOpenAICodexProtocol() {
-				req.Host = "chatgpt.com"
-				enforceCodexIdentityHeadersWithUA(req.Header, account.GetOpenAIUserAgent())
-			}
-
-			require.Equal(t, CodexCanonicalUserAgent(), req.Header.Get("User-Agent"))
-			require.NotContains(t, outboundUserAgent(t, req), "Go-http-client",
-				"不设 UA 的话 net/http 会用自己的默认值代表本服务")
+			require.Equal(t, "chatgpt.com", req.Host)
+			require.Equal(t, "offline-account", req.Header.Get("chatgpt-account-id"))
+			require.Equal(t, CodexCanonicalUserAgent(), outboundUserAgent(t, req))
 		})
 	}
 }
 
-// TestUpstreamModelsRequestNeverSendsGoDefaultUA 钉住 L2b：模型列表同步也要有 UA。
 func TestUpstreamModelsRequestNeverSendsGoDefaultUA(t *testing.T) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://api.openai.com/v1/models", http.NoBody)
-	require.NoError(t, err)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", resolveCodexOutboundIdentity("").userAgent)
-
-	require.NotContains(t, outboundUserAgent(t, req), "Go-http-client")
+	for _, typ := range []string{AccountTypeAPIKey, AccountTypeCPR} {
+		t.Run(typ, func(t *testing.T) {
+			acc := newCPRTestAccount()
+			acc.Type = typ
+			req, err := buildOpenAIAPIKeyModelsRequest(context.Background(), acc, func(s string) (string, error) { return s, nil })
+			require.NoError(t, err)
+			require.Equal(t, "sub2api", outboundUserAgent(t, req))
+			require.Empty(t, req.Header.Get("originator"))
+			require.Empty(t, req.Header.Get("chatgpt-account-id"))
+			if typ == AccountTypeAPIKey {
+				acc.Credentials[credKeyHeaderOverrideEnabled] = true
+				acc.Credentials[credKeyHeaderOverrides] = map[string]any{"User-Agent": "provider-client/1.0"}
+				req, err = buildOpenAIAPIKeyModelsRequest(context.Background(), acc, func(s string) (string, error) { return s, nil })
+				require.NoError(t, err)
+				require.Equal(t, "provider-client/1.0", outboundUserAgent(t, req))
+			}
+		})
+	}
 }
 
-// TestCountTokensDoesNotLeakClientUserAgent 钉住 L3：count_tokens 会显式拷贝客户端的
-// user-agent，OAuth / setup-token 账号必须在发送前收口掉；accept-language 保留。
 func TestCountTokensDoesNotLeakClientUserAgent(t *testing.T) {
-	const clientUA = "claude-cli/1.0.60 (external, cli)"
-
-	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
-		t.Run(accountType, func(t *testing.T) {
-			c := newOutboundUAGinContext(t, clientUA)
-			account := newOutboundUATestAccount(t, accountType)
-
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, openaiPlatformAPIInputTokensURL, http.NoBody)
+	for _, typ := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
+		t.Run(typ, func(t *testing.T) {
+			svc := &OpenAIGatewayService{}
+			req, err := svc.buildInputTokensUpstreamRequest(context.Background(), newOutboundUAGinContext(t, "claude-cli/1.0.60"), newOutboundUATestAccount(t, typ), []byte("{}"), "offline-token")
 			require.NoError(t, err)
-			for key, values := range c.Request.Header {
-				lower := key
-				if lower != "User-Agent" && lower != "Accept-Language" {
-					continue
-				}
-				for _, v := range values {
-					req.Header.Add(key, v)
-				}
-			}
-			require.Equal(t, clientUA, req.Header.Get("User-Agent"), "前提：拷贝循环确实带上了客户端 UA")
-
-			if account.UsesOpenAICodexProtocol() {
-				enforceCodexIdentityHeadersWithUA(req.Header, account.GetOpenAIUserAgent())
-			}
-
-			require.Equal(t, CodexCanonicalUserAgent(), req.Header.Get("User-Agent"))
-			require.Equal(t, "zh-CN", req.Header.Get("Accept-Language"), "语言偏好不是身份，照旧透传")
-			require.NotContains(t, outboundUserAgent(t, req), "claude-cli")
+			require.Equal(t, CodexCanonicalUserAgent(), outboundUserAgent(t, req))
+			require.Equal(t, "zh-CN", req.Header.Get("Accept-Language"))
+			require.Empty(t, req.Header.Get("originator"))
 		})
+	}
+}
+
+func TestCountTokensPreservesRelayIdentity(t *testing.T) {
+	for _, typ := range []string{AccountTypeAPIKey, AccountTypeCPR} {
+		t.Run(typ, func(t *testing.T) {
+			acc := newCPRTestAccount()
+			acc.Type = typ
+			req, err := cprTestService().buildInputTokensUpstreamRequest(context.Background(), newOutboundUAGinContext(t, "relay-client/1.0"), acc, []byte("{}"), cprTestClientKey)
+			require.NoError(t, err)
+			require.Equal(t, "relay-client/1.0", outboundUserAgent(t, req))
+			require.Equal(t, "127.0.0.1:18081", req.URL.Host)
+			require.Empty(t, req.Header.Get("originator"))
+			require.Empty(t, req.Header.Get("chatgpt-account-id"))
+		})
+	}
+}
+
+func TestResponsesBridgeNormalizesUAWithoutRestoringOriginator(t *testing.T) {
+	body := []byte("{\"model\":\"gpt-5.5\",\"prompt_cache_key\":\"anthropic-metadata-session-1\",\"input\":[{\"role\":\"user\",\"content\":\"hello\"}]}")
+	c := newOutboundUAGinContext(t, "curl/8.5.0")
+	c.Request.URL.Path = "/v1/responses"
+	svc := &OpenAIGatewayService{}
+	req, err := svc.buildUpstreamRequest(context.Background(), c, newOutboundUATestAccount(t, AccountTypeOAuth), body, "offline-token", false, "anthropic-metadata-session-1", false)
+	require.NoError(t, err)
+	require.Empty(t, req.Header.Get("originator"))
+	require.Equal(t, CodexCanonicalClientVersion(), req.Header.Get("version"))
+	require.Equal(t, CodexCanonicalUserAgent(), outboundUserAgent(t, req))
+}
+
+func TestCountTokensCustomUAAndForceCodexPriority(t *testing.T) {
+	acc := newOutboundUATestAccount(t, AccountTypeOAuth)
+	acc.Credentials["user_agent"] = "codex-tui/0.145.2 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.145.2)"
+	svc := cprTestService()
+	for _, force := range []bool{false, true} {
+		svc.cfg.Gateway.ForceCodexCLI = force
+		req, err := svc.buildInputTokensUpstreamRequest(context.Background(), newOutboundUAGinContext(t, "curl/8.5.0"), acc, []byte("{}"), "offline-token")
+		require.NoError(t, err)
+		if force {
+			require.Equal(t, CodexCanonicalUserAgent(), outboundUserAgent(t, req))
+		} else {
+			require.Contains(t, outboundUserAgent(t, req), "Mac OS X 14.0")
+		}
 	}
 }
