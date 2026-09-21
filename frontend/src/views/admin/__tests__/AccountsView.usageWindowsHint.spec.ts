@@ -78,6 +78,9 @@ const DataTableStub = {
       <div v-for="row in data" :key="row.id" data-test="account-rate">
         <slot name="cell-rate_multiplier" :row="row" />
       </div>
+      <div v-for="row in data" :key="row.id" data-test="account-proxy">
+        <slot name="cell-proxy" :row="row" />
+      </div>
     </div>
   `
 }
@@ -166,6 +169,19 @@ describe('admin AccountsView usage windows hint', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="account-filters"]').attributes('data-group-count')).toBe('1')
+  })
+
+  it('renders the CPR endpoint in the account list without credentials', async () => {
+    listAccounts.mockResolvedValueOnce({
+      items: [{ id: 37, name: 'cpr-account', platform: 'openai', type: 'cpr', status: 'active', schedulable: true,
+        extra: { cpr_outbound_proxy: 'socks5h://user:secret@mihomo:8001', cpr_outbound_proxy_status: 'proxy' } }],
+      total: 1, page: 1, page_size: 20, pages: 1
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="account-cpr-outbound"]').text()).toContain('socks5h://mihomo:8001')
+    expect(wrapper.html()).not.toContain('secret')
+    wrapper.unmount()
   })
 
   it('renders an explanatory tooltip next to the usage windows column header', async () => {

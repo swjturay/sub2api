@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"sync"
 )
 
@@ -63,6 +64,12 @@ const (
 // Redis 命中路径上的投影账号就看不到档位，订阅优先调度对 cpr 形同虚设。
 const CPRPlanTypeExtraKey = "cpr_plan_type"
 
+const (
+	CPROutboundProxyExtraKey          = "cpr_outbound_proxy"
+	CPROutboundProxyStatusExtraKey    = "cpr_outbound_proxy_status"
+	CPROutboundProxyUpdatedAtExtraKey = "cpr_outbound_proxy_updated_at"
+)
+
 // CPRAccountState 是一次 admin 查询的归一化结果。
 type CPRAccountState struct {
 	AccountID        string
@@ -75,8 +82,10 @@ type CPRAccountState struct {
 	RateLimitedUntil *time.Time
 	RateLimit        *OpenAIRateLimit
 	// LimitIDs 是 CPR 返回的全部额度窗口的 limitId（含空串），只用于诊断日志。
-	LimitIDs  []string
-	FetchedAt time.Time
+	LimitIDs              []string
+	FetchedAt             time.Time
+	OutboundProxyEndpoint string
+	OutboundProxyStatus   string
 }
 
 // Schedulable 报告 CPR 是否会把请求路由给这个账号。CPR 的 scheduling_blocker
@@ -119,13 +128,14 @@ type cprAccountDetailData struct {
 }
 
 type cprAccountView struct {
-	ID          string          `json:"id"`
-	Email       string          `json:"email"`
-	PlanType    string          `json:"planType"`
-	Status      string          `json:"status"`
-	ErrorReason string          `json:"errorReason"`
-	Enabled     bool            `json:"enabled"`
-	Quota       cprAccountQuota `json:"quota"`
+	ID                    string          `json:"id"`
+	Email                 string          `json:"email"`
+	PlanType              string          `json:"planType"`
+	Status                string          `json:"status"`
+	ErrorReason           string          `json:"errorReason"`
+	Enabled               bool            `json:"enabled"`
+	Quota                 cprAccountQuota `json:"quota"`
+	OutboundProxyEndpoint json.RawMessage `json:"outboundProxyEndpoint"`
 }
 
 type cprAccountQuota struct {
@@ -227,6 +237,7 @@ func buildCPRAccountState(view *cprAccountView, now time.Time) *CPRAccountState 
 		LimitReached: view.Quota.LimitReached,
 		FetchedAt:    now,
 	}
+	state.OutboundProxyEndpoint, state.OutboundProxyStatus = parseCPROutboundProxy(view.OutboundProxyEndpoint)
 	if until := parseCPRDisplayTime(view.Quota.RateLimitedUntil); until != nil {
 		state.RateLimitedUntil = until
 	}
@@ -347,7 +358,7 @@ func (s *AccountUsageService) refreshCPRCodexSnapshot(ctx context.Context, accou
 	}
 	mergeAccountExtra(account, updates)
 	s.persistOpenAICodexProbeSnapshot(account.ID, updates)
-	if usage != nil {
+	if usage != nil && state.RateLimit != nil {
 		if usage.UpdatedAt == nil {
 			usage.UpdatedAt = &now
 		}
@@ -355,18 +366,9 @@ func (s *AccountUsageService) refreshCPRCodexSnapshot(ctx context.Context, accou
 	}
 }
 
-// buildCPRCodexExtraUpdates 复用 OAuth 那条链的归一化函数，产出同一组 codex_* 键，
-// 因此前端展示与 OAuth 账号完全一致，不需要任何新的展示字段。
-//
-// 没有窗口时返回空 map，调用方据此一个字节都不写：
-//   - mergeAccountExtra 只写不删，推进 codex_usage_updated_at 会把上一次的
-//     codex_5h_* 标成"刚刷新"，显示一个陈旧百分比。
-//   - 若在这里塞入无人消费的状态键，len(updates) 恒不为零，
-//     每一次 /usage 请求都会触发一次 UpdateExtra 写库。
-//
-// 行为与 OAuth 那条路一致（buildCodexPrimaryWindowExtraUpdates 返回 nil 时同样什么
-// 都不写），代价是时效判定继续认为快照缺失、下次还会再拉一次——对本机 admin 调用
-// 可以接受。CPR 账号的状态与错误原因在 CPR 自己后台就能看到，不在这里重复存。
+// buildCPRCodexExtraUpdates keeps OAuth-compatible quota keys separate from proxy
+// observations. Missing windows never freshen stale quota percentages. Proxy
+// changes clear old endpoints immediately; unchanged observations are throttled.
 func buildCPRCodexExtraUpdates(account *Account, state *CPRAccountState) map[string]any {
 	if state == nil {
 		return nil
@@ -393,7 +395,46 @@ func buildCPRCodexExtraUpdates(account *Account, state *CPRAccountState) map[str
 		}
 		updates[CPRPlanTypeExtraKey] = plan
 	}
+	if state.OutboundProxyStatus != "" {
+		knownEndpoint, knownStatus, lastObserved := "", "", ""
+		if account != nil {
+			knownEndpoint = account.GetExtraString(CPROutboundProxyExtraKey)
+			knownStatus = account.GetExtraString(CPROutboundProxyStatusExtraKey)
+			lastObserved = account.GetExtraString(CPROutboundProxyUpdatedAtExtraKey)
+		}
+		last, _ := time.Parse(time.RFC3339, lastObserved)
+		// Refresh display freshness at most every five minutes unless the route changes.
+		if knownEndpoint != state.OutboundProxyEndpoint || knownStatus != state.OutboundProxyStatus || last.IsZero() || state.FetchedAt.Sub(last) >= 5*time.Minute {
+			if updates == nil {
+				updates = make(map[string]any, 3)
+			}
+			// Explicit direct/unknown states must clear a previously observed proxy.
+			updates[CPROutboundProxyExtraKey] = state.OutboundProxyEndpoint
+			updates[CPROutboundProxyStatusExtraKey] = state.OutboundProxyStatus
+			updates[CPROutboundProxyUpdatedAtExtraKey] = state.FetchedAt.UTC().Format(time.RFC3339)
+		}
+	}
 	return updates
+}
+
+// Missing/invalid fields are unknown; an explicit null or empty string means direct.
+func parseCPROutboundProxy(raw json.RawMessage) (string, string) {
+	if len(raw) == 0 {
+		return "", "unknown"
+	}
+	var endpoint *string
+	if err := json.Unmarshal(raw, &endpoint); err != nil {
+		return "", "unknown"
+	}
+	if endpoint == nil || strings.TrimSpace(*endpoint) == "" {
+		return "", "direct"
+	}
+	_, parsed, err := proxyurl.Parse(*endpoint)
+	if err != nil || parsed == nil {
+		// Parser errors can contain the original URL, including credentials.
+		return "", "unknown"
+	}
+	return (&url.URL{Scheme: strings.ToLower(parsed.Scheme), Host: parsed.Host}).String(), "proxy"
 }
 
 // parseCPRDisplayTime 反解 CPR 的 UTC+8 显示时间。解不出返回 nil——

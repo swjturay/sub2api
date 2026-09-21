@@ -324,6 +324,19 @@ function mountModal(account = buildAccount(), renderGroupSelector = false) {
 }
 
 describe('EditAccountModal', () => {
+  it('shows the CPR endpoint separately from the gateway proxy selector', async () => {
+    const account = buildAccount()
+    account.type = 'cpr'
+    account.extra = { cpr_outbound_proxy: 'socks5h://user:secret@mihomo:8001', cpr_outbound_proxy_status: 'proxy' }
+    const wrapper = mountModal(account)
+    const endpoint = wrapper.get('[data-testid="account-cpr-outbound"]')
+    expect(endpoint.text()).toContain('socks5h://mihomo:8001')
+    expect(endpoint.html()).not.toContain('secret')
+    expect(wrapper.find('proxy-selector-stub').exists()).toBe(true)
+    await wrapper.setProps({ account: { ...account, extra: { cpr_outbound_proxy: '', cpr_outbound_proxy_status: 'direct' } } })
+    expect(wrapper.get('[data-testid="account-cpr-outbound"]').text()).toContain('admin.accounts.cprOutboundDirect')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     authIsSimpleMode.value = true
   })

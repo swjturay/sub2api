@@ -1,6 +1,10 @@
 export default {
     accounts: {
       title: '账号管理',
+      cprOutbound: 'CPR 出站代理',
+      cprOutboundDirect: '直连',
+      cprOutboundUnknown: '未知',
+      cprOutboundObservedAt: '上次观测：{time}',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
       autoRefresh: '自动刷新',

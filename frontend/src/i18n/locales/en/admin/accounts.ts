@@ -1,6 +1,10 @@
 export default {
     accounts: {
       title: 'Account Management',
+      cprOutbound: 'CPR outbound proxy',
+      cprOutboundDirect: 'Direct',
+      cprOutboundUnknown: 'Unknown',
+      cprOutboundObservedAt: 'Last observed: {time}',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
