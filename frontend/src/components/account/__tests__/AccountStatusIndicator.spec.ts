@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import AccountStatusIndicator from '../AccountStatusIndicator.vue'
 import type { Account } from '@/types'
+
+enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -17,7 +20,8 @@ vi.mock('@/utils/format', async () => {
   const actual = await vi.importActual<typeof import('@/utils/format')>('@/utils/format')
   return {
     ...actual,
-    formatCountdown: () => '1h'
+    formatCountdown: (_target: unknown, now?: number) => 'remaining-at-' + now,
+    formatCountdownWithSuffix: (_target: unknown, now?: number) => 'remaining-at-' + now
   }
 })
 
@@ -51,6 +55,51 @@ function makeAccount(overrides: Partial<Account>): Account {
 }
 
 describe('AccountStatusIndicator', () => {
+  it('updates the displayed countdown before the account expires', async () => {
+    vi.useFakeTimers()
+    const start = Date.parse('2026-09-21T00:00:00Z')
+    vi.setSystemTime(start)
+    const wrapper = mount(AccountStatusIndicator, {
+      props: { account: makeAccount({ overload_until: '2026-09-21T00:05:00Z' }) },
+      global: { stubs: { Icon: true } }
+    })
+    expect(wrapper.text()).toContain('remaining-at-' + start)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(wrapper.text()).toContain('remaining-at-' + (start + 30_000))
+  })
+  it.each([
+    ['rate_limit_reset_at', 'admin.accounts.status.rateLimited'],
+    ['overload_until', 'admin.accounts.status.overloaded'],
+    ['temp_unschedulable_until', 'admin.accounts.status.tempUnschedulable']
+  ] as const)('expires %s without a props refresh', async (field, label) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-21T00:00:00Z'))
+    const account = makeAccount({ [field]: '2026-09-21T00:01:00Z' })
+    const wrapper = mount(AccountStatusIndicator, { props: { account }, global: { stubs: { Icon: true } } })
+    expect(wrapper.text()).toContain(label)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(wrapper.text()).not.toContain(label)
+    expect(account[field]).toBe('2026-09-21T00:01:00Z')
+  })
+
+  it('shares one timer across rows and releases it when the last row unmounts', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-21T00:00:00Z'))
+    const props = { account: makeAccount({ extra: { model_rate_limits: {
+      'gpt-5': { rate_limited_at: '2026-09-21T00:00:00Z', rate_limit_reset_at: '2026-09-21T00:01:00Z' }
+    } } }) }
+    const first = mount(AccountStatusIndicator, { props, global: { stubs: { Icon: true } } })
+    const second = mount(AccountStatusIndicator, { props, global: { stubs: { Icon: true } } })
+    expect(vi.getTimerCount()).toBe(1)
+    expect(first.text()).toContain('gpt-5')
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(first.text()).not.toContain('gpt-5')
+    expect(second.text()).not.toContain('gpt-5')
+    first.unmount()
+    expect(vi.getTimerCount()).toBe(1)
+    second.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
   it('Claude 5 模型限流时显示 Opus 和 Sonnet 的短别名', () => {
     const wrapper = mount(AccountStatusIndicator, {
       props: {
