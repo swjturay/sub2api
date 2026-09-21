@@ -23,6 +23,24 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+func TestProxyKeyForLogRedactsCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "empty", raw: "", want: "direct"},
+		{name: "direct", raw: directProxyKey, want: "direct"},
+		{name: "http credentials", raw: "http://alice:secret@proxy.example:8080", want: "http://proxy.example:8080"},
+		{name: "socks credentials", raw: "socks5://bob:p%40ss@127.0.0.1:1080", want: "socks5://127.0.0.1:1080"},
+		{name: "invalid", raw: "://not-a-url", want: "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, proxyKeyForLog(tc.raw))
+		})
+	}
+}
+
 func TestHTTPUpstreamDoCanDisableRedirectsPerRequest(t *testing.T) {
 	var redirectedCalls atomic.Int64
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
