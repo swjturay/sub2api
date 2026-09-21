@@ -39,3 +39,19 @@ describe('locale messages compile', () => {
     expect(errors).toEqual([])
   })
 })
+
+
+describe('locale compiler guard fixtures', () => {
+  it('detects malformed placeholders and linked messages inside arrays', () => {
+    const errors: string[] = []
+    collectCompileErrors({ nested: ['{name', 'contact @example'] }, '', errors)
+    expect(errors.some(error => error.startsWith('nested[0]:'))).toBe(true)
+    expect(errors.some(error => error.startsWith('nested[1]:'))).toBe(true)
+  })
+
+  it('accepts valid plurals without placeholders and escaped literals', () => {
+    const errors: string[] = []
+    collectCompileErrors({ plural: 'none | one | {count} items', literals: "{'@'} {'{'} {'}'} {'|'}" }, '', errors)
+    expect(errors).toEqual([])
+  })
+})
