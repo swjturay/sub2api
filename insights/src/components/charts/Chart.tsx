@@ -5,7 +5,7 @@ import type { EChartsOption } from "echarts";
 import { chartColors, chartFontFamily, palette, recolorChartOption } from "./chartTheme";
 export function Chart({
   option,
-  height = 300,
+  height = 280,
   label,
   onEvents,
 }: {
@@ -14,7 +14,7 @@ export function Chart({
   label: string;
   onEvents?: Record<string, (p: unknown) => void>;
 }) {
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [colors, setColors] = useState(chartColors);
   const optionRef = useRef(option);
   const optionColorsRef = useRef(colors);
@@ -41,7 +41,7 @@ export function Chart({
       backgroundColor: "transparent",
       textStyle: { color: colors.ink, fontFamily: chartFontFamily() },
       animation: !reducedMotion,
-      animationDuration: reducedMotion ? 0 : 180,
+      animationDuration: reducedMotion ? 0 : 220,
       animationDurationUpdate: reducedMotion ? 0 : 180,
       animationEasingUpdate: "cubicOut",
       ...recolored,

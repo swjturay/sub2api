@@ -1,5 +1,18 @@
 # Development Journal
 
+## Insights PC composition and component redesign (2026-09-23)
+
+Base: 4eb2620eadf2ebe56134ffd6fffeb105222de50e. Branch: codex/insights-pc-polish.
+
+- Implemented the approved PC redesign with three gpt-5.6-sol/high development workers and independent gpt-5.6-sol/high browser validation.
+- Added shadcn/Radix composition primitives, cmdk search multi-selects, a timezone-safe range calendar, self-hosted Inter Latin and production license notices. RareUI remains an interaction reference; no RareUI source was vendored.
+- Replaced the tall header/filter stack with a 64px header and 60px toolbar. All nine department metrics remain in a 3+6 hierarchy; the main trend fits in the first 1440x900 viewport beside compact model distribution.
+- Reworked personal quota/logs and gateway analysis sections without changing their metrics, permissions or backend. Model cards now feed a persistent comparison tray and wide accessible dialog; price units and tier labels preserve source values.
+- Fixed date preset anchoring, native-option text compatibility, actual multi-select checked state, dialog focus restoration and keyboard access to automatic refresh. No exports or member drill-down were added.
+
+Validation: 17 test files / 56 tests, ESLint, TypeScript and production build passed. Independent checks cover 24 desktop/theme combinations and final filter, comparison, pagination and ordinary-user flows. Direct local personal/admin-role checks return 200/403. All browser data is synthetic; no production operation or paid inference request occurred. See docs/INSIGHTS_PC_POLISH_VALIDATION.md for evidence and limits.
+
+
 ## Insights v1 bounded release workflow
 
 Source: dee8a2aecd3bd5400df95183cc60c8f9e9822354. Branch: codex/insights-v1.

@@ -24,7 +24,7 @@ export function buildHeatmapOption(days: HeatmapDay[], thresholds:number[], year
   const named = (state:HeatmapDay["state"]) => days.filter(d=>d.state===state).map(d=>[d.date,d.tokens ?? 0,state]);
   return {
     tooltip:{ ...tooltipTheme(), formatter:(p:unknown)=>{ const d=(p as {data:[string,number,string]}).data; const labels:Record<string,string>={zero:"已观测：0 Token",missing:"未采集",future:"未来日期"}; return `<b>${escapeHtml(d[0])}</b><br/>${d[2]==="value"?`${d[1].toLocaleString("zh-CN")} Token`:labels[d[2]]}`; }},
-    visualMap:{ type:"piecewise", seriesIndex:0, dimension:1, pieces, orient:"horizontal", left:"center", bottom:0, itemWidth:14, itemHeight:10, itemGap:10, textStyle:{color:colors.muted,fontSize:10} },
+    visualMap:{ type:"piecewise", seriesIndex:0, dimension:1, pieces, orient:"horizontal", left:"center", bottom:0, itemWidth:14, itemHeight:10, itemGap:10, textStyle:{color:colors.muted,fontSize:12} },
     calendar:{ range:String(year), cellSize:["auto",17], top:32, left:42, right:16, bottom:42, yearLabel:{show:false}, dayLabel:{firstDay:1,color:colors.muted,fontSize:10}, monthLabel:{nameMap:"ZH",color:colors.muted,fontSize:10}, splitLine:{show:false}, itemStyle:{color:colors.surfaceSubtle,borderColor:colors.surface,borderWidth:3}},
     series:[
       {name:"非零",type:"heatmap",coordinateSystem:"calendar",data:named("value")},
@@ -39,14 +39,14 @@ export function buildFunnelOption(funnel:GatewayAnalytics["funnel"]):EChartsOpti
  type Datum={name:string;value:number|null;share:number|null;status?:string};
  const statusText=(status?:string)=>status==="pending"?"待观察":status==="partial"?"不完整":status==="unknown"?"数据不足":"";
  return {
-  color:["#1769cf","#2e7ddd","#5794e7","#7eaaf0","#a4c1f5"],
+  color:["#4f46e5","#6366f1","#818cf8","#a5b4fc","#c7d2fe"],
   tooltip:{...tooltipTheme(),trigger:"item",formatter:(p:unknown)=>{
    const d=(p as {data:Datum}).data,status=statusText(d.status);
    return `<b>${escapeHtml(d.name)}</b><br/>${d.value===null?"—":`${fullNumber(d.value)} 人`}${d.share===null?"":`<br/>占总用户 ${percent(d.share)}`}${status?`<br/>${status}`:""}`;
   }},
   series:[{
-   type:"funnel",sort:"none",min:0,max:maximum,minSize:"0%",maxSize:"100%",left:"8%",top:18,bottom:12,width:"84%",gap:3,
-   label:{color:colors.ink,fontSize:11,formatter:(p:unknown)=>{
+   type:"funnel",sort:"none",min:0,max:maximum,minSize:"0%",maxSize:"100%",left:"22%",top:18,bottom:12,width:"72%",gap:3,
+   label:{position:"left",color:colors.ink,fontSize:12,formatter:(p:unknown)=>{
     const d=(p as {data:Datum}).data,status=statusText(d.status);
     return `${d.name}\n${d.value===null?"—":`${compactNumber(d.value)} 人`}${status?`\n${status}`:""}`;
    }},

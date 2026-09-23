@@ -1,42 +1,145 @@
-import { useMemo, useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
+import { Input, Segmented } from "../components/ui/Controls";
+import { Empty, ErrorBanner } from "../components/ui/States";
+import { ModelCard } from "../features/models/ModelCard";
+import { ModelComparisonDialog } from "../features/models/ModelComparisonDialog";
+import { ModelDetailDialog } from "../features/models/ModelDetailDialog";
+import { ModelSelectionTray } from "../features/models/ModelSelectionTray";
 import { insightsApi } from "../lib/api";
-import { ApiRequestError } from "../lib/auth";
+import type { ModelProfile } from "../lib/types";
 import { useRemote } from "../lib/useRemote";
-import type { Capability, ModelProfile } from "../lib/types";
-import { Input, Segmented, Select } from "../components/ui/Controls";
-import { Button } from "../components/ui/Button";
-import { Empty, ErrorBanner, Loading } from "../components/ui/States";
-import { Chart } from "../components/charts/Chart";
-import { buildComparisonTrendOption } from "../features/chartOptions";
 import { cn } from "../lib/cn";
 
-export function ModelsPage({auto,admin}:{auto:boolean;admin:boolean}){
- const [window,setWindow]=useState<"24h"|"7d">("24h"),[search,setSearch]=useState(""),[selected,setSelected]=useState<string[]>([]),[detail,setDetail]=useState<ModelProfile|null>(null),[detailLoading,setDetailLoading]=useState(false),[detailError,setDetailError]=useState("");
- const state=useRemote(s=>insightsApi.models(window,s),[window],auto);
- const comparison=useRemote(s=>selected.length>=2?insightsApi.compareModels(selected,window,s):Promise.resolve(null),[selected.join("|"),window],auto);
- const filtered=useMemo(()=>state.data?.filter(m=>`${m.name} ${m.platform} ${m.description||""}`.toLowerCase().includes(search.toLowerCase()))||[],[state.data,search]);
- const toggle=(id:string)=>setSelected(v=>v.includes(id)?v.filter(x=>x!==id):v.length<4?[...v,id]:v);
- const open=async(id:string)=>{setDetailLoading(true);setDetailError("");try{setDetail(await insightsApi.model(id,window))}catch(e){setDetailError((e as Error).message)}finally{setDetailLoading(false)}};
- return <div className="page-stack grid gap-6">
-  <div className="page-heading flex flex-wrap items-end justify-between gap-4"><div><h1 className="m-0 text-2xl font-semibold">模型广场</h1><p className="mb-0 mt-1 text-sm muted">系统配置目录与全平台聚合性能；目录存在不代表实时在线。</p></div><Segmented value={window} onChange={setWindow} label="性能窗口" options={[{value:"24h",label:"滚动24小时"},{value:"7d",label:"滚动7天"}]}/></div>
-  <div className="panel flex items-center gap-3 p-3"><Search className="h-4 w-4 muted"/><Input className="flex-1" value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜索模型、平台或用途"/><span className="text-sm muted">选择 2–4 个（{selected.length}）</span></div>
-  {state.error&&<ErrorBanner message={state.error} retry={state.refresh} stale={!!state.data}/>} {detailError&&<ErrorBanner message={detailError} retry={()=>setDetailError("")}/>} {detailLoading&&<Loading label="正在加载模型详情"/>}
-  {state.loading&&!state.data?<Loading/>:filtered.length?<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{filtered.map(m=><article key={m.id} className={cn("model-card panel p-4",selected.includes(m.id)&&"ring-2 ring-[var(--primary)]")}><div className="flex justify-between"><div><h2 className="m-0 text-base font-semibold">{m.name}</h2><span className="text-xs muted">{m.platform}</span></div><input type="checkbox" aria-label={`选择 ${m.name} 对比`} checked={selected.includes(m.id)} disabled={!selected.includes(m.id)&&selected.length>=4} onChange={()=>toggle(m.id)}/></div><p className="min-h-10 text-sm muted">{m.description||"资料待完善"}</p><div className="grid grid-cols-2 gap-2 text-xs"><Mini label="平均TPM" value={m.metrics.tpm.value}/><Mini label="平均RPM" value={m.metrics.rpm.value}/><Mini label="平均TTFT" value={m.metrics.ttft.value} unit="ms"/><Mini label="估算TPOT" value={m.metrics.tpot.value} unit="ms"/></div><div className="mt-3 text-right"><Button variant="ghost" onClick={()=>void open(m.id)}>查看详情</Button></div></article>)}</div>:<Empty title="没有匹配模型"/>}
-  {comparison.error&&<ErrorBanner message={comparison.error} retry={comparison.refresh}/>} {comparison.data&&<Comparison data={comparison.data} remove={toggle}/>} {detail&&<ModelDialog model={detail} admin={admin} close={()=>setDetail(null)} reload={()=>open(detail.id)} onSaved={async()=>{await open(detail.id);void state.refresh()}}/>}
- </div>;
+export function ModelsPage({ auto, admin }: { auto: boolean; admin: boolean }) {
+  const [window, setWindow] = useState<"24h" | "7d">("24h");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [detail, setDetail] = useState<ModelProfile | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<{ message: string; id: string } | null>(null);
+  const comparisonOpener = useRef<HTMLElement | null>(null);
+  const detailOpener = useRef<HTMLElement | null>(null);
+
+  const state = useRemote((signal) => insightsApi.models(window, signal), [window], auto);
+  const comparison = useRemote(
+    (signal) => compareOpen && selected.length >= 2
+      ? insightsApi.compareModels(selected, window, signal)
+      : Promise.resolve(null),
+    [compareOpen, selected.join("|"), window],
+    auto && compareOpen,
+  );
+  const filtered = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    if (!query) return state.data || [];
+    return (state.data || []).filter((model) => [model.name, model.platform, model.description || "", ...model.useCases]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(query));
+  }, [state.data, search]);
+  const selectedModels = useMemo(() => selected
+    .map((id) => state.data?.find((model) => model.id === id))
+    .filter((model): model is ModelProfile => Boolean(model)), [selected, state.data]);
+
+  const toggle = (id: string) => {
+    setSelected((current) => {
+      const next = current.includes(id)
+        ? current.filter((item) => item !== id)
+        : current.length < 4 ? [...current, id] : current;
+      if (next.length < 2) setCompareOpen(false);
+      return next;
+    });
+  };
+  const openDetail = async (id: string) => {
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      setDetail(await insightsApi.model(id, window));
+    } catch (caught) {
+      setDetailError({ message: (caught as Error).message, id });
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  return (
+    <div className={cn("page-stack grid min-w-0 gap-5", selected.length > 0 && "pb-32 sm:pb-24")}>
+      <div className="page-heading flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="m-0 text-2xl font-semibold">模型广场</h1>
+          <p className="mb-0 mt-1 text-sm muted">系统配置目录与全平台聚合性能；目录存在不代表实时在线。</p>
+        </div>
+        <Segmented
+          value={window}
+          onChange={setWindow}
+          label="性能窗口"
+          options={[{ value: "24h", label: "滚动 24 小时" }, { value: "7d", label: "滚动 7 天" }]}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-sm)]">
+        <label className="relative min-w-[240px] flex-1">
+          <span className="sr-only">搜索模型</span>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 muted" aria-hidden="true" />
+          <Input id="model-catalog-search" className="w-full pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索模型、平台或用途" />
+        </label>
+        <div className="ml-auto flex items-center gap-3 text-xs muted">
+          <span>{filtered.length} 个模型</span>
+          <span className="hidden h-4 w-px bg-[var(--border)] sm:block" aria-hidden="true" />
+          <span className="hidden sm:inline">选择 2–4 个进行对比</span>
+        </div>
+      </div>
+
+      {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale={!!state.data} />}
+      {detailError && <ErrorBanner message={detailError.message} retry={() => void openDetail(detailError.id)} />}
+      {detailLoading && <div role="status" className="rounded-[10px] border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2 text-sm muted">正在加载模型详情…</div>}
+
+      {state.loading && !state.data ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" aria-label="正在加载模型目录">
+          {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-[286px] animate-pulse rounded-[12px] border border-[var(--border)] bg-[var(--surface)]" />)}
+        </div>
+      ) : filtered.length ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {filtered.map((model) => (
+            <ModelCard
+              key={model.id}
+              model={model}
+              selected={selected.includes(model.id)}
+              selectionDisabled={!selected.includes(model.id) && selected.length >= 4}
+              onToggle={() => toggle(model.id)}
+              onOpen={(opener) => { detailOpener.current = opener; void openDetail(model.id); }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)]">
+          <Empty title="没有匹配模型" detail="请调整搜索关键词；系统目录不会按当前用户权限或分组缩减。" />
+        </div>
+      )}
+
+      <ModelSelectionTray selected={selectedModels} onRemove={toggle} onClear={() => { setSelected([]); setCompareOpen(false); }} onCompare={(opener) => { comparisonOpener.current = opener; setCompareOpen(true); }} />
+      <ModelComparisonDialog
+        open={compareOpen}
+        onOpenChange={setCompareOpen}
+        data={comparison.data}
+        loading={comparison.loading}
+        error={comparison.error}
+        retry={comparison.refresh}
+        remove={toggle}
+        window={window}
+        restoreFocusElement={comparisonOpener.current}
+      />
+      {detail && (
+        <ModelDetailDialog
+          model={detail}
+          admin={admin}
+          close={() => setDetail(null)}
+          reload={() => openDetail(detail.id)}
+          onSaved={async () => { await openDetail(detail.id); await state.refresh(); }}
+          restoreFocusElement={detailOpener.current}
+        />
+      )}
+    </div>
+  );
 }
-function Mini({label,value,unit=""}:{label:string;value:number|null;unit?:string}){return <div className="rounded bg-[var(--surface-subtle)] p-2"><div className="muted">{label}</div><strong>{value===null?"—":`${metric(value)} ${unit}`}</strong></div>}
-const cap=(v:Capability)=>v==="supported"?"支持":v==="unsupported"?"不支持":"未知";
-function Comparison({data,remove}:{data:NonNullable<Awaited<ReturnType<typeof insightsApi.compareModels>>>;remove:(id:string)=>void}){const rows:Array<[string,(m:ModelProfile)=>string]>=[["介绍",m=>m.description||"未知"],["适用场景",m=>m.useCases.join("、")||"未知"],["上下文",m=>m.contextLimit?.toLocaleString()||"未知"],["最大输出",m=>m.maxOutput?.toLocaleString()||"未知"],["推理",m=>cap(m.reasoning)],["工具调用",m=>cap(m.toolCalling)],["结构化输出",m=>cap(m.structuredOutput)],["参考价格",m=>m.pricing.map(p=>`${p.value}${p.condition?`（${p.condition}）`:""}`).join("；")||"未配置"],["资料来源",m=>m.sources.map(s=>s.label||s.url).join("；")||"未配置"]];return <section className="panel overflow-x-auto p-4"><h2 className="mt-0 text-base">模型对比</h2><table className="w-full min-w-[760px] text-sm"><thead><tr><th className="text-left">项目</th>{data.models.map(m=><th key={m.id} className="text-left">{m.name}<button className="ml-2" onClick={()=>remove(m.id)}><X className="h-3 w-3"/></button></th>)}</tr></thead><tbody>{rows.map(([l,r])=><tr className="border-t border-[var(--border)]" key={l}><td className="py-2 muted">{l}</td>{data.models.map(m=><td key={m.id}>{r(m)}</td>)}</tr>)}</tbody></table><div className="mt-5 grid gap-4 xl:grid-cols-2">{(["tpm","rpm","ttft","tpot"] as const).map(k=><div key={k}><h3 className="text-sm">{k.toUpperCase()} 趋势</h3><Chart label={`${k.toUpperCase()} 对比趋势`} height={260} option={buildComparisonTrendOption(data,k)}/></div>)}</div></section>}
-function safeUrl(url:string){try{const u=new URL(url);return u.protocol==="http:"||u.protocol==="https:"?url:null}catch{return null}}
-function ModelDialog({model,admin,close,reload,onSaved}:{model:ModelProfile;admin:boolean;close:()=>void;reload:()=>void;onSaved:()=>Promise<void>}){
- const [editing,setEditing]=useState(false),[draft,setDraft]=useState(model),[saving,setSaving]=useState(false),[error,setError]=useState(""),[conflict,setConflict]=useState(false);
- const set=<K extends keyof ModelProfile>(k:K,v:ModelProfile[K])=>setDraft(d=>({...d,[k]:v}));
- const save=async()=>{setSaving(true);setError("");setConflict(false);try{await insightsApi.saveModel(model.id,draft);await onSaved();setEditing(false)}catch(e){if(e instanceof ApiRequestError&&e.status===409){setConflict(true);setError("资料已被其他管理员更新，请重新加载后再编辑。") }else setError((e as Error).message)}finally{setSaving(false)}};
- return <div className="fixed inset-0 z-40 grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true"><div className="panel max-h-[90vh] w-full max-w-4xl overflow-auto p-5"><div className="flex justify-between"><div><h2 className="m-0 text-xl">{model.name}</h2><p className="mt-1 text-sm muted">{model.platform}</p></div><Button variant="ghost" onClick={close}><X/></Button></div>{error&&<p className="text-sm text-[var(--danger)]">{error} {conflict&&<Button variant="secondary" onClick={reload}>重新加载</Button>}</p>}{editing?<ProfileForm value={draft} set={set}/>:<ProfileView model={model}/>}<div className="mt-5 flex justify-end gap-2">{admin&&(editing?<><Button variant="secondary" onClick={()=>setEditing(false)}>取消</Button><Button disabled={saving} onClick={()=>void save()}>{saving?"保存中":"保存资料"}</Button></>:<Button onClick={()=>setEditing(true)}><SlidersHorizontal className="h-4 w-4"/>编辑资料</Button>)}</div></div></div>;
-}
-function ProfileForm({value,set}:{value:ModelProfile;set:<K extends keyof ModelProfile>(k:K,v:ModelProfile[K])=>void}){const caps:Array<[keyof Pick<ModelProfile,"reasoning"|"toolCalling"|"structuredOutput">,string]>=[["reasoning","推理"],["toolCalling","工具调用"],["structuredOutput","结构化输出"]];return <div className="grid gap-3 sm:grid-cols-2"><Field label="介绍"><textarea value={value.description||""} onChange={e=>set("description",e.target.value||null)}/></Field><Field label="适用场景（每行一项）"><textarea value={value.useCases.join("\n")} onChange={e=>set("useCases",e.target.value.split(/\n/).map(x=>x.trim()).filter(Boolean))}/></Field><Num label="上下文上限" value={value.contextLimit} set={v=>set("contextLimit",v)}/><Num label="最大输出" value={value.maxOutput} set={v=>set("maxOutput",v)}/><TextList label="输入模态（逗号分隔）" value={value.inputModalities} set={v=>set("inputModalities",v)}/><TextList label="输出模态（逗号分隔）" value={value.outputModalities} set={v=>set("outputModalities",v)}/>{caps.map(([k,l])=><Field label={l} key={k}><Select value={value[k]} onChange={e=>set(k,e.target.value as Capability)}><option value="unknown">未知</option><option value="supported">支持</option><option value="unsupported">不支持</option></Select></Field>)}<Field label="资料来源（每行：标签 | URL | YYYY-MM-DD）"><textarea value={value.sources.map(s=>[s.label,s.url,s.updatedAt?.slice(0,10)||""].join(" | ")).join("\n")} onChange={e=>set("sources",e.target.value.split(/\n/).map(line=>{const [label="",url="",updatedAt=""]=line.split("|").map(x=>x.trim());return {label,url,updatedAt:updatedAt||null}}).filter(s=>s.label||s.url))}/></Field></div>}
-function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="grid gap-1 text-sm">{label}{children}</label>};function Num({label,value,set}:{label:string;value:number|null;set:(v:number|null)=>void}){return <Field label={label}><Input type="number" value={value??""} onChange={e=>set(e.target.value?Number(e.target.value):null)}/></Field>};function TextList({label,value,set}:{label:string;value:string[];set:(v:string[])=>void}){return <Field label={label}><Input value={value.join(", ")} onChange={e=>set(e.target.value.split(",").map(x=>x.trim()).filter(Boolean))}/></Field>}
-function ProfileView({model}:{model:ModelProfile}){return <div className="grid gap-4"><p>{model.description||"资料待完善"}</p><dl className="grid gap-3 sm:grid-cols-3"><div><dt className="muted">适用场景</dt><dd>{model.useCases.join("、")||"未知"}</dd></div><div><dt className="muted">输入 / 输出模态</dt><dd>{model.inputModalities.join("、")||"未知"} / {model.outputModalities.join("、")||"未知"}</dd></div><div><dt className="muted">能力</dt><dd>推理 {cap(model.reasoning)} · 工具 {cap(model.toolCalling)} · 结构化 {cap(model.structuredOutput)}</dd></div></dl><div><h3 className="text-sm">资料来源</h3>{model.sources.length?<ul>{model.sources.map((s,i)=><li key={i}>{safeUrl(s.url)?<a href={s.url} target="_blank" rel="noreferrer">{s.label||s.url}</a>:s.label||s.url}{s.updatedAt&&` · ${s.updatedAt.slice(0,10)}`}</li>)}</ul>:<p className="muted">未配置</p>}</div></div>}
-import { metric } from "../lib/format";
