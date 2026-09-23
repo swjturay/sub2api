@@ -1,9 +1,15 @@
 # Development Journal
 
+## Personal Insights production launch boundary (2026-09-24)
+
+- Confirmed **2026-06-01** as the Sub2API production launch date in the platform timezone. The CCE release command now sets both trusted Insights collection and `INSIGHTS_TRUSTED_USAGE_HISTORY_FROM=2026-06-01` on the backend Deployment.
+- This boundary certifies the existing billing ledger rather than backfilling raw data. Existing Token and amount rows are aggregated as recorded; calendar dates on or after launch with no usage rows are zero-use days. Dates before launch are marked `统计范围外`, while explicit post-launch collection gaps remain `数据缺口`.
+- Heatmap coverage evaluation starts at the launch boundary, so pre-launch dates no longer make an otherwise complete year appear partially collected. Operations documentation records the same rule and requires the repository-owned CCE release command to be refreshed before rollout.
+
 ## Personal Insights clarity and history certification (2026-09-23)
 
-- Simplified the personal dashboard by moving statistical-time, coverage and chart explanations into keyboard-accessible tooltips. Renamed the daily section to `今日实况`, added today's actual amount beside total Token, and hides the daily cache-write item when its value is zero. Heatmap absence is now labelled `无可确认记录` instead of implying that collection definitely never happened.
-- Audited production read-only usage history: the billing ledger contains 2,576,729 rows across 112 distinct dates beginning on 2026-06-02, while explicit Insights completeness tracking began on 2026-09-23. Added the operator-only `INSIGHTS_TRUSTED_USAGE_HISTORY_FROM` boundary so audited ledger history can certify Token, amount and idle calendar days without inventing historical success, failure, error or retention facts. Because the first observed row on 2026-06-02 is at 15:28 Asia/Shanghai, 2026-06-03 is the conservative whole-day boundary unless an earlier service audit proves that partial day complete.
+- Simplified the personal dashboard by moving statistical-time, coverage and chart explanations into keyboard-accessible tooltips. Renamed the daily section to `今日实况`, added today's actual amount beside total Token, and hides the daily cache-write item when its value is zero. The heatmap now distinguishes zero use, explicit data gaps, pre-launch dates and future dates.
+- Audited production read-only usage history: the billing ledger contains 2,576,729 rows across 112 distinct dates beginning on 2026-06-02, while explicit Insights completeness tracking began on 2026-09-23. Added the operator-only `INSIGHTS_TRUSTED_USAGE_HISTORY_FROM` boundary so audited ledger history can certify Token, amount and idle calendar days without inventing historical success, failure, error or retention facts. The later operational confirmation established 2026-06-01 as the actual production launch boundary.
 - Preserved the concrete selected-account provider when an API key belongs to a composite routing group. Historical usage queries also ignore `composite` and `antigravity` fact values and fall back to the concrete account provider, correcting existing `composite:gpt-6-astra` personal logs to the OpenAI provider.
 - Widened the bounded desktop canvas for 2K displays and retained the fixed log-column contract. Browser checks at 1920×1080 and 2560×1440 found no horizontal document overflow; the filter row remains intact, Token/performance columns remain separated, and opening the account menu does not move the shell.
 

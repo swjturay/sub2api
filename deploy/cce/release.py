@@ -34,6 +34,7 @@ IMAGE_RE = re.compile(
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SAFE_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 ANNOTATION_PREFIX = "sub2api.2ray.wang/"
+PRODUCTION_INSIGHTS_USAGE_HISTORY_FROM = "2026-06-01"
 
 
 class ReleaseError(RuntimeError):
@@ -124,6 +125,12 @@ def build_backend_patch(deployment: dict, image: str, annotations: dict[str, str
     container["imagePullPolicy"] = "IfNotPresent"
     container["lifecycle"] = {"preStop": {"exec": {"command": ["/bin/sh", "-c", "sleep 5"]}}}
     upsert_env(container, "SERVER_SHUTDOWN_TIMEOUT_SECONDS", "60")
+    upsert_env(container, "INSIGHTS_TRUSTED_COLLECTION", "true")
+    upsert_env(
+        container,
+        "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM",
+        PRODUCTION_INSIGHTS_USAGE_HISTORY_FROM,
+    )
     pod_spec["terminationGracePeriodSeconds"] = max(75, int(pod_spec.get("terminationGracePeriodSeconds", 0)))
     dedupe_pull_secrets(pod_spec)
     return {

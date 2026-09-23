@@ -62,6 +62,16 @@ class ReleasePatchTest(unittest.TestCase):
         self.assertIn(
             {"name": "SERVER_SHUTDOWN_TIMEOUT_SECONDS", "value": "60"}, container["env"]
         )
+        self.assertIn(
+            {"name": "INSIGHTS_TRUSTED_COLLECTION", "value": "true"}, container["env"]
+        )
+        self.assertIn(
+            {
+                "name": "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM",
+                "value": "2026-06-01",
+            },
+            container["env"],
+        )
         self.assertEqual(pod_spec["terminationGracePeriodSeconds"], 75)
         self.assertEqual(
             pod_spec["imagePullSecrets"], [{"name": "acr-pull"}, {"name": "default-secret"}]

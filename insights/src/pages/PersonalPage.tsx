@@ -110,7 +110,8 @@ export function PersonalPage({ auto }: { auto: boolean }) {
             <Chart label="年度Token热力图" height={210} onEvents={{ click: selectDay }} option={buildHeatmapOption(heatmap.data.days, heatmap.data.thresholds, year)} />
             <div className="mt-2 flex flex-wrap justify-end gap-x-4 gap-y-2 text-xs muted" aria-label="热力图数据状态">
               <LegendSwatch className="border border-[var(--border)] bg-[var(--surface-subtle)]" label="零用量" />
-              <LegendSwatch className="bg-[var(--border)]" label="无可确认记录" help="该日没有可确认的历史用量记录，可能早于已审计的历史范围；不能直接当作零用量。" />
+              {heatmap.data.days.some((day) => day.state === "missing") && <LegendSwatch className="bg-[var(--border)]" label="数据缺口" help="系统已上线，但该日存在明确的数据完整性缺口，不能按零用量处理。" />}
+              {heatmap.data.days.some((day) => day.state === "out_of_scope") && <LegendSwatch className="bg-[color-mix(in_srgb,var(--border)_55%,transparent)]" label="统计范围外" help="早于 2026-06-01 系统上线时间，不参与用量统计。" />}
               <LegendSwatch className="border border-dashed border-[var(--border-strong)]" label="未来" />
             </div>
           </>

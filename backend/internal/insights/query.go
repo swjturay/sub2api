@@ -621,6 +621,12 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 	if err != nil {
 		return Envelope{}, err
 	}
+	usageCoverage := states["usage"]
+	var usageStart *time.Time
+	if usageCoverage.TrustedSince != nil {
+		startDay := DayAt(usageCoverage.TrustedSince.In(loc), loc)
+		usageStart = &startDay
+	}
 	observed := map[string]int64{}
 	readDaily := func(from, to time.Time) error {
 		if !from.Before(to) {
@@ -723,34 +729,38 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 
 	today := q.now().In(loc)
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
+	// Calendar dates before the certified service launch are outside the
+	// statistical scope. After launch, a missing row is zero only when the
+	// corresponding source interval is verified complete; explicit gaps remain missing.
 	days := make([]HeatmapDay, 0, 366)
 	for date := start; date.Before(end); date = date.AddDate(0, 0, 1) {
 		key := date.Format("2006-01-02")
-		d := HeatmapDay{Date: key, State: "missing"}
-		if date.After(today) {
-			d.State = "future"
-		} else if n, ok := observed[key]; ok {
-			d.TotalTokens = n
-			d.State = "zero"
-			if n > 0 {
-				d.State = "value"
-			}
-		} else if date.Before(cutoff) {
-			if coveredDaily[key] {
-				d.State = "zero"
-			}
-		} else if q.coverageWindowStatus(states["usage"], date, date.AddDate(0, 0, 1)) == "complete" {
-			d.State = "zero"
+		tokens, observedDay := observed[key]
+		completeDay := coveredDaily[key]
+		if !date.Before(cutoff) {
+			completeDay = q.coverageWindowStatus(usageCoverage, date, date.AddDate(0, 0, 1)) == "complete"
+		}
+		d := HeatmapDay{
+			Date:  key,
+			State: classifyHeatmapDay(date, today, usageStart, observedDay, tokens, completeDay),
+		}
+		if observedDay && (d.State == "value" || d.State == "zero") {
+			d.TotalTokens = tokens
 		}
 		days = append(days, d)
 	}
-	dailyCoverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_rollups", start, dailyEnd)
+	coverageStart := start
+	if usageStart != nil && coverageStart.Before(*usageStart) {
+		coverageStart = *usageStart
+	}
+	dailyCoverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_rollups", coverageStart, dailyEnd)
 	if err != nil {
 		return Envelope{}, err
 	}
 	rawCoverage := CoverageInfo{Dataset: "usage_detail", Status: "complete"}
-	if rawStart.Before(end) {
-		rawCoverage = coverageInfoFromState("usage_detail", states["usage"], q.coverageWindowStatus(states["usage"], rawStart, end))
+	effectiveRawStart := maxTime(rawStart, coverageStart)
+	if effectiveRawStart.Before(end) {
+		rawCoverage = coverageInfoFromState("usage_detail", usageCoverage, q.coverageWindowStatus(usageCoverage, effectiveRawStart, end))
 	}
 	coverage := []CoverageInfo{dailyCoverage, rawCoverage}
 	return q.envelope(map[string]any{"year": year, "days": days, "scale": HeatmapScale{MaxTokens: maxTokens, Thresholds: thresholds}}, coverage), nil
@@ -849,6 +859,25 @@ func coverageInfoFromState(dataset string, coverage Coverage, status string) Cov
 		info.Detail = "the trusted collection interval does not fully cover the requested range"
 	}
 	return info
+}
+
+func classifyHeatmapDay(date, today time.Time, usageStart *time.Time, observed bool, tokens int64, sourceComplete bool) string {
+	if date.After(today) {
+		return "future"
+	}
+	if usageStart != nil && date.Before(*usageStart) {
+		return "out_of_scope"
+	}
+	if observed {
+		if tokens > 0 {
+			return "value"
+		}
+		return "zero"
+	}
+	if sourceComplete {
+		return "zero"
+	}
+	return "missing"
 }
 
 func (q *Query) rawCoverageInfo(ctx context.Context, source, dataset string, from, to time.Time) (CoverageInfo, error) {

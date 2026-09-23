@@ -137,11 +137,14 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		if d.Date == "2026-09-03" && d.State != "zero" {
 			t.Fatalf("verified idle day=%+v", d)
 		}
-		if d.Date == "2026-08-15" && d.State != "missing" {
+		if d.Date == "2026-08-15" && d.State != "out_of_scope" {
 			t.Fatalf("retention policy invented coverage=%+v", d)
 		}
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_rollup_coverage VALUES('usage','2025-09-23',true)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE insights_settings SET value=jsonb_build_object('usage',jsonb_build_object('status','complete','trusted_since','2025-01-01T00:00:00Z','observed_through',$1::timestamptz)) WHERE key='coverage'`, to); err != nil {
 		t.Fatal(err)
 	}
 	prunedHeatmap, e := q.Heatmap(ctx, 7, 2025, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))

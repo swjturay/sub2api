@@ -2637,7 +2637,7 @@ func TestValidateInsightsTrustedUsageHistoryFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	cfg.Insights.TrustedUsageHistoryFrom = "2026-06-03"
+	cfg.Insights.TrustedUsageHistoryFrom = "2026-06-01"
 	if err = cfg.Validate(); err == nil || !strings.Contains(err.Error(), "requires insights.trusted_collection") {
 		t.Fatalf("Validate() error = %v, want trusted collection requirement", err)
 	}

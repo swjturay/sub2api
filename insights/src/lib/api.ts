@@ -197,7 +197,7 @@ export const insightsApi = {
       coverage: cov(r.meta),
     } as T.PersonalOverview;
   },
-  personalHeatmap: async (year: number, signal?: AbortSignal) => {
+  personalHeatmap: async (year: number, signal?: AbortSignal): Promise<T.PersonalHeatmap> => {
     const r = await apiFetch<Wire<any>>(
       `/insights/me/heatmap${q({ year })}`,
       {},
@@ -211,7 +211,7 @@ export const insightsApi = {
       days: r.data.days.map((d: any) => ({
         date: d.date,
         tokens: d.total_tokens ?? null,
-        state: d.state,
+        state: d.state as T.HeatmapDay["state"],
       })),
       thresholds: r.data.scale.thresholds,
       coverage: cov(r.meta),
