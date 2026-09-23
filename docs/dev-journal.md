@@ -1,5 +1,15 @@
 # Development Journal
 
+## Independent CCE release automation (2026-09-23)
+
+- Split the release boundary permanently: GitHub builds linux/amd64 backend and Insights images, pushes only immutable Alibaba ACR images, and archives a combined schema-v2 release manifest. GitHub has no SSH, kubeconfig, or operations-host credential and never starts a deployment.
+- Added the repository-owned `deploy/cce/release.py` operations-host command. One invocation validates the manifest, rolls out the backend and current Insights image, runs a single 30-second public observation, writes an audit record, and rolls both Deployments back to their previous Kubernetes revisions on failure.
+- Removed the frontend bridge/final sequence from the maintained flow. The direct Insights patch deletes compatibility init containers, the `previous-assets` volume, and old-version mounts, and restores the stable direct-only Nginx ConfigMap.
+- Increased the backend HTTP server's bounded graceful shutdown default from 5 to 60 seconds, disabled keep-alives when shutdown starts, and made the timeout configurable through `SERVER_SHUTDOWN_TIMEOUT_SECONDS`. The CCE patch allows endpoint propagation before Kubernetes sends SIGTERM.
+- Added release patch/manifest unit tests and CI syntax checks. Pushing a `cce-v<version>` tag now automatically creates the ACR images and manifest; deployment remains an explicit independent operations-host action.
+
+Validation: release unit tests, Python compilation, backend server tests, shell syntax, workflow `actionlint`, whitespace checks, and production-shape dry-run validation passed. No GitHub-to-operations-host connection or cluster credential was introduced.
+
 ## Insights official model catalog completion (2026-09-23)
 
 - Replaced the channel-derived Insights model directory with a 77-entry version-controlled allowlist of formal production models across OpenAI, Anthropic/Antigravity, Gemini, DeepSeek/OpenCode and Z.AI. The catalog now includes previously omitted current families and variants while excluding internal names such as `codex-auto-review`.

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -36,6 +37,29 @@ var (
 	Date      = "unknown"
 	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
 )
+
+const defaultShutdownTimeout = 60 * time.Second
+
+func parseShutdownTimeout(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultShutdownTimeout, nil
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds < 1 || seconds > 600 {
+		return 0, errors.New("SERVER_SHUTDOWN_TIMEOUT_SECONDS must be an integer between 1 and 600")
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+func configuredShutdownTimeout() time.Duration {
+	timeout, err := parseShutdownTimeout(os.Getenv("SERVER_SHUTDOWN_TIMEOUT_SECONDS"))
+	if err != nil {
+		log.Printf("Invalid graceful shutdown timeout, using %s: %v", defaultShutdownTimeout, err)
+		return defaultShutdownTimeout
+	}
+	return timeout
+}
 
 func init() {
 	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
@@ -183,8 +207,10 @@ func runMainServer() {
 	<-quit
 
 	log.Println("Shutting down server...")
+	app.Server.SetKeepAlivesEnabled(false)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownTimeout := configuredShutdownTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
 	if err := app.Server.Shutdown(ctx); err != nil {

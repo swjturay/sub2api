@@ -15,6 +15,9 @@ jobs:
       - name: Check deployment scripts
         run: |
           /bin/bash -n deploy/apple-container.sh
+          /bin/sh -n deploy/cce/install.sh
+          python3 -m py_compile deploy/cce/release.py
+          python3 -m unittest discover -s deploy/cce/tests -v
           /bin/bash deploy/tests/apple-container-test.sh
           /bin/sh deploy/tests/docker-compose-security-test.sh
           /bin/sh deploy/tests/docker-compose-gateway-env-test.sh

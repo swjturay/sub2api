@@ -1,10 +1,10 @@
-name: CCE clean branch images
+name: CCE ACR release archive
 
 on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Source branch or commit to build
+        description: Source branch, tag, or commit to build
         required: true
         type: string
       source_sha:
@@ -15,105 +15,156 @@ on:
         description: Runtime version embedded in the images
         required: true
         type: string
-        default: 0.2.5-clean-codex
+        default: 0.2.8
+  push:
+    tags:
+      - 'cce-v*'
 
 permissions:
+  actions: read
   contents: read
-  packages: write
 
 jobs:
   validate-source:
     runs-on: ubuntu-latest
-    env:
-      SOURCE_REF: ${{ inputs.source_ref }}
-      SOURCE_SHA: ${{ inputs.source_sha }}
-      VERSION: ${{ inputs.version }}
+    outputs:
+      source_ref: ${{ steps.inputs.outputs.source_ref }}
+      source_sha: ${{ steps.inputs.outputs.source_sha }}
+      version: ${{ steps.inputs.outputs.version }}
     steps:
-      - name: Validate dispatch inputs
+      - name: Resolve and validate release inputs
+        id: inputs
         shell: bash
+        env:
+          REQUESTED_REF: ${{ inputs.source_ref }}
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            source_ref="$GITHUB_REF_NAME"
+            source_sha="$GITHUB_SHA"
+            version="$(printf '%s' "$GITHUB_REF_NAME" | sed 's/^cce-v//')"
+          else
+            source_ref="$REQUESTED_REF"
+            source_sha="$REQUESTED_SHA"
+            version="$REQUESTED_VERSION"
+          fi
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
             echo 'source_sha must be a full lowercase 40-character commit SHA' >&2
             exit 1
           }
-          [[ "$SOURCE_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || {
+          [[ "$source_ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]] || {
             echo 'source_ref contains unsupported characters' >&2
             exit 1
           }
-          [[ "$SOURCE_REF" != *'..'* && "$SOURCE_REF" != *'//'* && "$SOURCE_REF" != */ && "$SOURCE_REF" != *'.lock' ]] || {
+          [[ "$source_ref" != *'..'* && "$source_ref" != *'//'* && "$source_ref" != */ && "$source_ref" != *'.lock' ]] || {
             echo 'source_ref is not a safe Git ref or commit name' >&2
             exit 1
           }
-          [[ "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || {
+          [[ "$version" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || {
             echo 'version must be a safe image-tag component of at most 64 characters' >&2
             exit 1
           }
+          {
+            echo "source_ref=$source_ref"
+            echo "source_sha=$source_sha"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.inputs.outputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Verify source ref resolves to the requested commit
+        shell: bash
+        env:
+          SOURCE_REF: ${{ steps.inputs.outputs.source_ref }}
+          SOURCE_SHA: ${{ steps.inputs.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --no-tags --depth=1 origin "$SOURCE_REF"
+          test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$SOURCE_SHA"
+
+  verify-ci:
+    needs: validate-source
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SOURCE_SHA: ${{ needs.validate-source.outputs.source_sha }}
+    steps:
+      - name: Require successful source CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100"
+          for attempt in $(seq 1 30); do
+            runs="$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$api")"
+            ci="$(jq -r '[.workflow_runs[] | select(.name == "CI")] | sort_by(.run_number) | last | .conclusion // "missing"' <<<"$runs")"
+            security="$(jq -r '[.workflow_runs[] | select(.name == "Security Scan")] | sort_by(.run_number) | last | .conclusion // "missing"' <<<"$runs")"
+            insights="$(jq -r '[.workflow_runs[] | select(.name == "Insights CI")] | sort_by(.run_number) | last | if . == null then "not_applicable" elif .status != "completed" then .status else .conclusion end' <<<"$runs")"
+            if [[ "$ci" == success && "$security" == success && ( "$insights" == success || "$insights" == not_applicable ) ]]; then
+              printf 'CI gates passed: CI=%s Security=%s Insights=%s\n' "$ci" "$security" "$insights"
+              exit 0
+            fi
+            if [[ "$ci" =~ ^(failure|cancelled|timed_out|action_required)$ || "$security" =~ ^(failure|cancelled|timed_out|action_required)$ || "$insights" =~ ^(failure|cancelled|timed_out|action_required)$ ]]; then
+              printf 'CI gate failed: CI=%s Security=%s Insights=%s\n' "$ci" "$security" "$insights" >&2
+              exit 1
+            fi
+            printf 'Waiting for CI gates (%s/30): CI=%s Security=%s Insights=%s\n' "$attempt" "$ci" "$security" "$insights"
+            sleep 10
+          done
+          echo 'timed out waiting for source CI gates' >&2
+          exit 1
 
   build-amd64:
-    needs: validate-source
+    needs:
+      - validate-source
+      - verify-ci
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - component: backend
-            repository: sub2api
             acr_tag_prefix: backend-
             context: .
             dockerfile: ./Dockerfile
-            cache_scope: cce-clean-backend-amd64
+            cache_scope: cce-backend-amd64
           - component: insights
-            repository: sub2api-insights
             acr_tag_prefix: insights-
             context: ./insights
             dockerfile: ./insights/Dockerfile
-            cache_scope: cce-clean-insights-amd64
+            cache_scope: cce-insights-amd64
     env:
-      SOURCE_REF: ${{ inputs.source_ref }}
-      SOURCE_SHA: ${{ inputs.source_sha }}
-      VERSION: ${{ inputs.version }}
-      IMAGE: ghcr.io/swjturay/${{ matrix.repository }}:${{ inputs.version }}-${{ inputs.source_sha }}
-      ACR_IMAGE: registry.cn-shanghai.aliyuncs.com/rayless/sub2api:${{ matrix.acr_tag_prefix }}${{ inputs.version }}-${{ inputs.source_sha }}
+      SOURCE_REF: ${{ needs.validate-source.outputs.source_ref }}
+      SOURCE_SHA: ${{ needs.validate-source.outputs.source_sha }}
+      VERSION: ${{ needs.validate-source.outputs.version }}
+      ACR_IMAGE: registry.cn-shanghai.aliyuncs.com/rayless/sub2api:${{ matrix.acr_tag_prefix }}${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.source_sha }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ env.SOURCE_SHA }}
           fetch-depth: 1
 
-      - name: Verify exact source commit
+      - name: Read reproducible build date
         id: source
         shell: bash
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          test "$actual_sha" = "$SOURCE_SHA"
-          git cat-file -e "${SOURCE_SHA}^{commit}"
-          git fetch --no-tags --depth=1 origin "$SOURCE_REF"
-          ref_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
-          test "$ref_sha" = "$SOURCE_SHA" || {
-            echo "source_ref resolves to $ref_sha, not requested source_sha $SOURCE_SHA" >&2
-            exit 1
-          }
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           build_date="$(git show -s --format=%cI "$SOURCE_SHA")"
           echo "build_date=$build_date" >> "$GITHUB_OUTPUT"
-          {
-            echo "component=${{ matrix.component }}"
-            echo "source_ref=$SOURCE_REF"
-            echo "source_sha=$SOURCE_SHA"
-            echo "image=$IMAGE"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to ACR
         uses: docker/login-action@v3
@@ -136,114 +187,139 @@ jobs:
             "https://www.python.org/ftp/python/3.13.15/$asset"
           echo "$checksum  $destination.part" | sha256sum --check
           mv "$destination.part" "$destination"
-          echo "windows_python_asset=$asset" >> "$GITHUB_STEP_SUMMARY"
-          echo "windows_python_sha256=$checksum" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build and push linux/amd64 image
+      - name: Build and push linux/amd64 image to ACR
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.IMAGE }}
-            ${{ env.ACR_IMAGE }}
+          tags: ${{ env.ACR_IMAGE }}
           provenance: false
           sbom: false
           build-args: |
-            VERSION=${{ inputs.version }}
-            COMMIT=${{ inputs.source_sha }}
+            VERSION=${{ env.VERSION }}
+            COMMIT=${{ env.SOURCE_SHA }}
             DATE=${{ steps.source.outputs.build_date }}
           labels: |
-            org.opencontainers.image.version=${{ inputs.version }}
-            org.opencontainers.image.revision=${{ inputs.source_sha }}
-            org.opencontainers.image.source=https://github.com/swjturay/sub2api
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha,scope=${{ matrix.cache_scope }}
           cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
 
-      - name: Export immutable image archive and transfer manifest
-        id: export
+      - name: Verify ACR digest and write component manifest
+        id: manifest
         shell: bash
         env:
           COMPONENT: ${{ matrix.component }}
-          REPOSITORY: ${{ matrix.repository }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          output_dir="$RUNNER_TEMP/$COMPONENT"
-          archive_name="${REPOSITORY}-${VERSION}-${SOURCE_SHA}-linux-amd64.tar.gz"
-          archive="$output_dir/$archive_name"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          raw_manifest="$RUNNER_TEMP/$COMPONENT-raw-manifest.json"
+          docker buildx imagetools inspect "$ACR_IMAGE" --raw > "$raw_manifest"
+          test "sha256:$(sha256sum "$raw_manifest" | cut -d' ' -f1)" = "$DIGEST"
+          repository="$(printf '%s' "$ACR_IMAGE" | sed 's/:[^:]*$//')"
+          immutable_image="$repository@$DIGEST"
+          output_dir="$RUNNER_TEMP/cce-manifests"
           mkdir -p "$output_dir"
-
-          docker pull --platform linux/amd64 "$IMAGE"
-          image_digest="$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}' | sed 's/^[^@]*@//')"
-          test -n "$image_digest"
-          immutable_image="ghcr.io/swjturay/${REPOSITORY}@${image_digest}"
-          docker pull --platform linux/amd64 "$immutable_image"
-          docker tag "$immutable_image" "$IMAGE"
-
-          ghcr_manifest="$RUNNER_TEMP/${COMPONENT}-ghcr-manifest.json"
-          acr_manifest="$RUNNER_TEMP/${COMPONENT}-acr-manifest.json"
-          docker buildx imagetools inspect "$IMAGE" --raw > "$ghcr_manifest"
-          docker buildx imagetools inspect "$ACR_IMAGE" --raw > "$acr_manifest"
-          ghcr_digest="sha256:$(sha256sum "$ghcr_manifest" | cut -d' ' -f1)"
-          acr_digest="sha256:$(sha256sum "$acr_manifest" | cut -d' ' -f1)"
-          test "$ghcr_digest" = "$image_digest"
-          test "$acr_digest" = "$image_digest"
-          acr_immutable_image="${ACR_IMAGE%%:*}@${acr_digest}"
-
-          docker save "$IMAGE" | gzip -1 > "$archive"
-          archive_sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
-          printf '%s  %s\n' "$archive_sha256" "$archive_name" > "$archive.sha256"
-
           jq -n \
-            --arg schema_version '1' \
             --arg component "$COMPONENT" \
-            --arg image "$IMAGE" \
+            --arg tagged_image "$ACR_IMAGE" \
             --arg immutable_image "$immutable_image" \
-            --arg acr_image "$ACR_IMAGE" \
-            --arg acr_immutable_image "$acr_immutable_image" \
-            --arg acr_digest "$acr_digest" \
-            --arg digest "$image_digest" \
+            --arg digest "$DIGEST" \
             --arg platform 'linux/amd64' \
+            --arg source_sha "$SOURCE_SHA" \
+            '{
+              component: $component,
+              tagged_image: $tagged_image,
+              immutable_image: $immutable_image,
+              digest: $digest,
+              platform: $platform,
+              source_sha: $source_sha
+            }' > "$output_dir/$COMPONENT.json"
+          echo "output_dir=$output_dir" >> "$GITHUB_OUTPUT"
+          {
+            echo "component=$COMPONENT"
+            echo "acr_image=$immutable_image"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload component release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: cce-${{ matrix.component }}-manifest-${{ env.SOURCE_SHA }}
+          path: ${{ steps.manifest.outputs.output_dir }}/${{ matrix.component }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  assemble-release-manifest:
+    needs:
+      - validate-source
+      - build-amd64
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_REF: ${{ needs.validate-source.outputs.source_ref }}
+      SOURCE_SHA: ${{ needs.validate-source.outputs.source_sha }}
+      VERSION: ${{ needs.validate-source.outputs.version }}
+    steps:
+      - name: Download component metadata
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cce-*-manifest-${{ env.SOURCE_SHA }}
+          path: ${{ runner.temp }}/components
+          merge-multiple: true
+
+      - name: Assemble immutable CCE release manifest
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/components/backend.json"
+          test -f "$RUNNER_TEMP/components/insights.json"
+          output_dir="$RUNNER_TEMP/release"
+          mkdir -p "$output_dir"
+          manifest="$output_dir/cce-release-manifest.json"
+          jq -n \
+            --arg schema_version '2' \
+            --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg source_repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --arg source_ref "$SOURCE_REF" \
             --arg source_sha "$SOURCE_SHA" \
             --arg version "$VERSION" \
-            --arg archive "$archive_name" \
-            --arg archive_sha256 "$archive_sha256" \
+            --arg build_run_id "$GITHUB_RUN_ID" \
             --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --slurpfile backend "$RUNNER_TEMP/components/backend.json" \
+            --slurpfile insights "$RUNNER_TEMP/components/insights.json" \
             '{
               schema_version: $schema_version,
-              component: $component,
-              image: $image,
-              immutable_image: $immutable_image,
-              acr_image: $acr_image,
-              acr_immutable_image: $acr_immutable_image,
-              acr_digest: $acr_digest,
-              digest: $digest,
-              platform: $platform,
+              created_at: $created_at,
               source_repository: $source_repository,
               source_ref: $source_ref,
               source_sha: $source_sha,
               version: $version,
-              archive: $archive,
-              archive_sha256: $archive_sha256,
-              run_url: $run_url
-            }' > "$output_dir/manifest.json"
-
-          {
-            echo "image_digest=$image_digest"
-            echo "acr_image=$acr_immutable_image"
-            echo "archive=$archive_name"
-            echo "archive_sha256=$archive_sha256"
-          } >> "$GITHUB_STEP_SUMMARY"
+              build_run_id: $build_run_id,
+              run_url: $run_url,
+              images: {
+                backend: $backend[0],
+                insights: $insights[0]
+              }
+            }' > "$manifest"
+          sha256sum "$manifest" > "$manifest.sha256"
           echo "output_dir=$output_dir" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_manifest=cce-release-manifest.json"
+            echo "source_sha=$SOURCE_SHA"
+            echo "version=$VERSION"
+            echo "deployment=independent ops-host flow"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload immutable image transfer artifact
+      - name: Upload complete CCE release manifest
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.repository }}-${{ inputs.version }}-${{ inputs.source_sha }}-linux-amd64
-          path: ${{ steps.export.outputs.output_dir }}
+          name: cce-release-${{ env.VERSION }}-${{ env.SOURCE_SHA }}
+          path: ${{ steps.release.outputs.output_dir }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
