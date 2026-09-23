@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"log/slog"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ type RecordUsageInput struct {
 	Account            *Account
 	Subscription       *UserSubscription  // 可选：订阅信息
 	PricingAt          time.Time          // token 售价固定时刻；零值保持既有的记录时刻语义
+	StatisticalAt      time.Time          // Insights统计记录时间；同次最终结果、错误与usage显式共用
 	InboundEndpoint    string             // 入站端点（客户端请求路径）
 	UpstreamEndpoint   string             // 上游端点（标准化后的上游路径）
 	UserAgent          string             // 请求的 User-Agent
@@ -585,6 +587,7 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 				defer fallbackCancel()
 			}
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
+				insights.ReportUsageGapBestEffort("usage persistence and fallback failed")
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
 			}
 		}
@@ -592,6 +595,7 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
+		insights.ReportUsageGapBestEffort("usage persistence failed")
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
 	}
 }
@@ -605,6 +609,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		Account:            input.Account,
 		Subscription:       input.Subscription,
 		PricingAt:          input.PricingAt,
+		StatisticalAt:      input.StatisticalAt,
 		InboundEndpoint:    input.InboundEndpoint,
 		UpstreamEndpoint:   input.UpstreamEndpoint,
 		UserAgent:          input.UserAgent,
@@ -626,6 +631,7 @@ type recordUsageCoreInput struct {
 	Account            *Account
 	Subscription       *UserSubscription
 	PricingAt          time.Time
+	StatisticalAt      time.Time
 	InboundEndpoint    string
 	UpstreamEndpoint   string
 	UserAgent          string
@@ -1183,7 +1189,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		SessionID:                optionalTrimmedStringPtr(input.SessionID),
 		GroupID:                  apiKey.GroupID,
 		SubscriptionID:           optionalSubscriptionID(subscription),
-		CreatedAt:                time.Now(),
+		CreatedAt:                usageStatisticalAt(input.StatisticalAt),
 	}
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
@@ -1200,6 +1206,13 @@ func (s *GatewayService) buildRecordUsageLog(
 	}
 
 	return usageLog
+}
+
+func usageStatisticalAt(at time.Time) time.Time {
+	if !at.IsZero() {
+		return at
+	}
+	return time.Now()
 }
 
 // resolveBillingMode 根据计费结果和请求类型确定计费模式。
@@ -1221,4 +1234,10 @@ func optionalSubscriptionID(subscription *UserSubscription) *int64 {
 		return &subscription.ID
 	}
 	return nil
+}
+
+// ResolveUsageFactRequestID exposes the exact billing/usage identity rule to
+// observability without changing deduplication behavior.
+func ResolveUsageFactRequestID(ctx context.Context, upstreamRequestID string) string {
+	return resolveUsageBillingRequestID(ctx, upstreamRequestID)
 }

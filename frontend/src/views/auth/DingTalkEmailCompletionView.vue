@@ -37,6 +37,7 @@ import {
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { navigateAfterAuth } from '@/utils/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -100,7 +101,7 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       await authStore.setToken(data.access_token)
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
-      await router.replace(redirect)
+      await navigateAfterAuth(router, redirect, 'replace')
       return
     }
 

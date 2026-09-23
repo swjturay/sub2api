@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/google/uuid"
 )
@@ -55,6 +56,7 @@ type DashboardAggregationService struct {
 	repo                 DashboardAggregationRepository
 	timingWheel          *TimingWheelService
 	cfg                  config.DashboardAggregationConfig
+	timezone             string
 	running              int32
 	lastRetentionCleanup atomic.Value // time.Time
 
@@ -66,14 +68,18 @@ type DashboardAggregationService struct {
 // NewDashboardAggregationService 创建聚合服务。
 func NewDashboardAggregationService(repo DashboardAggregationRepository, timingWheel *TimingWheelService, cfg *config.Config) *DashboardAggregationService {
 	var aggCfg config.DashboardAggregationConfig
+	timezone := ""
 	if cfg != nil {
 		aggCfg = cfg.DashboardAgg
+		if cfg.Timezone != "" {
+			timezone = cfg.Timezone
+		}
 	}
 	return &DashboardAggregationService{
 		repo:        repo,
 		timingWheel: timingWheel,
-		cfg:         aggCfg,
-		instanceID:  uuid.NewString(),
+		cfg:         aggCfg, timezone: timezone,
+		instanceID: uuid.NewString(),
 	}
 }
 
@@ -369,7 +375,19 @@ func (s *DashboardAggregationService) maybeCleanupRetention(ctx context.Context,
 	if aggErr != nil {
 		logger.LegacyPrintf("service.dashboard_aggregation", "[DashboardAggregation] 聚合保留清理失败: %v", aggErr)
 	}
-	usageErr := s.repo.CleanupUsageLogs(ctx, usageCutoff)
+	var usageErr error
+	if s.timezone != "" {
+		loc, err := time.LoadLocation(s.timezone)
+		if err != nil {
+			usageErr = err
+		} else {
+			usageCutoff = insights.DayAt(usageCutoff, loc)
+			usageErr = insights.PrepareUsageRetention(ctx, usageCutoff, s.timezone)
+		}
+	}
+	if usageErr == nil {
+		usageErr = s.repo.CleanupUsageLogs(ctx, usageCutoff)
+	}
 	if usageErr != nil {
 		logger.LegacyPrintf("service.dashboard_aggregation", "[DashboardAggregation] usage_logs 保留清理失败: %v", usageErr)
 	}

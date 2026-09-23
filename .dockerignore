@@ -83,3 +83,11 @@ deploy/redis_data/
 .claude/
 issues/
 CLAUDE.md
+
+# Local Insights development and verification artifacts
+**/.dev/
+**/.playwright-cli/
+**/test-artifacts/
+insights/node_modules/
+insights/dist/
+*.tsbuildinfo

@@ -269,6 +269,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { navigateAfterAuth } from '@/utils/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -611,7 +612,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
   await authStore.setToken(completion.access_token)
   clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
-  await router.replace(redirect)
+  await navigateAfterAuth(router, redirect, 'replace')
 }
 
 async function finalizePendingAccountResponse(completion: PendingOidcCompletion) {
@@ -763,7 +764,7 @@ async function handleSubmitTotpChallenge() {
     await authStore.setToken(completion.access_token)
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
-    await router.replace(redirectTo.value)
+    await navigateAfterAuth(router, redirectTo.value, 'replace')
   } catch (e: unknown) {
     totpError.value = getRequestErrorMessage(e, t('auth.loginFailed'))
   } finally {
@@ -789,7 +790,7 @@ onMounted(async () => {
       await authStore.setToken(legacyLogin.access_token)
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
-      await router.replace(redirect)
+      await navigateAfterAuth(router, redirect, 'replace')
       return
     }
 

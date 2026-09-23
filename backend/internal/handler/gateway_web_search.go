@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
@@ -175,6 +176,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}
 		account = selected.Account
 		accountReleaseFunc = release
+		insightsUpdateCall(c, searchModel, account.Platform, false)
 
 		if isXSearch {
 			nativeResp, providerName, err = h.doGrokNativeXSearch(c.Request.Context(), c, account, req, searchModel, maxResults)
@@ -220,6 +222,10 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	// Request IDs are billing idempotency keys, so they must be unique per invocation.
 	// Query/IP/UA hashes would collapse repeated identical searches into one charge.
 	searchRequestID := searchLabel + ":" + uuid.NewString()
+	if call, ok := insights.CallFromContext(c.Request.Context()); ok {
+		call.UpdateIdentity(insights.Identity{RequestID: service.ResolveUsageFactRequestID(c.Request.Context(), searchRequestID)})
+	}
+	statisticalAt := insightsFinishSuccess(c, searchModel, 0, nil)
 	if apiKey.Group != nil {
 		if p := apiKey.Group.GetSearchPricePer1k(); p != nil && *p == 0 {
 			logger.L().With(
@@ -247,6 +253,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 			RequestPayloadHash: requestPayloadHash,
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
+			StatisticalAt:      statisticalAt,
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", "handler.gateway.web_search"),

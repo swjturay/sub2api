@@ -159,6 +159,7 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	s.invalidateAuthCache(ctx, job.UserID)
 
 	now := time.Now()
+	statisticalAt := batchImageGenerationStatisticalAt(ctx, s.Repo, job, now)
 	outputExpiresAt := now.Add(s.outputRetentionAfterTerminal())
 	if err := s.Repo.MarkBatchImageJobSettled(ctx, MarkBatchImageJobSettledParams{
 		BatchID:         job.BatchID,
@@ -177,7 +178,7 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	}); err != nil {
 		return nil, err
 	}
-	s.recordUsageLog(ctx, job, actualCost, result.RequestID, now)
+	s.recordUsageLog(ctx, job, actualCost, result.RequestID, statisticalAt)
 
 	return result, nil
 }

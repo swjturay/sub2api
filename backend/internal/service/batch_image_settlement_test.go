@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -20,6 +21,8 @@ func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *te
 	job.ItemCount = 5
 	job.SessionID = batchImageStringPtr("batch-settlement-session")
 	repo.jobs[job.BatchID] = job
+	indexedAt := time.Date(2026, 9, 20, 12, 34, 56, 0, time.UTC)
+	repo.items[job.BatchID] = []CreateBatchImageItemParams{{JobID: job.BatchID, CustomID: "one", Status: BatchImageItemStatusSuccess, IndexedAt: &indexedAt}}
 	billing := &fakeBatchImageBillingRepo{}
 	usageLogs := &openAIRecordUsageLogRepoStub{}
 	svc := &BatchImageSettlementService{
@@ -38,6 +41,7 @@ func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *te
 	require.NotEmpty(t, batchImageDerefString(repo.jobs[job.BatchID].ManifestHash))
 	require.NotNil(t, repo.jobs[job.BatchID].SettledAt)
 	require.Equal(t, "batch-settlement-session", batchImageDerefString(usageLogs.lastLog.SessionID))
+	require.Equal(t, indexedAt, usageLogs.lastLog.CreatedAt, "usage and item call facts must share the persisted generation terminal time")
 	require.Len(t, billing.captures, 1)
 	require.Equal(t, int64(321), billing.captures[0].APIKeyID)
 	require.Equal(t, job.UserID, billing.captures[0].UserID)

@@ -325,6 +325,7 @@ import PendingOAuthCreateAccountForm, {
 } from '@/components/auth/PendingOAuthCreateAccountForm.vue'
 import { apiClient } from '@/api/client'
 import { useAuthStore, useAppStore } from '@/stores'
+import { navigateAfterAuth } from '@/utils/authRedirect'
 import {
   completeWeChatOAuthRegistration,
   exchangePendingOAuthCompletion,
@@ -821,7 +822,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
   await authStore.setToken(completion.access_token)
   clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
-  await router.replace(redirect)
+  await navigateAfterAuth(router, redirect, 'replace')
 }
 
 async function finalizePendingAccountResponse(completion: PendingWeChatCompletion) {
@@ -974,7 +975,7 @@ async function handleSubmitTotpChallenge() {
     await authStore.setToken(completion.access_token)
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
-    await router.replace(redirectTo.value)
+    await navigateAfterAuth(router, redirectTo.value, 'replace')
   } catch (e: unknown) {
     totpError.value = getRequestErrorMessage(e, t('auth.loginFailed'))
   } finally {
@@ -1035,7 +1036,7 @@ onMounted(async () => {
       await authStore.setToken(legacyLogin.access_token)
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
-      await router.replace(redirect)
+      await navigateAfterAuth(router, redirect, 'replace')
       return
     }
 

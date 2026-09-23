@@ -1162,6 +1162,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	firstClientMessage = s.guardOpenAICodexWSFrameTurnState(c, account, firstClientMessage)
 	firstClientMessage = applyCodexWSFrameWireProfile(c, account, firstClientMessage, turnState)
 	s.scheduleCodexWSSideCalls(c, account, headers, firstClientMessage)
+	if hooks != nil && hooks.UpstreamSend != nil {
+		hooks.UpstreamSend(1)
+	}
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
 	cancelFirstWrite()
 	if firstWriteErr != nil {
@@ -1222,6 +1225,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
 					truncateOpenAIWSLogValue(usageRaw, openAIWSLogValueMaxLen),
 				)
+			},
+			BeforeUpstreamTurnWrite: func() {
+				if hooks != nil && hooks.UpstreamSend != nil {
+					hooks.UpstreamSend(int(completedTurns.Load()) + 1)
+				}
 			},
 			OnTurnComplete: func(turn openaiwsv2.RelayTurnResult) {
 				turnNo := int(completedTurns.Add(1))

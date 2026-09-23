@@ -65,7 +65,12 @@ const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 // 可通过 gateway.models_list_read_max_bytes 配置项覆盖。
 const DefaultModelsListReadMaxBytes int64 = 8 * 1024 * 1024
 
+type InsightsConfig struct {
+	TrustedCollection bool `mapstructure:"trusted_collection"`
+}
+
 type Config struct {
+	Insights                InsightsConfig                `mapstructure:"insights"`
 	Server                  ServerConfig                  `mapstructure:"server"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
@@ -2340,6 +2345,7 @@ func setDefaults() {
 	viper.SetDefault("dashboard_aggregation.lookback_seconds", 120)
 	viper.SetDefault("dashboard_aggregation.backfill_enabled", false)
 	viper.SetDefault("dashboard_aggregation.backfill_max_days", 31)
+	viper.SetDefault("insights.trusted_collection", false)
 	viper.SetDefault("dashboard_aggregation.retention.usage_logs_days", 90)
 	viper.SetDefault("dashboard_aggregation.retention.usage_billing_dedup_days", 365)
 	viper.SetDefault("dashboard_aggregation.retention.hourly_days", 180)

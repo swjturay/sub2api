@@ -259,9 +259,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
 
+		statisticalAt := insightsFinishOpenAIForwardSuccess(c, result)
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
+				StatisticalAt:      statisticalAt,
 				APIKey:             apiKey,
 				User:               apiKey.User,
 				Account:            account,

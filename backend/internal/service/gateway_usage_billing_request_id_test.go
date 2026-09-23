@@ -57,3 +57,9 @@ func TestResolveUsageBillingRequestID_ForcedGrokAudioBeatsClientID(t *testing.T)
 	got := resolveUsageBillingRequestID(ctx, StableGrokAudioBillingRequestID("up-9"))
 	require.Equal(t, "grok_audio:up-9", got)
 }
+
+func TestResolveUsageFactRequestIDMatchesUsageIdentity(t *testing.T) {
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "same-client")
+	require.Equal(t, "client:same-client", ResolveUsageFactRequestID(ctx, "resp_upstream"))
+	require.Equal(t, "grok-video:task-1", ResolveUsageFactRequestID(ctx, "grok-video:task-1"))
+}

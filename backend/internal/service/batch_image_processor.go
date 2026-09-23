@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"go.uber.org/zap"
@@ -154,6 +155,8 @@ func (p *BatchImageProviderProcessor) Process(ctx context.Context, batchID strin
 			return BatchImageProcessResult{}, err
 		}
 		job.Status = BatchImageJobStatusFailed
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, p.Repo, job, account, BatchImageItemStatusFailed, code, terminalAt)
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -166,6 +169,8 @@ func (p *BatchImageProviderProcessor) Process(ctx context.Context, batchID strin
 			return BatchImageProcessResult{}, err
 		}
 		job.Status = BatchImageJobStatusCancelled
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, p.Repo, job, account, BatchImageItemStatusCancelled, "PROVIDER_BATCH_CANCELLED", terminalAt)
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -209,6 +214,8 @@ func (p *BatchImageProviderProcessor) indexAndSettle(ctx context.Context, job *B
 			return BatchImageProcessResult{}, transitionErr
 		}
 		job.Status = BatchImageJobStatusFailed
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, p.Repo, job, account, BatchImageItemStatusFailed, code, terminalAt, indexer.InsightFactRecorder)
 		if err := p.releaseTerminalHold(ctx, job); err != nil {
 			return BatchImageProcessResult{}, err
 		}
@@ -280,7 +287,8 @@ type BatchImageIndexResult struct {
 }
 
 type BatchImageResultIndexer struct {
-	Repo BatchImageRepository
+	Repo                BatchImageRepository
+	InsightFactRecorder func(insights.CallFact)
 }
 
 func (i *BatchImageResultIndexer) Index(ctx context.Context, job *BatchImageJob, provider BatchImageProvider, account *Account) (*BatchImageIndexResult, error) {
@@ -416,6 +424,7 @@ func (i *BatchImageResultIndexer) Index(ctx context.Context, job *BatchImageJob,
 	}); err != nil {
 		return nil, err
 	}
+	recordBatchImageItemFactsBestEffort(job, account, items, now, i.InsightFactRecorder)
 	return result, nil
 }
 

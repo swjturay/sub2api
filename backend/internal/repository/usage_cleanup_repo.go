@@ -295,16 +295,16 @@ func (r *usageCleanupRepository) DeleteUsageLogsBatch(ctx context.Context, filte
 		return r.deleteUsageLogsBatchWithRollupInvalidation(ctx, db, whereClause, args)
 	}
 	query := fmt.Sprintf(`
-		WITH target AS (
-			SELECT id
-			FROM usage_logs
-			WHERE %s
-			ORDER BY created_at ASC, id ASC
-			LIMIT $%d
+		WITH target AS MATERIALIZED (
+			SELECT ul.id,ul.user_id,ul.account_id,COALESCE(cf.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') platform,ul.model,ul.requested_model,ul.input_tokens,ul.output_tokens,ul.cache_creation_tokens,ul.cache_read_tokens,ul.duration_ms,ul.first_token_ms,ul.stream,ul.created_at
+			FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id
+            LEFT JOIN LATERAL (SELECT MIN(f.platform) platform FROM insights_call_facts f WHERE f.request_id=ul.request_id AND f.user_id=ul.user_id AND f.api_key_id=ul.api_key_id AND f.model=COALESCE(NULLIF(BTRIM(ul.requested_model),''),ul.model) HAVING COUNT(DISTINCT f.call_id)=1) cf ON TRUE
+			WHERE ul.id IN (SELECT id FROM usage_logs WHERE %s ORDER BY created_at ASC,id ASC LIMIT $%d)
+		), archived AS (
+			INSERT INTO insights_usage_fact_archive(usage_id,user_id,account_id,platform,model,requested_model,input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,duration_ms,first_token_ms,stream,created_at)
+			SELECT id,user_id,account_id,platform,model,requested_model,input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,duration_ms,first_token_ms,stream,created_at FROM target ON CONFLICT(usage_id) DO NOTHING
 		)
-		DELETE FROM usage_logs
-		WHERE id IN (SELECT id FROM target)
-		RETURNING created_at
+		DELETE FROM usage_logs WHERE id IN (SELECT id FROM target) RETURNING created_at
 	`, whereClause, len(args))
 
 	rows, err := r.sql.QueryContext(ctx, query, args...)
@@ -333,20 +333,23 @@ func (r *usageCleanupRepository) deleteUsageLogsBatchWithRollupInvalidation(ctx 
 		return 0, err
 	}
 
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('insights_daily_rollup_v1'))`); err != nil {
+		return rollback(err)
+	}
 	if err := lockGroupUsageRollupState(ctx, tx); err != nil {
 		return rollback(err)
 	}
 	query := fmt.Sprintf(`
-		WITH target AS (
-			SELECT id
-			FROM usage_logs
-			WHERE %s
-			ORDER BY created_at ASC, id ASC
-			LIMIT $%d
+		WITH target AS MATERIALIZED (
+			SELECT ul.id,ul.user_id,ul.account_id,COALESCE(cf.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') platform,ul.model,ul.requested_model,ul.input_tokens,ul.output_tokens,ul.cache_creation_tokens,ul.cache_read_tokens,ul.duration_ms,ul.first_token_ms,ul.stream,ul.created_at
+			FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id
+            LEFT JOIN LATERAL (SELECT MIN(f.platform) platform FROM insights_call_facts f WHERE f.request_id=ul.request_id AND f.user_id=ul.user_id AND f.api_key_id=ul.api_key_id AND f.model=COALESCE(NULLIF(BTRIM(ul.requested_model),''),ul.model) HAVING COUNT(DISTINCT f.call_id)=1) cf ON TRUE
+			WHERE ul.id IN (SELECT id FROM usage_logs WHERE %s ORDER BY created_at ASC,id ASC LIMIT $%d)
+		), archived AS (
+			INSERT INTO insights_usage_fact_archive(usage_id,user_id,account_id,platform,model,requested_model,input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,duration_ms,first_token_ms,stream,created_at)
+			SELECT id,user_id,account_id,platform,model,requested_model,input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,duration_ms,first_token_ms,stream,created_at FROM target ON CONFLICT(usage_id) DO NOTHING
 		)
-		DELETE FROM usage_logs
-		WHERE id IN (SELECT id FROM target)
-		RETURNING created_at
+		DELETE FROM usage_logs WHERE id IN (SELECT id FROM target) RETURNING created_at
 	`, whereClause, len(args))
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {

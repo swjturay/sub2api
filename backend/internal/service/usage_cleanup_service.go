@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -195,6 +196,12 @@ func (s *UsageCleanupService) executeTask(ctx context.Context, task *UsageCleanu
 	deletedTotal := task.DeletedRows
 	start := time.Now()
 	logger.LegacyPrintf("service.usage_cleanup", "[UsageCleanup] task started: task=%d batch_size=%d deleted_rows=%d %s", task.ID, batchSize, deletedTotal, describeUsageCleanupFilters(task.Filters))
+	if s.cfg != nil && strings.TrimSpace(s.cfg.Timezone) != "" {
+		if err := insights.PrepareUsageCleanup(ctx, task.Filters.StartTime, task.Filters.EndTime, s.cfg.Timezone); err != nil {
+			s.markTaskFailed(task.ID, deletedTotal, fmt.Errorf("insights rollup before cleanup: %w", err))
+			return
+		}
+	}
 	var batchNum int
 
 	for {

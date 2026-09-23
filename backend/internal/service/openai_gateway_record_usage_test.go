@@ -69,6 +69,19 @@ func TestOpenAIGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
 	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{}))
 }
 
+func TestOpenAIGatewayServiceRecordUsage_UsesExplicitStatisticalTime(t *testing.T) {
+	repo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(repo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	statisticalAt := time.Date(2026, 9, 22, 15, 4, 5, 6, time.UTC)
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{RequestID: "openai_statistical_at", Model: "gpt-5.1", Usage: OpenAIUsage{InputTokens: 2, OutputTokens: 1}},
+		APIKey: &APIKey{ID: 1}, User: &User{ID: 2}, Account: &Account{ID: 3}, StatisticalAt: statisticalAt,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.lastLog)
+	require.Equal(t, statisticalAt, repo.lastLog.CreatedAt)
+}
+
 func TestRecordCyberPolicyUsageLog_BillsRealUpstreamTokens(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}

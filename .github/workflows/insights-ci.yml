@@ -1,0 +1,79 @@
+name: Insights CI
+
+on:
+  push:
+    paths:
+      - 'insights/**'
+      - 'frontend/src/**'
+      - 'backend/**'
+      - '.github/workflows/insights-ci.yml'
+  pull_request:
+    paths:
+      - 'insights/**'
+      - 'frontend/src/**'
+      - 'backend/**'
+      - '.github/workflows/insights-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  insights-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: insights/pnpm-lock.yaml
+      - name: Install locked dependencies
+        working-directory: insights
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck, lint, test, and build
+        working-directory: insights
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test
+          pnpm build
+
+  insights-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: insights_test
+          POSTGRES_USER: insights_test
+          POSTGRES_PASSWORD: insights_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U insights_test -d insights_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      INSIGHTS_TEST_DATABASE_URL: postgres://insights_test:insights_test_only@127.0.0.1:5432/insights_test?sslmode=disable
+      INSIGHTS_TEST_POSTGRES_DSN: postgres://insights_test:insights_test_only@127.0.0.1:5432/insights_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Insights database and authorization tests
+        working-directory: backend
+        run: go test ./internal/insights ./internal/handler ./internal/server/routes -count=1
+      - name: Migration and gateway statistical-time regressions
+        working-directory: backend
+        run: |
+          go test -tags=unit ./migrations -count=1
+          go test -tags=unit ./internal/service -run 'Test(GatewayServiceRecordUsage|OpenAIGatewayServiceRecordUsage)_UsesExplicitStatisticalTime' -count=1
+      - name: Build backend
+        working-directory: backend
+        run: go build ./cmd/server

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -532,6 +533,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	insightsUpdateCall(c, reqModel, openAICompatibleRequestPlatform(c.Request.Context(), apiKey), reqStream)
 
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.openAISecurityAuditError(c, decision)
@@ -791,7 +793,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		// #5148 对齐：错误返回携带的部分 result（流中断前上游已计量的 usage）照常
 		// 入账；failover 错误恒定 result=nil，不会重复计费。
-		submitResponsesUsage := func(res *service.OpenAIForwardResult) {
+		submitResponsesUsage := func(res *service.OpenAIForwardResult, statisticalAt time.Time) {
 			if res == nil {
 				return
 			}
@@ -821,6 +823,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					SessionID:          sessionID,
 					ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel),
 					PricingAt:          pricingAt,
+					StatisticalAt:      statisticalAt,
 					CyberBlocked:       cyberBlocked,
 					NativeCompactionV2: nativeV2,
 				}); err != nil {
@@ -841,7 +844,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Error(err),
 				)
-				submitResponsesUsage(result)
+				statisticalAt := insightsFinishFailure(c, insights.OutcomeCancelled, "client_cancelled")
+				submitResponsesUsage(result, statisticalAt)
 				return
 			}
 			if failoverClientGone(c) {
@@ -849,7 +853,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Error(err),
 				)
-				submitResponsesUsage(result)
+				statisticalAt := insightsFinishFailure(c, insights.OutcomeCancelled, "client_cancelled")
+				submitResponsesUsage(result, statisticalAt)
 				return
 			}
 			if result != nil && result.ImageCount > 0 {
@@ -953,7 +958,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				}
-				submitResponsesUsage(result)
+				statisticalAt := insightsFinishFailure(c, insights.OutcomeStreamInterrupted, "stream_interrupted")
+				submitResponsesUsage(result, statisticalAt)
 				if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 					reqLog.Warn("openai.forward_failed", fields...)
 					return
@@ -973,7 +979,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		submitResponsesUsage(result)
+		statisticalAt := insightsFinishSuccess(c, result.Model, result.Usage.OutputTokens, result.FirstTokenMs)
+		submitResponsesUsage(result, statisticalAt)
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1203,6 +1210,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
+	insightsUpdateCall(c, reqModel, openAICompatibleRequestPlatform(c.Request.Context(), apiKey), reqStream)
 
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
 		h.anthropicSecurityAuditError(c, decision)
@@ -1373,7 +1381,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		// Forward 与错误一起返回的部分结果：流中断/客户端断开排水前上游已计量的
 		// usage 照常入账，避免上游已产生消耗的请求完全漏记（#5148，对齐 anthropic
 		// 网关同名修复）。failover 错误恒定 result=nil，不会重复计费。
-		submitMessagesUsage := func(res *service.OpenAIForwardResult) {
+		submitMessagesUsage := func(res *service.OpenAIForwardResult, statisticalAt time.Time) {
 			if res == nil {
 				return
 			}
@@ -1403,6 +1411,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					SessionID:          sessionID,
 					ChannelUsageFields: clientRequestedUsageFields(c, channelMappingMsg, reqModel, res.UpstreamModel),
 					PricingAt:          pricingAt,
+					StatisticalAt:      statisticalAt,
 					CyberBlocked:       cyberBlocked,
 				}); err != nil {
 					logger.L().With(
@@ -1493,7 +1502,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					)
 					// 断开排水期间上游已计量的 usage 必须入账（此前直接 return 丢弃，
 					// payg 上游照常计费而平台漏记）。
-					submitMessagesUsage(result)
+					statisticalAt := insightsFinishFailure(c, insights.OutcomeCancelled, "client_cancelled")
+					submitMessagesUsage(result, statisticalAt)
 					return
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, currentRoutingModel, false, result), false, nil, err)
@@ -1503,7 +1513,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				)
-				submitMessagesUsage(result)
+				statisticalAt := insightsFinishFailure(c, insights.OutcomeStreamInterrupted, "stream_interrupted")
+				submitMessagesUsage(result, statisticalAt)
 				return
 			}
 		}
@@ -1513,7 +1524,8 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, currentRoutingModel, false, result), true, nil)
 		}
 
-		submitMessagesUsage(result)
+		statisticalAt := insightsFinishSuccess(c, result.Model, result.Usage.OutputTokens, result.FirstTokenMs)
+		submitMessagesUsage(result, statisticalAt)
 		reqLog.Debug("openai_messages.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -2617,6 +2629,24 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	// 建连时刻只用于选号/准入，不作为任何 turn 的计费定价时刻。
 	wsPricingCtx, _ := h.gatewayService.WithOpenAIRequestPricingContext(ctx, apiKey.GroupID)
 	ctx = wsPricingCtx
+	var wsInsightsMu sync.Mutex
+	wsInsightsCalls := make(map[int]*insights.Call)
+	getWSInsightsCall := func(turn int, startedAt time.Time, model string) *insights.Call {
+		wsInsightsMu.Lock()
+		defer wsInsightsMu.Unlock()
+		call := wsInsightsCalls[turn]
+		if call == nil {
+			uid, kid := subject.UserID, apiKey.ID
+			call = insights.NewCall(insights.Identity{UserID: &uid, APIKeyID: &kid, Platform: requestPlatform, Model: model, Transport: insights.TransportWebSocketTurn}, startedAt, nil)
+			wsInsightsCalls[turn] = call
+		}
+		return call
+	}
+	finishWSInsightsCall := func(turn int) {
+		wsInsightsMu.Lock()
+		delete(wsInsightsCalls, turn)
+		wsInsightsMu.Unlock()
+	}
 
 	for {
 		if ctx.Err() != nil {
@@ -2768,6 +2798,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			turnStartsMu.Lock()
 			turnStarts[turn] = startedAt
 			turnStartsMu.Unlock()
+			getWSInsightsCall(turn, startedAt, reqModel)
 		}
 		getTurnStart := func(turn int) time.Time {
 			turnStartsMu.Lock()
@@ -2814,6 +2845,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
+				getWSInsightsCall(turn, time.Now(), model).UpdateIdentity(insights.Identity{Model: model})
 				// 分组级模型白名单：后续 turn 同样校验客户端模型（省略 model 时
 				// 沿用会话实际生效模型，含 session.update 轮换后的模型），不通过
 				// 则关闭整条连接，与推理强度 deny 一致。实际生效模型始终参与校验；
@@ -2847,6 +2879,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: turn, mapping: mapping})
 				return mapping.MappedModel, nil
+			},
+			UpstreamSend: func(turn int) {
+				getWSInsightsCall(turn, getTurnStart(turn), reqModel).MarkUpstreamSend(time.Now())
 			},
 			BeforeTurn: func(turn int) error {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
@@ -2897,6 +2932,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
 				turnStart := getTurnStart(turn)
+				turnCall := getWSInsightsCall(turn, turnStart, reqModel)
 				cyberBlockBody := takeCyberTurnBody(turn)
 				// 每次 attempt 都清 cyber mark；failover 链结束前保留 recorded guard，
 				// 避免同一逻辑 turn 换号后重复落风控。CyberBlocked 必须在 submit 前
@@ -2926,6 +2962,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				turnUsageFields := turnMapping.ToUsageFields(turnRequestedModel, turnUpstreamModel)
 				cyberMarked := service.GetOpsCyberPolicy(c) != nil
+				// Cyber error usage must share the exact turn fact timestamp. Attach the
+				// logical turn collector only for the terminal callback; failover attempts
+				// remain open and continue to reuse the same collector.
+				if cyberMarked && turnErr != nil {
+					var failoverErr *service.UpstreamFailoverError
+					if !errors.As(turnErr, &failoverErr) {
+						c.Request = c.Request.WithContext(insights.WithCall(c.Request.Context(), turnCall))
+					}
+				}
 				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, turnRequestedModel, turnErr != nil, cyberBlockBody, turnUsageFields, requestPayloadHash)
 				cyberBlockedThisConn, cyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(
 					cyberBlockedThisConn,
@@ -2934,6 +2979,22 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					turnErr,
 				)
 				if turnErr != nil {
+					var failoverErr *service.UpstreamFailoverError
+					if errors.As(turnErr, &failoverErr) {
+						return
+					}
+					outcome, errorType := insights.OutcomeError, "websocket_turn_error"
+					if errors.Is(turnErr, context.Canceled) {
+						outcome, errorType = insights.OutcomeCancelled, "client_cancelled"
+					} else if result != nil {
+						outcome, errorType = insights.OutcomeStreamInterrupted, "stream_interrupted"
+					}
+					_, alreadyFinalized := turnCall.Finalized()
+					fact := turnCall.FinishFailure(outcome, errorType, "")
+					if !alreadyFinalized {
+						insights.RecordBestEffort(fact)
+					}
+					finishWSInsightsCall(turn)
 					if result == nil || result.ImageCount <= 0 {
 						return
 					}
@@ -2949,7 +3010,24 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					)
 				}
 				if result == nil {
+					fact := turnCall.FinishFailure(insights.OutcomeError, "missing_result", "")
+					insights.RecordBestEffort(fact)
+					finishWSInsightsCall(turn)
 					return
+				}
+				var statisticalAt time.Time
+				if fact, done := turnCall.Finalized(); done {
+					statisticalAt = fact.StatisticalAt
+				} else {
+					turnCall.UpdateIdentity(insights.Identity{Model: turnRequestedModel})
+					if result.FirstTokenMs != nil && *result.FirstTokenMs >= 0 {
+						turnCall.SetFirstTokenDuration(time.Duration(*result.FirstTokenMs) * time.Millisecond)
+					}
+					out := int64(max(result.Usage.OutputTokens, 0))
+					fact := turnCall.FinishSuccess(&out)
+					insights.RecordBestEffort(fact)
+					statisticalAt = fact.StatisticalAt
+					finishWSInsightsCall(turn)
 				}
 				result.BillingModel = openAIWSTurnBillingModel(result, turnMapping, turnRequestedModel, turnUpstreamModel)
 				reqLog.Debug("openai.websocket_turn_billing",
@@ -2990,6 +3068,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						SessionID:          sessionID,
 						ChannelUsageFields: turnUsageFields,
 						PricingAt:          turnRecordPricingAt,
+						StatisticalAt:      statisticalAt,
 						CyberBlocked:       cyberBlocked,
 					}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
@@ -4137,6 +4216,15 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	}
 	c.Set(cyberPolicyRecordedKey, true)
 	model = clientRequestedModel(c, model)
+	statisticalAt := time.Time{}
+	if forwardErrored && c != nil && c.Request != nil {
+		if call, ok := insights.CallFromContext(c.Request.Context()); ok {
+			outcome, errorType := insightsHTTPFailure(c, call)
+			fact := call.FinishFailure(outcome, errorType, "")
+			insights.RecordBestEffort(fact)
+			statisticalAt = fact.StatisticalAt
+		}
+	}
 
 	requestID := c.Writer.Header().Get("X-Request-Id")
 	var userID, apiKeyID int64
@@ -4258,6 +4346,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				APIKeyService:      apiKeySvc,
 				NativeCompactionV2: nativeCompactionV2,
 				ChannelUsageFields: channelFields,
+				StatisticalAt:      statisticalAt,
 			})
 		}
 		if opsSvc != nil {

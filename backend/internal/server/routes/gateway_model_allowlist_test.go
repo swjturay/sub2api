@@ -69,7 +69,7 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	source := string(routeSource)
 
 	// rootRoute helper：apiKeyAuth 之后、compositeTarget 之前。
-	rootHelper := regexp.MustCompile(regexp.QuoteMeta(`r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, handler)`))
+	rootHelper := regexp.MustCompile(regexp.QuoteMeta(`r.Handle(method, path, clientRequestID, handler.InsightsCallMiddleware(), limit, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, routeHandler)`))
 	require.Regexp(t, rootHelper, source,
 		"root alias helper must place the allowlist between apiKeyAuth and compositeTarget")
 
@@ -94,13 +94,30 @@ func TestGatewayRoutesGroupModelAllowlistMountedOnEveryGatewayRoute(t *testing.T
 	}
 
 	// codexDirect 链是一条 Use 调用，直接断言顺序。
-	codexDirect := regexp.MustCompile(regexp.QuoteMeta(`codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)`))
+	codexDirect := regexp.MustCompile(regexp.QuoteMeta(`codexDirect.Use(clientRequestID, handler.InsightsCallMiddleware(), bodyLimit, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)`))
 	require.Regexp(t, codexDirect, source, "codexDirect chain must mount the allowlist after auth and before compositeTarget")
 
 	// 所有带 apiKeyAuth 的根路径路由必须收敛到 rootRoute，避免漏挂。
 	stray := regexp.MustCompile(`\br\.(GET|POST|PUT|PATCH|DELETE)\("[^"]+",[^(]*apiKeyAuth`)
 	require.NotRegexp(t, stray, source,
 		"root alias routes must use rootRoute so the allowlist cannot be forgotten")
+}
+
+func TestGatewayRoutesInsightsCollectorPrecedesBodyLimitAfterClientRequestID(t *testing.T) {
+	routeSource, err := os.ReadFile("gateway.go")
+	require.NoError(t, err)
+	source := string(routeSource)
+
+	for _, chain := range []string{"gateway", "gemini", "antigravityV1", "antigravityV1Beta"} {
+		pattern := regexp.MustCompile(
+			regexp.QuoteMeta(chain+".Use(clientRequestID)") +
+				`[\s\S]{0,120}?` + regexp.QuoteMeta(chain+".Use(handler.InsightsCallMiddleware())") +
+				`[\s\S]{0,120}?` + regexp.QuoteMeta(chain+".Use(bodyLimit)"))
+		require.Regexp(t, pattern, source, "%s must assign the client request id, then collect, then enforce the body limit", chain)
+	}
+
+	require.Contains(t, source, `r.Handle(method, path, clientRequestID, handler.InsightsCallMiddleware(), limit,`)
+	require.Contains(t, source, `codexDirect.Use(clientRequestID, handler.InsightsCallMiddleware(), bodyLimit,`)
 }
 
 // TestGatewayRoutesGroupModelAllowlistBlocksCompositeModelBeforeRewrite asserts

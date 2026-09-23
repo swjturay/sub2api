@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -315,6 +316,39 @@ func TestBatchImageProviderProcessor_StatusFlow(t *testing.T) {
 		require.Len(t, billing.releases, 1)
 		require.Equal(t, BatchImageReleaseRequestID("imgbatch_flow"), billing.releases[0].RequestID)
 	})
+}
+
+func TestBatchImageProcessorDuplicateOutputRecordsSafeFailedFact(t *testing.T) {
+	repo := newFakeBatchImageRepository()
+	accountID, apiKeyID := int64(10), int64(22)
+	providerJob := "providers/job"
+	createdAt := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
+	repo.jobs["imgbatch_duplicate_fact"] = &BatchImageJob{
+		BatchID: "imgbatch_duplicate_fact", Status: BatchImageJobStatusIndexing,
+		Provider: "fake", AccountID: &accountID, ProviderJobName: &providerJob,
+		UserID: 11, APIKeyID: &apiKeyID, Model: "imagen-3", CreatedAt: createdAt,
+	}
+	repo.items["imgbatch_duplicate_fact"] = []CreateBatchImageItemParams{{
+		JobID: "imgbatch_duplicate_fact", CustomID: "dup", Status: BatchImageItemStatusPending,
+	}}
+	provider := &fakeProcessorProvider{result: `{"key":"dup","error":{"message":"provider private one"}}` + "\n" + `{"key":"dup","error":{"message":"provider private two"}}` + "\n"}
+	processor := newTestBatchImageProcessor(repo, provider)
+	processor.AccountResolver = &fakeBatchImageAccountResolver{account: &Account{Platform: "vertex"}}
+	var facts []insights.CallFact
+	processor.Indexer.InsightFactRecorder = func(f insights.CallFact) { facts = append(facts, f) }
+
+	got, err := processor.Process(context.Background(), "imgbatch_duplicate_fact")
+	require.NoError(t, err)
+	require.True(t, got.Terminal)
+	require.Equal(t, BatchImageJobStatusFailed, repo.jobs["imgbatch_duplicate_fact"].Status)
+	require.Len(t, facts, 1)
+	require.Equal(t, insights.OutcomeError, facts[0].Outcome)
+	require.Equal(t, "DUPLICATE_CUSTOM_ID_IN_OUTPUT", facts[0].ErrorType)
+	require.Empty(t, facts[0].ErrorSummary, "provider response body must not enter call facts")
+	require.Equal(t, int64(11), *facts[0].UserID)
+	require.Equal(t, "vertex", facts[0].Platform)
+	require.Equal(t, 0, facts[0].AttemptCount)
+	require.Nil(t, facts[0].ModelDuration)
 }
 
 func TestCanTransitionBatchImageJob_PR5DirectIndexing(t *testing.T) {

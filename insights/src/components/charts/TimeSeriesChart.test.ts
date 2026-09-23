@@ -1,0 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, expect, it } from "vitest";
+import { buildTimeSeriesOption } from "./TimeSeriesChart";
+describe("time series option",()=>{it("marks the unfinished bucket without inventing a future point",()=>{const option=buildTimeSeriesOption([{bucket:"21:00",totalTokens:10,outputTokens:2,cacheHitRate:.1,requests:1,incomplete:false},{bucket:"22:00",totalTokens:5,outputTokens:1,cacheHitRate:.2,requests:1,incomplete:true}],"totalTokens","line") as any;expect(option.series[0].data).toEqual([10,expect.objectContaining({value:5,symbol:"emptyCircle"})]);expect(option.series[0].markPoint.data).toEqual([{name:"未结束",coord:["22:00",5]}])})});
+
+it("keeps full platform timestamps in data while compacting axis labels",()=>{const bucket="2026-09-23T00:00:00+08:00";const option=buildTimeSeriesOption([{bucket,totalTokens:.25,outputTokens:0,cacheHitRate:null,requests:1,incomplete:false}],"totalTokens","line") as any;expect(option.xAxis.data).toEqual([bucket]);expect(option.xAxis.axisLabel.formatter(bucket)).toBe("09-23 00:00");expect(option.series[0].data).toEqual([.25])});
+
+it("uses exact tooltip numbers while keeping compact axis labels",()=>{const data=[{bucket:"2026-09-23",totalTokens:100000,outputTokens:0,cacheHitRate:.000001,requests:1,incomplete:false}];const numberOption=buildTimeSeriesOption(data,"totalTokens","line") as any;const percentOption=buildTimeSeriesOption(data,"cacheHitRate","line",true) as any;expect(numberOption.tooltip.valueFormatter(100000)).toBe("100,000");expect(numberOption.yAxis.axisLabel.formatter(100000)).toBe("10万");expect(percentOption.tooltip.valueFormatter(.0001)).toBe("0.0001%")});

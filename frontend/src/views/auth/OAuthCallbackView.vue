@@ -153,6 +153,7 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore, useAuthStore } from '@/stores'
 import { apiClient } from '@/api/client'
 import { buildApiUrl } from '@/api/url'
+import { navigateAfterAuth } from '@/utils/authRedirect'
 import {
   exchangePendingOAuthCompletion,
   persistOAuthTokenContext,
@@ -279,7 +280,7 @@ async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect
   }
   clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
-  await router.replace(sanitizeRedirectPath(redirect))
+  await navigateAfterAuth(router, sanitizeRedirectPath(redirect), 'replace')
 }
 
 function hasOAuthTokenResponse(value: Partial<OAuthTokenResponse>): value is OAuthTokenResponse {

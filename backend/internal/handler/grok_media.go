@@ -745,9 +745,11 @@ func recordGrokMediaUsage(
 			payloadForHash = []byte(videoTaskID)
 		}
 	}
+	statisticalAt := insightsFinishOpenAIForwardSuccess(c, result)
 	h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:             result,
+			StatisticalAt:      statisticalAt,
 			APIKey:             apiKey,
 			User:               apiKey.User,
 			Account:            account,

@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -433,6 +434,9 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
+		if err := insights.ShutdownRuntime(ctx); err != nil {
+			log.Printf("[Cleanup] Insights drain: %v", err)
+		}
 		runSequential(infraSteps)
 
 		// Check if context timed out

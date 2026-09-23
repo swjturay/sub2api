@@ -130,7 +130,12 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	defer func() { _ = conn.CloseNow() }()
 
 	started := time.Now()
-	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConn(c.Request.Context(), c, conn, upstream)
+	tracker := newGrokRealtimeInsightsTracker(c.Request.Context(), apiKey.User.ID, apiKey.ID, model)
+	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConnWithHooks(c.Request.Context(), c, conn, upstream, service.GrokRealtimeHooks{
+		BeforeUpstreamWrite: tracker.beforeUpstreamWrite,
+		AfterUpstreamRead:   tracker.afterUpstreamRead,
+	})
+	tracker.disconnect(proxyErr)
 	elapsed := time.Since(started)
 	if proxyErr != nil {
 		reqLog.Info("grok_realtime.proxy_failed", zap.Error(proxyErr))
@@ -320,9 +325,16 @@ func (h *OpenAIGatewayHandler) recordGrokVoiceUsage(
 		model = endpoint
 	}
 
+	statisticalAt := insightsFinishOpenAIForwardSuccess(c, result)
+	if statisticalAt.IsZero() {
+		// Realtime billing is connection-duration based rather than turn based.
+		// Freeze its analytics time before the asynchronous usage write.
+		statisticalAt = time.Now()
+	}
 	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 			Result:             result,
+			StatisticalAt:      statisticalAt,
 			APIKey:             apiKey,
 			User:               apiKey.User,
 			Account:            account,

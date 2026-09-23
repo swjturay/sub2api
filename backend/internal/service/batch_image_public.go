@@ -354,6 +354,8 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	hbCancel()
 	<-hbDone
 	if err != nil {
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, s.Repo, job, account, BatchImageItemStatusFailed, batchImageProviderSubmitRecordCode(batchImageProviderSubmitPublicError(err)), terminalAt)
 		if releaseErr := s.releaseFailedSubmitHold(ctx, job, requestHash); releaseErr != nil {
 			return nil, releaseErr
 		}
@@ -364,6 +366,8 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		return nil, publicErr
 	}
 	if providerJob == nil || strings.TrimSpace(providerJob.ProviderJobName) == "" {
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, s.Repo, job, account, BatchImageItemStatusFailed, "PROVIDER_SUBMIT_FAILED", terminalAt)
 		if releaseErr := s.releaseFailedSubmitHold(ctx, job, requestHash); releaseErr != nil {
 			return nil, releaseErr
 		}
@@ -381,6 +385,8 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		GCSOutputURI:      batchImageGCSRef(provider.Name(), providerJob.ProviderOutputRef),
 		EventPayload:      map[string]any{"provider": provider.Name()},
 	}); err != nil {
+		terminalAt := time.Now().UTC()
+		recordTerminalBatchImageFactsBestEffort(ctx, s.Repo, job, account, BatchImageItemStatusCancelled, "PROVIDER_JOB_ABORTED", terminalAt)
 		// job 可能已被恢复扫描转 failed 并退款：上游批任务已创建成功，
 		// 必须尽力取消并清理输入，否则上游照常产生成本（孤儿任务）。
 		s.abortOrphanProviderJob(ctx, provider, job, account, providerJob)

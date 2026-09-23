@@ -37,6 +37,9 @@ type OpenAIRecordUsageInput struct {
 	// 按该时刻计算，保证同一请求从准入到扣费不中途变价。零值回退记录时刻
 	//（既有行为），供未装配的路径（图片/异步/cyber 等）沿用。
 	PricingAt time.Time
+	// StatisticalAt is generated once when the client call/WS turn reaches its final outcome.
+	// It is distinct from PricingAt and is shared with Insights final/error facts.
+	StatisticalAt time.Time
 	// CyberBlocked 为 true 时把该用量行标记为 cyber（request_type=cyber），计费逻辑不变。
 	CyberBlocked bool
 	// NativeCompactionV2 is an orthogonal semantic flag captured by the
@@ -50,14 +53,15 @@ type OpenAIRecordUsageInput struct {
 // 用量按上游真实 token 计费，与 WS cyber 及正常请求口径一致（InputTokens/OutputTokens
 // 取自上游 response.failed 报告的 usage，即 mark.UpstreamInTok/OutTok）。
 type CyberPolicyUsageInput struct {
-	APIKey       *APIKey
-	Account      *Account
-	Subscription *UserSubscription
-	RequestID    string
-	Model        string
-	Stream       bool
-	InputTokens  int
-	OutputTokens int
+	StatisticalAt time.Time
+	APIKey        *APIKey
+	Account       *Account
+	Subscription  *UserSubscription
+	RequestID     string
+	Model         string
+	Stream        bool
+	InputTokens   int
+	OutputTokens  int
 	// 渠道归因与请求级 meta，使 cyber 计费行与正常 RecordUsage 行口径一致
 	// （否则 cyber 行 channel_id 等为空，渠道维度统计会遗漏 cyber 命中）。
 	InboundEndpoint    string
@@ -92,6 +96,7 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 	}
 	if err := s.RecordUsage(ctx, &OpenAIRecordUsageInput{
 		Result:             result,
+		StatisticalAt:      in.StatisticalAt,
 		APIKey:             in.APIKey,
 		User:               in.APIKey.User,
 		Account:            in.Account,
@@ -439,7 +444,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	usageLog.OpenAIWSMode = result.OpenAIWSMode
 	usageLog.DurationMs = &durationMs
 	usageLog.FirstTokenMs = result.FirstTokenMs
-	usageLog.CreatedAt = time.Now()
+	usageLog.CreatedAt = usageStatisticalAt(input.StatisticalAt)
 	// 设置渠道信息
 	usageLog.ChannelID = optionalInt64Ptr(input.ChannelID)
 	usageLog.ModelMappingChain = optionalTrimmedStringPtr(input.ModelMappingChain)

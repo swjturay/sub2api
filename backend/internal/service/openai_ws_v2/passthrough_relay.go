@@ -80,6 +80,7 @@ type RelayOptions struct {
 	StartClientAfterFirstDownstream bool
 	OnUsageParseFailure             func(eventType string, usageRaw string)
 	OnTurnComplete                  func(turn RelayTurnResult)
+	BeforeUpstreamTurnWrite         func()
 	BeforeWriteClient               func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error
 	BeforeClientWrite               func(msgType coderws.MessageType, payload []byte)
 	AfterClientWrite                func(msgType coderws.MessageType, payload []byte, writeErr error)
@@ -207,6 +208,9 @@ func Relay(
 	writeClientFrameUpstream := func(msgType coderws.MessageType, payload []byte) error {
 		isResponseCreate := isClientResponseCreateFrame(msgType, payload)
 		if isResponseCreate {
+			if options.BeforeUpstreamTurnWrite != nil {
+				options.BeforeUpstreamTurnWrite()
+			}
 			state.setRequestModel(strings.TrimSpace(gjson.GetBytes(payload, "model").String()))
 			turnStartedAt := time.Time{}
 			if options.TakeNextTurnStartedAt != nil {

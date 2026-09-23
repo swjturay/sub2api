@@ -140,6 +140,14 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 
 type GrokRealtimeUpstream struct{ conn openAIWSClientConn }
 
+// GrokRealtimeHooks exposes model-turn protocol boundaries without coupling the
+// transport service to analytics. Callbacks run inline with the relay and must
+// remain non-blocking.
+type GrokRealtimeHooks struct {
+	BeforeUpstreamWrite func([]byte)
+	AfterUpstreamRead   func([]byte)
+}
+
 // GrokRealtimeDialError preserves an HTTP status returned before WebSocket
 // upgrade so handlers can apply the normal Grok account policy.
 type GrokRealtimeDialError struct {
@@ -199,6 +207,10 @@ func (s *OpenAIGatewayService) HandleGrokRealtimeUpstreamError(ctx context.Conte
 }
 
 func (s *OpenAIGatewayService) ProxyGrokRealtimeConn(ctx context.Context, c *gin.Context, client *coderws.Conn, upstream *GrokRealtimeUpstream) (bool, error) {
+	return s.ProxyGrokRealtimeConnWithHooks(ctx, c, client, upstream, GrokRealtimeHooks{})
+}
+
+func (s *OpenAIGatewayService) ProxyGrokRealtimeConnWithHooks(ctx context.Context, c *gin.Context, client *coderws.Conn, upstream *GrokRealtimeUpstream, hooks GrokRealtimeHooks) (bool, error) {
 	if s == nil || client == nil || upstream == nil || upstream.conn == nil {
 		return false, fmt.Errorf("realtime connection is required")
 	}
@@ -219,6 +231,9 @@ func (s *OpenAIGatewayService) ProxyGrokRealtimeConn(ctx context.Context, c *gin
 			}
 			if grokRealtimeEventHasAudio(msg) {
 				audioObserved.Store(true)
+			}
+			if hooks.AfterUpstreamRead != nil {
+				hooks.AfterUpstreamRead(msg)
 			}
 			if writeErr := client.Write(ctx, coderws.MessageText, msg); writeErr != nil {
 				errCh <- writeErr
@@ -245,6 +260,9 @@ func (s *OpenAIGatewayService) ProxyGrokRealtimeConn(ctx context.Context, c *gin
 			if unmarshalErr := json.Unmarshal(msg, &raw); unmarshalErr != nil {
 				errCh <- fmt.Errorf("invalid realtime event: %w", unmarshalErr)
 				return
+			}
+			if hooks.BeforeUpstreamWrite != nil {
+				hooks.BeforeUpstreamWrite(msg)
 			}
 			if writeErr := conn.WriteJSON(ctx, raw); writeErr != nil {
 				errCh <- writeErr

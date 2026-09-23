@@ -66,6 +66,19 @@ type openAIRecordUsageBestEffortLogRepoStub struct {
 	lastCtxErr      error
 }
 
+func TestGatewayServiceRecordUsage_UsesExplicitStatisticalTime(t *testing.T) {
+	repo := &openAIRecordUsageBestEffortLogRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(repo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	statisticalAt := time.Date(2026, 9, 22, 15, 4, 5, 6, time.UTC)
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{RequestID: "gateway_statistical_at", Model: "claude-sonnet-4", Usage: ClaudeUsage{InputTokens: 2, OutputTokens: 1}},
+		APIKey: &APIKey{ID: 1}, User: &User{ID: 2}, Account: &Account{ID: 3}, StatisticalAt: statisticalAt,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, repo.lastLog)
+	require.Equal(t, statisticalAt, repo.lastLog.CreatedAt)
+}
+
 func (s *openAIRecordUsageBestEffortLogRepoStub) CreateBestEffort(ctx context.Context, log *UsageLog) error {
 	s.bestEffortCalls++
 	s.lastLog = log

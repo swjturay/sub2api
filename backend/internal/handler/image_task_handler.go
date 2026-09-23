@@ -11,12 +11,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/insights"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -122,6 +125,19 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		"poll_url":   pollURL,
 	})
 
+	startedAt := time.Unix(task.CreatedAt, 0).UTC()
+	uid, kid := apiKey.UserID, apiKey.ID
+	clientRequestID, _ := taskCtx.Request.Context().Value(ctxkey.ClientRequestID).(string)
+	call := insights.NewCall(insights.Identity{
+		CallID:          asyncImageCallID(task.ID),
+		RequestID:       service.ResolveUsageFactRequestID(taskCtx.Request.Context(), ""),
+		ClientRequestID: strings.TrimSpace(clientRequestID),
+		UserID:          &uid,
+		APIKeyID:        &kid,
+		Platform:        platform,
+		Transport:       insights.TransportHTTPSync,
+	}, startedAt, nil)
+	taskCtx.Request = taskCtx.Request.WithContext(insights.WithCall(taskCtx.Request.Context(), call))
 	go h.run(task.ID, platform, taskCtx, recorder, cancel)
 }
 
@@ -225,6 +241,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			logger.L().Error("image_task.execution_panicked", zap.String("task_id", taskID), zap.Any("panic", recovered))
+			finishAsyncImageCall(taskCtx, insights.OutcomeError, "execution_panicked")
 			h.failTask(taskID, http.StatusInternalServerError, imageTaskErrorPayload("api_error", "image generation task panicked"))
 		}
 	}()
@@ -232,6 +249,7 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
 	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {
+		finishAsyncImageCall(taskCtx, insights.OutcomeTimeout, "execution_timeout")
 		h.failTask(taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
 		return
 	}
@@ -241,15 +259,48 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 	}
 	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
 		if len(body) == 0 || !json.Valid(body) {
+			finishAsyncImageCall(taskCtx, insights.OutcomeError, "invalid_image_response")
 			h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "upstream returned an invalid image response"))
 			return
+		}
+		if call, ok := insights.CallFromContext(taskCtx.Request.Context()); ok {
+			if _, finalized := call.Finalized(); !finalized {
+				insights.ReportGapBestEffort("async image protocol terminal was not observed")
+				finishAsyncImageCall(taskCtx, insights.OutcomeError, "terminal_unobserved")
+			}
 		}
 		if err := h.tasks.Complete(context.Background(), taskID, statusCode, json.RawMessage(body)); err != nil {
 			logger.L().Error("image_task.complete_store_failed", zap.String("task_id", taskID), zap.Error(err))
 		}
 		return
 	}
+	finishAsyncImageCall(taskCtx, insights.OutcomeError, "image_generation_failed")
 	h.failTask(taskID, statusCode, extractImageTaskError(body))
+}
+
+func asyncImageCallID(taskID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("async-image:"+strings.TrimSpace(taskID))).String()
+}
+
+func finishAsyncImageCall(c *gin.Context, outcome insights.Outcome, errorType string) time.Time {
+	if c == nil || c.Request == nil {
+		return time.Time{}
+	}
+	call, ok := insights.CallFromContext(c.Request.Context())
+	if !ok {
+		return time.Time{}
+	}
+	if fact, done := call.Finalized(); done {
+		return fact.StatisticalAt
+	}
+	var fact insights.CallFact
+	if outcome == insights.OutcomeSuccess {
+		fact = call.FinishSuccess(nil)
+	} else {
+		fact = call.FinishFailure(outcome, errorType, "")
+	}
+	insights.RecordBestEffort(fact)
+	return fact.StatisticalAt
 }
 
 func (h *AsyncImageHandler) failTask(taskID string, statusCode int, taskErr json.RawMessage) {

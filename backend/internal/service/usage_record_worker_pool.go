@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -156,6 +157,15 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 	if p == nil || task == nil {
 		return UsageRecordSubmitModeDropped
 	}
+	completion := insights.BeginUsageTask()
+	enqueued := false
+	defer func() {
+		if !enqueued {
+			completion()
+		}
+	}()
+	original := task
+	task = func(ctx context.Context) { defer completion(); original(ctx) }
 	if p.pool == nil || p.pool.Stopped() {
 		p.droppedPoolStopped.Add(1)
 		p.logDrop("stopped")
@@ -166,6 +176,7 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 		p.execute(task)
 	})
 	if ok {
+		enqueued = true
 		return UsageRecordSubmitModeEnqueued
 	}
 
@@ -330,6 +341,7 @@ func (p *UsageRecordWorkerPool) execute(task UsageRecordTask) {
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			insights.ReportUsageGapBestEffort("usage task panic")
 			logger.L().With(
 				zap.String("component", "service.usage_record_worker_pool"),
 				zap.Any("panic", recovered),
@@ -341,6 +353,7 @@ func (p *UsageRecordWorkerPool) execute(task UsageRecordTask) {
 }
 
 func (p *UsageRecordWorkerPool) logDrop(reason string) {
+	insights.ReportUsageGapBestEffort("usage task dropped: " + reason)
 	now := time.Now().UnixNano()
 	last := p.lastDropLogNanos.Load()
 	if now-last < int64(usageRecordDropLogInterval) {

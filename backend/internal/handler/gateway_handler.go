@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -209,6 +210,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	c.Request = c.Request.WithContext(service.WithThinkingEnabled(c.Request.Context(), parsedReq.ThinkingEnabled, h.metadataBridgeEnabled()))
 
 	setOpsRequestContext(c, reqModel, reqStream)
+	groupPlatform := ""
+	if apiKey.Group != nil {
+		groupPlatform = apiKey.Group.Platform
+	}
+	insightsUpdateCall(c, reqModel, groupPlatform, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	pricingCtx, pricingAt := service.WithGatewayTokenRequestPricing(c.Request.Context())
 	c.Request = c.Request.WithContext(pricingCtx)
@@ -369,6 +375,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			insightsUpdateCall(c, reqModel, account.Platform, reqStream)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -575,6 +582,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 			sessionID := service.ExtractClientSessionID(c)
+			statisticalAt := insightsFinishSuccess(c, result.Model, result.Usage.OutputTokens, result.FirstTokenMs)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 					Result:             result,
@@ -584,6 +592,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					Account:            account,
 					Subscription:       subscription,
 					PricingAt:          pricingAt,
+					StatisticalAt:      statisticalAt,
 					InboundEndpoint:    inboundEndpoint,
 					UpstreamEndpoint:   upstreamEndpoint,
 					UserAgent:          userAgent,
@@ -700,6 +709,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			insightsUpdateCall(c, reqModel, account.Platform, reqStream)
 
 			// [DEBUG-STICKY] 打印账号选择结果
 			reqLog.Info("sticky.account_selected",
@@ -910,7 +920,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 			// 提交 usage 记录。成功路径与"流中断但 Forward 已观测到 usage 的部分结果"
 			// 错误路径共用：后者若不入账，上游已计量的请求会完全漏记漏计费（#5148）。
-			submitForwardUsage := func(result *service.ForwardResult) {
+			submitForwardUsage := func(result *service.ForwardResult, statisticalAt time.Time) {
 				// 捕获请求信息（用于异步记录，避免在 goroutine 中访问 gin.Context）
 				userAgent := c.GetHeader("User-Agent")
 				clientIP := ip.GetClientIP(c)
@@ -946,6 +956,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						Account:            account,
 						Subscription:       currentSubscription,
 						PricingAt:          pricingAt,
+						StatisticalAt:      statisticalAt,
 						InboundEndpoint:    inboundEndpoint,
 						UpstreamEndpoint:   upstreamEndpoint,
 						UserAgent:          userAgent,
@@ -1078,7 +1089,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				// 避免上游已产生消耗的请求完全漏记（#5148）。failover 错误恒定 result=nil，
 				// 不会走到这里重复计费。
 				if result != nil {
-					submitForwardUsage(result)
+					statisticalAt := insightsFinishFailure(c, insights.OutcomeStreamInterrupted, "stream_interrupted")
+					submitForwardUsage(result, statisticalAt)
 					// 上游已接受并计量本次会话（流中断），会话槽保持既有语义
 					upstreamServedSession = true
 				}
@@ -1105,7 +1117,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 
-			submitForwardUsage(result)
+			statisticalAt := insightsFinishSuccess(c, result.Model, result.Usage.OutputTokens, result.FirstTokenMs)
+			submitForwardUsage(result, statisticalAt)
 			// 转发成功，会话槽保持既有空闲超时语义
 			upstreamServedSession = true
 			return
