@@ -114,7 +114,7 @@ jobs:
               <<<"$runs"
           }
 
-          for attempt in $(seq 1 60); do
+          for attempt in $(seq 1 180); do
             ci="$(workflow_state backend-ci.yml missing)"
             security="$(workflow_state security-scan.yml missing)"
             insights="$(workflow_state insights-ci.yml not_applicable)"
@@ -126,7 +126,7 @@ jobs:
               printf 'CI gate failed: CI=%s Security=%s Insights=%s\n' "$ci" "$security" "$insights" >&2
               exit 1
             fi
-            printf 'Waiting for CI gates (%s/60): CI=%s Security=%s Insights=%s\n' "$attempt" "$ci" "$security" "$insights"
+            printf 'Waiting for CI gates (%s/180): CI=%s Security=%s Insights=%s\n' "$attempt" "$ci" "$security" "$insights"
             sleep 10
           done
           echo 'timed out waiting for source CI gates' >&2
