@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { adaptModelSlice, adaptTimePoint, adaptTokens } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { adaptModelSlice, adaptTimePoint, adaptTokens, insightsApi } from "./api";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("Insights API adapters", () => {
   it("preserves missing values as null while retaining observed zero", () => {
@@ -19,6 +21,19 @@ describe("Insights API adapters", () => {
   });
   it("reads gateway success rate from the quality object and marks incomplete buckets", () => {
     expect(adaptTimePoint({ start: "2026-09-22T22:00:00+08:00", quality: { success_rate: 0.75 }, complete: false })).toMatchObject({ successRate: 0.75, incomplete: true });
+  });
+  it("maps today's actual cost independently from subscription quota", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      data: {
+        data: { subscriptions: [], tokens: { input: 10, output: 2, total: 12 }, actual_cost: 1.25 },
+        meta: { timezone: "Asia/Shanghai", generated_at: "2026-09-23T12:00:00+08:00", coverage: [] },
+      },
+    }), { status: 200 }));
+    await expect(insightsApi.personalOverview()).resolves.toMatchObject({
+      totalAmount: 1.25,
+      todayTokens: { input: 10, output: 2, total: 12 },
+    });
   });
   it("builds a stable platform:name identity from a typed model object", () => {
     expect(

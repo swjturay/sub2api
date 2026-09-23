@@ -44,3 +44,13 @@ func TestHealthyReplicaCannotEraseFleetGap(t *testing.T) {
 	// Even an old healthy writer after cutover cannot re-certify the old gap.
 	require.Equal(t, CoverageComplete, protected.Status)
 }
+
+func TestHealthyReplicaCannotNarrowCertifiedUsageHistory(t *testing.T) {
+	history := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
+	liveStart := time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)
+	observed := liveStart.Add(time.Hour)
+	certified := Coverage{Status: CoverageComplete, TrustedSince: &history, ObservedThrough: &observed}
+	staleHealthy := Coverage{Status: CoverageComplete, TrustedSince: &liveStart, ObservedThrough: &observed}
+	merged := mergeCoverage(certified, staleHealthy)
+	require.Equal(t, history, *merged.TrustedSince)
+}

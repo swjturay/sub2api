@@ -49,7 +49,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	statements := []string{
 		`CREATE TABLE api_keys(id BIGINT PRIMARY KEY,name TEXT NOT NULL)`,
 		`CREATE TABLE accounts(id BIGINT PRIMARY KEY,platform TEXT NOT NULL)`,
-		`CREATE TABLE usage_logs(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,api_key_id BIGINT NOT NULL,account_id BIGINT NOT NULL,request_id TEXT,stream BOOLEAN NOT NULL DEFAULT false,model TEXT NOT NULL,requested_model TEXT,input_tokens BIGINT NOT NULL,cache_creation_tokens BIGINT NOT NULL,cache_read_tokens BIGINT NOT NULL,output_tokens BIGINT NOT NULL,duration_ms INT,first_token_ms INT,created_at TIMESTAMPTZ NOT NULL)`,
+		`CREATE TABLE usage_logs(id BIGSERIAL PRIMARY KEY,user_id BIGINT NOT NULL,api_key_id BIGINT NOT NULL,account_id BIGINT NOT NULL,request_id TEXT,stream BOOLEAN NOT NULL DEFAULT false,model TEXT NOT NULL,requested_model TEXT,input_tokens BIGINT NOT NULL,cache_creation_tokens BIGINT NOT NULL,cache_read_tokens BIGINT NOT NULL,output_tokens BIGINT NOT NULL,duration_ms INT,first_token_ms INT,actual_cost NUMERIC NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL)`,
 		`CREATE TABLE insights_settings(key TEXT PRIMARY KEY,value JSONB NOT NULL)`,
 		`CREATE TABLE insights_call_facts(id BIGSERIAL PRIMARY KEY,call_id UUID,request_id TEXT,user_id BIGINT,api_key_id BIGINT,platform TEXT,model TEXT,outcome SMALLINT NOT NULL,model_duration_ms BIGINT,gateway_pre_forward_ms BIGINT,statistical_at TIMESTAMPTZ NOT NULL)`,
 		`CREATE TABLE insights_error_facts(call_id UUID PRIMARY KEY,user_id BIGINT NOT NULL,platform TEXT NOT NULL,model TEXT NOT NULL,error_type TEXT NOT NULL,error_summary TEXT,statistical_at TIMESTAMPTZ NOT NULL)`,
@@ -73,7 +73,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `INSERT INTO users VALUES(7,'u7@example','user7',$1,NULL),(8,'u8@example','user8',$1,NULL),(70,'u70@example','user70',$1,NULL),(71,'u71@example','user71',$1,NULL),(72,'u72@example','user72',$1,NULL),(9,'u9@example','user9',$1,NULL)`, from.AddDate(0, 0, -10)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ExecContext(ctx, `INSERT INTO usage_logs(user_id,api_key_id,account_id,request_id,model,requested_model,input_tokens,cache_creation_tokens,cache_read_tokens,output_tokens,duration_ms,first_token_ms,created_at) VALUES (7,1,1,'req-a','upstream','public-model',100,20,30,50,1000,100,$1),(7,1,1,'req-b','free-model',NULL,0,0,0,0,NULL,NULL,$1 + INTERVAL '1 day'),(70,1,1,'req-other','public-model','public-model',999,0,0,0,NULL,NULL,$1)`, from); err != nil {
+	if _, err = db.ExecContext(ctx, `INSERT INTO usage_logs(user_id,api_key_id,account_id,request_id,model,requested_model,input_tokens,cache_creation_tokens,cache_read_tokens,output_tokens,duration_ms,first_token_ms,actual_cost,created_at) VALUES (7,1,1,'req-a','upstream','public-model',100,20,30,50,1000,100,0.125,$1),(7,1,1,'req-b','free-model',NULL,0,0,0,0,NULL,NULL,0,$1 + INTERVAL '1 day'),(70,1,1,'req-other','public-model','public-model',999,0,0,0,NULL,NULL,1.5,$1)`, from); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(call_id,request_id,user_id,api_key_id,platform,model,outcome,statistical_at) VALUES('00000000-0000-0000-0000-000000000101','req-a',7,1,'OpenAI','public-model',1,$1),('00000000-0000-0000-0000-000000000102','req-b',7,1,'Other','free-model',1,$1)`, from.AddDate(0, 0, -1)); err != nil {
@@ -88,6 +88,13 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	summary := mustType[UsageData](t, usage.Data).Summary
 	if summary.RequestCount != 2 || summary.Tokens.Total != 200 || summary.ActiveDays != 1 {
 		t.Fatalf("usage=%+v", summary)
+	}
+	todayUsage, _, err := q.PersonalToday(ctx, 7, from, from.AddDate(0, 0, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if todayUsage.Tokens.Total != 200 || todayUsage.ActualCost != 0.125 {
+		t.Fatalf("today usage=%+v", todayUsage)
 	}
 	filtered, err := q.PersonalUsage(ctx, 7, from, to, "day", []string{"OpenAI:public-model"})
 	if err != nil {
@@ -212,10 +219,10 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if len(items) != 2 || items[1].Model != "OpenAI:public-model" || items[1].APIKeyName != "visible-key" {
 		t.Fatalf("logs=%+v", items)
 	}
-	if _, err = db.ExecContext(ctx, `INSERT INTO usage_logs(user_id,api_key_id,account_id,request_id,model,requested_model,input_tokens,cache_creation_tokens,cache_read_tokens,output_tokens,created_at) VALUES(71,1,1,'shared-id','same','same',1,0,0,0,$1),(71,1,1,'legacy-no-fact','legacy','legacy',1,0,0,0,$1)`, from); err != nil {
+	if _, err = db.ExecContext(ctx, `INSERT INTO usage_logs(user_id,api_key_id,account_id,request_id,model,requested_model,input_tokens,cache_creation_tokens,cache_read_tokens,output_tokens,created_at) VALUES(71,1,1,'shared-id','same','same',1,0,0,0,$1),(71,1,1,'legacy-no-fact','legacy','legacy',1,0,0,0,$1),(71,1,1,'composite-fact','upstream','gpt-6-astra',1,0,0,0,$1)`, from); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(call_id,request_id,user_id,api_key_id,platform,model,outcome,statistical_at) VALUES('00000000-0000-0000-0000-000000000105','shared-id',71,1,'Own','same',1,$1),('00000000-0000-0000-0000-000000000106','shared-id',72,1,'OtherUser','same',1,$1),('00000000-0000-0000-0000-000000000107','shared-id',71,1,'WrongModel','different',1,$1),('00000000-0000-0000-0000-000000000108','shared-id',71,1,'Duplicate','same',1,$1)`, from); err != nil {
+	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(call_id,request_id,user_id,api_key_id,platform,model,outcome,statistical_at) VALUES('00000000-0000-0000-0000-000000000105','shared-id',71,1,'Own','same',1,$1),('00000000-0000-0000-0000-000000000106','shared-id',72,1,'OtherUser','same',1,$1),('00000000-0000-0000-0000-000000000107','shared-id',71,1,'WrongModel','different',1,$1),('00000000-0000-0000-0000-000000000108','shared-id',71,1,'Duplicate','same',1,$1),('00000000-0000-0000-0000-000000000109','composite-fact',71,1,'composite','gpt-6-astra',1,$1)`, from); err != nil {
 		t.Fatal(err)
 	}
 	identityLogs, err := q.UsageLogs(ctx, 71, from, to, 20, "", nil)
@@ -227,7 +234,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	for _, item := range identityItems {
 		identityModels[item.Model] = true
 	}
-	if len(identityItems) != 2 || !identityModels["OpenAI:same"] || !identityModels["OpenAI:legacy"] {
+	if len(identityItems) != 3 || !identityModels["OpenAI:same"] || !identityModels["OpenAI:legacy"] || !identityModels["OpenAI:gpt-6-astra"] {
 		t.Fatalf("identity logs=%+v", identityItems)
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO user_attribute_definitions VALUES(11,'department','Department','select','[{"value":"A/B","label":"Team AB"}]',true,NULL); INSERT INTO user_attribute_values VALUES(7,11,'A/B'),(9,11,'A/B'); INSERT INTO insights_settings VALUES('department_attribute_id','11')`); err != nil {

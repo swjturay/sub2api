@@ -2630,3 +2630,23 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want greater than ordinary stream timeout %d", cfg.Gateway.ImageStreamDataIntervalTimeout, cfg.Gateway.StreamDataIntervalTimeout)
 	}
 }
+
+func TestValidateInsightsTrustedUsageHistoryFrom(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	cfg.Insights.TrustedUsageHistoryFrom = "2026-06-03"
+	if err = cfg.Validate(); err == nil || !strings.Contains(err.Error(), "requires insights.trusted_collection") {
+		t.Fatalf("Validate() error = %v, want trusted collection requirement", err)
+	}
+	cfg.Insights.TrustedCollection = true
+	if err = cfg.Validate(); err != nil {
+		t.Fatalf("Validate() rejected valid trusted usage history: %v", err)
+	}
+	cfg.Insights.TrustedUsageHistoryFrom = "2026/06/03"
+	if err = cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must use YYYY-MM-DD") {
+		t.Fatalf("Validate() error = %v, want date format error", err)
+	}
+}

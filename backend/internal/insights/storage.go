@@ -181,6 +181,78 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	return tx.Commit()
 }
 
+// ExtendTrustedUsageHistory is an explicit operator assertion that the existing
+// billing usage ledger is complete from the supplied local calendar date. It
+// only extends a healthy usage interval and never crosses a recorded gap.
+func (s *Store) ExtendTrustedUsageHistory(ctx context.Context, coverage Coverage, since time.Time, timezone string) (Coverage, error) {
+	if s == nil || s.db == nil {
+		return coverage, errors.New("insights store database is nil")
+	}
+	if coverage.Status != CoverageComplete || coverage.TrustedSince == nil {
+		return coverage, errors.New("live usage collection must be trusted before historical usage can be certified")
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		return coverage, err
+	}
+	since = DayAt(since.In(loc), loc)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return coverage, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var raw []byte
+	err = tx.QueryRowContext(ctx, `SELECT value FROM insights_settings WHERE key='coverage' FOR UPDATE`).Scan(&raw)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return coverage, err
+	}
+	stored := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		if err = json.Unmarshal(raw, &stored); err != nil {
+			return coverage, err
+		}
+	}
+	if storedUsage, ok := stored["usage"]; ok {
+		var current Coverage
+		if err = json.Unmarshal(storedUsage, &current); err != nil {
+			return coverage, err
+		}
+		coverage = current
+	}
+	if coverage.Status != CoverageComplete || coverage.TrustedSince == nil {
+		return coverage, errors.New("stored usage coverage is not currently trusted")
+	}
+	if !since.Before(*coverage.TrustedSince) {
+		return coverage, nil
+	}
+	if coverage.LastGapAt != nil && !coverage.LastGapAt.Before(since) {
+		return coverage, errors.New("historical usage start would cross a recorded collection gap")
+	}
+	coverage.TrustedSince = timePtr(since)
+	encoded, err := json.Marshal(coverage)
+	if err != nil {
+		return coverage, err
+	}
+	stored["usage"] = encoded
+	payload, err := json.Marshal(stored)
+	if err != nil {
+		return coverage, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_settings(key,value,updated_at) VALUES('coverage',$1::jsonb,NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`, payload); err != nil {
+		return coverage, err
+	}
+	today := DayAt(time.Now().In(loc), loc)
+	if since.Before(today) {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO insights_rollup_coverage(source,stat_date,complete,updated_at) SELECT 'usage',d::date,true,NOW() FROM generate_series($1::date,$2::date-1,interval '1 day') d ON CONFLICT(source,stat_date) DO UPDATE SET complete=true,updated_at=NOW()`, since, today); err != nil {
+			return coverage, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return coverage, err
+	}
+	return coverage, nil
+}
+
 // SaveCoverage serializes fleet writers. A healthy replica must not overwrite
 // another replica's reported gap or move a new trusted boundary backwards.
 func (s *Store) SaveCoverage(ctx context.Context, coverage map[string]Coverage) error {
@@ -225,7 +297,13 @@ func (s *Store) SaveCoverage(ctx context.Context, coverage map[string]Coverage) 
 }
 
 func mergeCoverage(previous, incoming Coverage) Coverage {
-	if previous.TrustedSince != nil && (incoming.TrustedSince == nil || incoming.TrustedSince.Before(*previous.TrustedSince)) {
+	if previous.Status == CoverageComplete && incoming.Status == CoverageComplete && previous.TrustedSince != nil {
+		// A complete fleet interval keeps its persisted boundary. This protects an
+		// explicit historical certification from stale healthy replicas. A real
+		// collection gap first makes the persisted state partial, after which a
+		// later activation may establish a new boundary.
+		incoming.TrustedSince = previous.TrustedSince
+	} else if previous.TrustedSince != nil && (incoming.TrustedSince == nil || incoming.TrustedSince.Before(*previous.TrustedSince)) {
 		incoming.TrustedSince = previous.TrustedSince
 	}
 	if previous.LastGapAt != nil && (incoming.TrustedSince == nil || !incoming.TrustedSince.After(*previous.LastGapAt)) && incoming.Status == CoverageComplete {

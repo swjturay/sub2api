@@ -61,6 +61,15 @@ func Ratio(numerator, denominator int64) *float64 {
 
 func CacheHitRatio(t Tokens) *float64 { return Ratio(t.CacheRead, t.Input+t.CacheWrite+t.CacheRead) }
 
+// usageProviderSQL resolves the provider that actually handled a usage row.
+// Composite and Antigravity are routing surfaces, not concrete providers.
+func usageProviderSQL(factExpression, accountExpression string) string {
+	return fmt.Sprintf(`COALESCE(
+ CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','antigravity','composite') THEN BTRIM(%s) END,
+ CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','antigravity','composite') THEN BTRIM(%s) END,
+ 'unknown')`, factExpression, factExpression, accountExpression, accountExpression)
+}
+
 type ModelIdentity struct {
 	Platform    string `json:"platform"`
 	Name        string `json:"name"`
@@ -175,7 +184,7 @@ func (q *Query) UsageLogs(ctx context.Context, userID int64, from, to time.Time,
 	if err != nil {
 		return Envelope{}, err
 	}
-	rows, err := q.db.QueryContext(ctx, `SELECT ul.id, ul.created_at, COALESCE(f.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model), COALESCE(k.name,''), ul.input_tokens, ul.cache_creation_tokens, ul.cache_read_tokens, ul.output_tokens, ul.duration_ms, ul.first_token_ms, ul.stream, COALESCE(ul.request_id,'') FROM usage_logs ul JOIN api_keys k ON k.id=ul.api_key_id LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND ($4::timestamptz IS NULL OR (ul.created_at,ul.id)<($4,$5)) AND ($6::text[] IS NULL OR (COALESCE(f.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($6::text[])) ORDER BY ul.created_at DESC,ul.id DESC LIMIT $7`, userID, from, to, nullableTime(cursorAt), id, nullableTextArray(models), pageSize+1)
+	rows, err := q.db.QueryContext(ctx, `SELECT ul.id, ul.created_at, `+usageProviderSQL("f.platform", "a.platform")+` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model), COALESCE(k.name,''), ul.input_tokens, ul.cache_creation_tokens, ul.cache_read_tokens, ul.output_tokens, ul.duration_ms, ul.first_token_ms, ul.stream, COALESCE(ul.request_id,'') FROM usage_logs ul JOIN api_keys k ON k.id=ul.api_key_id LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND ($4::timestamptz IS NULL OR (ul.created_at,ul.id)<($4,$5)) AND ($6::text[] IS NULL OR (`+usageProviderSQL("f.platform", "a.platform")+` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($6::text[])) ORDER BY ul.created_at DESC,ul.id DESC LIMIT $7`, userID, from, to, nullableTime(cursorAt), id, nullableTextArray(models), pageSize+1)
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -315,12 +324,31 @@ type UsageData struct {
 	Models  []UsageModel  `json:"models"`
 }
 
+type PersonalTodayUsage struct {
+	Tokens     Tokens  `json:"tokens"`
+	ActualCost float64 `json:"actual_cost"`
+}
+
+func (q *Query) PersonalToday(ctx context.Context, userID int64, from, to time.Time) (PersonalTodayUsage, CoverageInfo, error) {
+	var input, write, read, output int64
+	var actualCost float64
+	err := q.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens),0),COALESCE(SUM(cache_creation_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(output_tokens),0),COALESCE(SUM(actual_cost),0)::float8 FROM usage_logs WHERE user_id=$1 AND created_at >= $2 AND created_at < $3`, userID, from, to).Scan(&input, &write, &read, &output, &actualCost)
+	if err != nil {
+		return PersonalTodayUsage{}, CoverageInfo{}, fmt.Errorf("query personal today usage: %w", err)
+	}
+	coverage, err := q.rawCoverageInfo(ctx, "usage", "usage_detail", from, to)
+	if err != nil {
+		return PersonalTodayUsage{}, CoverageInfo{}, err
+	}
+	return PersonalTodayUsage{Tokens: NewTokens(input, write, read, output), ActualCost: actualCost}, coverage, nil
+}
+
 func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.Time, granularity string, models []string) (Envelope, error) {
 	if granularity != "day" && granularity != "week" && granularity != "month" {
 		return Envelope{}, fmt.Errorf("%w: granularity", ErrInvalidFilter)
 	}
-	filter := `($5::text[] IS NULL OR (COALESCE(f.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($5::text[]))`
-	summaryFilter := `($4::text[] IS NULL OR (COALESCE(f.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($4::text[]))`
+	filter := `($5::text[] IS NULL OR (` + usageProviderSQL("f.platform", "a.platform") + ` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($5::text[]))`
+	summaryFilter := `($4::text[] IS NULL OR (` + usageProviderSQL("f.platform", "a.platform") + ` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model))=ANY($4::text[]))`
 	row := q.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(ul.input_tokens),0), COALESCE(SUM(ul.cache_creation_tokens),0), COALESCE(SUM(ul.cache_read_tokens),0), COALESCE(SUM(ul.output_tokens),0), COUNT(DISTINCT CASE WHEN ul.input_tokens+ul.cache_creation_tokens+ul.cache_read_tokens+ul.output_tokens > 0 THEN (ul.created_at AT TIME ZONE $5)::date END)
 		FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true
@@ -357,7 +385,7 @@ func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.T
 	if err := rows.Err(); err != nil {
 		return Envelope{}, err
 	}
-	modelRows, err := q.db.QueryContext(ctx, `SELECT COALESCE(f.platform,CASE WHEN lower(a.platform) NOT IN ('antigravity','composite') THEN a.platform END,'unknown') || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model),COUNT(*),COALESCE(SUM(ul.input_tokens),0),COALESCE(SUM(ul.cache_creation_tokens),0),COALESCE(SUM(ul.cache_read_tokens),0),COALESCE(SUM(ul.output_tokens),0) FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND `+summaryFilter+` GROUP BY 1 ORDER BY 2 DESC,1`, userID, from, to, nullableTextArray(models))
+	modelRows, err := q.db.QueryContext(ctx, `SELECT `+usageProviderSQL("f.platform", "a.platform")+` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model),COUNT(*),COALESCE(SUM(ul.input_tokens),0),COALESCE(SUM(ul.cache_creation_tokens),0),COALESCE(SUM(ul.cache_read_tokens),0),COALESCE(SUM(ul.output_tokens),0) FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND `+summaryFilter+` GROUP BY 1 ORDER BY 2 DESC,1`, userID, from, to, nullableTextArray(models))
 	if err != nil {
 		return Envelope{}, err
 	}

@@ -23,7 +23,7 @@ export function buildHeatmapOption(days: HeatmapDay[], thresholds:number[], year
   });
   const named = (state:HeatmapDay["state"]) => days.filter(d=>d.state===state).map(d=>[d.date,d.tokens ?? 0,state]);
   return {
-    tooltip:{ ...tooltipTheme(), formatter:(p:unknown)=>{ const d=(p as {data:[string,number,string]}).data; const labels:Record<string,string>={zero:"已观测：0 Token",missing:"未采集",future:"未来日期"}; return `<b>${escapeHtml(d[0])}</b><br/>${d[2]==="value"?`${d[1].toLocaleString("zh-CN")} Token`:labels[d[2]]}`; }},
+    tooltip:{ ...tooltipTheme(), formatter:(p:unknown)=>{ const d=(p as {data:[string,number,string]}).data; const labels:Record<string,string>={zero:"已观测：0 Token",missing:"无可确认记录",future:"未来日期"}; return `<b>${escapeHtml(d[0])}</b><br/>${d[2]==="value"?`${d[1].toLocaleString("zh-CN")} Token`:labels[d[2]]}`; }},
     visualMap:{ type:"piecewise", seriesIndex:0, dimension:1, pieces, orient:"horizontal", left:"center", bottom:0, itemWidth:14, itemHeight:10, itemGap:10, textStyle:{color:colors.muted,fontSize:12} },
     calendar:{ range:String(year), cellSize:["auto",17], top:32, left:42, right:16, bottom:42, yearLabel:{show:false}, dayLabel:{firstDay:1,color:colors.muted,fontSize:10}, monthLabel:{nameMap:"ZH",color:colors.muted,fontSize:10}, splitLine:{show:false}, itemStyle:{color:colors.surfaceSubtle,borderColor:colors.surface,borderWidth:3}},
     series:[

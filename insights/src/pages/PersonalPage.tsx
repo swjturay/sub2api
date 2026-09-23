@@ -13,6 +13,7 @@ import { TimeSeriesChart } from "../components/charts/TimeSeriesChart";
 import { ModelDonut } from "../components/charts/ModelDonut";
 import { Chart } from "../components/charts/Chart";
 import { Button } from "../components/ui/Button";
+import { HelpTip } from "../components/ui/HelpTip";
 import { buildHeatmapOption, heatmapSelectionDate } from "../features/chartOptions";
 
 export function PersonalPage({ auto }: { auto: boolean }) {
@@ -49,12 +50,12 @@ export function PersonalPage({ auto }: { auto: boolean }) {
   };
 
   return (
-    <div className="page-stack grid min-w-0 max-w-full gap-6">
+    <div className="personal-page page-stack grid min-w-0 max-w-full gap-6">
       <header className="page-heading">
-        <div>
-          <h1 className="m-0 text-2xl font-semibold">个人数据</h1>
-          <p className="mb-0 mt-1 text-sm muted">统计记录时间 · {timezone} · 历史默认近7个自然日</p>
-        </div>
+        <h1 className="m-0 flex items-center gap-2 text-2xl font-semibold">
+          个人数据
+          <HelpTip label="个人数据统计口径">统计记录时间为 {timezone}；历史分析默认展示含今天在内的最近 7 个自然日。</HelpTip>
+        </h1>
       </header>
 
       {overview.error && <ErrorBanner message={overview.error} retry={overview.refresh} stale={!!overview.data} />}
@@ -63,14 +64,14 @@ export function PersonalPage({ auto }: { auto: boolean }) {
           <CoverageBanner coverage={overview.data.coverage} />
           <section className="panel">
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="m-0 text-base font-semibold">今日额度与Token</h2>
-                <p className="mb-0 mt-1 text-xs muted">订阅额度按各自账务窗口展示；今日Token按统计记录时间归日。</p>
-              </div>
+              <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+                今日实况
+                <HelpTip label="今日实况说明">金额来自今日实际扣费，Token 按统计记录时区归日；订阅额度沿用各订阅的账务窗口。</HelpTip>
+              </h2>
               <Zap aria-hidden="true" className="h-5 w-5 text-[var(--primary)]" />
             </div>
             <div className="mt-4 grid gap-4 xl:grid-cols-12">
-              <TodayTokens tokens={overview.data.todayTokens} />
+              <TodayTokens tokens={overview.data.todayTokens} totalAmount={overview.data.totalAmount} />
               <div className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-3 xl:col-span-8">
                 {overview.data.subscriptions.length ? overview.data.subscriptions.map((subscription) => (
                   <SubscriptionCard key={subscription.id} subscription={subscription} timezone={timezone} />
@@ -90,10 +91,10 @@ export function PersonalPage({ auto }: { auto: boolean }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-[9px] bg-[var(--primary-soft)] text-[var(--primary)]"><CalendarDays aria-hidden="true" className="h-4 w-4" /></span>
-            <div>
-              <h2 className="m-0 text-base font-semibold">年度Token热力图</h2>
-              <p className="mb-0 mt-1 text-xs muted">全部模型；色阶跨保留年份一致。点击日期定位下方历史数据和日志。</p>
-            </div>
+            <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+              年度Token热力图
+              <HelpTip label="年度Token热力图说明">展示全部模型，颜色越深表示当日 Token 越多；点击有记录的日期可同步定位历史分析和日志。</HelpTip>
+            </h2>
           </div>
           <label className="grid gap-1 text-xs muted">
             年份
@@ -109,7 +110,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
             <Chart label="年度Token热力图" height={210} onEvents={{ click: selectDay }} option={buildHeatmapOption(heatmap.data.days, heatmap.data.thresholds, year)} />
             <div className="mt-2 flex flex-wrap justify-end gap-x-4 gap-y-2 text-xs muted" aria-label="热力图数据状态">
               <LegendSwatch className="border border-[var(--border)] bg-[var(--surface-subtle)]" label="零用量" />
-              <LegendSwatch className="bg-[var(--border)]" label="未采集" />
+              <LegendSwatch className="bg-[var(--border)]" label="无可确认记录" help="该日没有可确认的历史用量记录，可能早于已审计的历史范围；不能直接当作零用量。" />
               <LegendSwatch className="border border-dashed border-[var(--border-strong)]" label="未来" />
             </div>
           </>
@@ -118,10 +119,10 @@ export function PersonalPage({ auto }: { auto: boolean }) {
 
       <section className="panel min-w-0 max-w-full">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="m-0 text-base font-semibold">历史分析</h2>
-            <p className="mb-0 mt-1 text-xs muted">日均包含真实零消耗日并排除未来日期。</p>
-          </div>
+          <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+            历史分析
+            <HelpTip label="历史分析统计口径">日均 Token 包含已确认的零消耗日，并排除未来日期。</HelpTip>
+          </h2>
           <AnalyticsFilters value={filters} onChange={updateFilters} models={models} />
         </div>
         {analytics.error && <div className="mt-4"><ErrorBanner message={analytics.error} retry={analytics.refresh} stale={!!analytics.data} /></div>}
@@ -132,7 +133,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
               <MetricCard label="活跃天数" value={analytics.data.activeDays} />
               <MetricCard label="总Token" value={analytics.data.totalTokens} />
               <MetricCard label="日均Token" value={analytics.data.averageDailyTokens} formula="总Token ÷ 所选自然日数" />
-              <MetricCard label="请求次数" value={analytics.data.requests} detail="用量记录条数" />
+              <MetricCard label="请求次数" value={analytics.data.requests} formula="所选范围内的用量记录条数" />
               <MetricCard label="输出Token" value={analytics.data.outputTokens} />
               <MetricCard label="缓存命中率" value={analytics.data.cacheHitRate === null ? null : analytics.data.cacheHitRate * 100} unit="%" formula="Σ缓存读 ÷ (Σ输入 + Σ缓存写 + Σ缓存读)" />
             </div>
@@ -160,8 +161,10 @@ export function PersonalPage({ auto }: { auto: boolean }) {
             <TimeSeriesChart data={analytics.data.series} metric={metric} mode={mode} percent={metric === "cacheHitRate"} label="个人历史时间趋势" height={350} />
           </section>
           <section className="panel xl:col-span-4">
-            <h2 className="m-0 text-base font-semibold">模型调用分布</h2>
-            <p className="mb-0 mt-1 text-xs muted">按请求次数排序。</p>
+            <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+              模型调用分布
+              <HelpTip label="模型调用分布说明">按请求次数从高到低排序。</HelpTip>
+            </h2>
             <div className="mt-2">{analytics.data.models.length ? <ModelDonut models={analytics.data.models} compact /> : <Empty />}</div>
           </section>
         </div>
@@ -169,10 +172,10 @@ export function PersonalPage({ auto }: { auto: boolean }) {
 
       <section className="panel min-w-0 max-w-full">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="m-0 text-base font-semibold">个人日志</h2>
-            <p className="mb-0 mt-1 text-xs muted">时间倒序，与上方历史分析使用相同筛选。</p>
-          </div>
+          <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
+            个人日志
+            <HelpTip label="个人日志说明">按统计时间倒序，并沿用上方历史分析的日期、粒度和模型筛选。</HelpTip>
+          </h2>
           <div className="flex flex-wrap items-center gap-3">
             <Segmented value={tab} onChange={(value) => { setTab(value); setCursors([undefined]); }} label="日志类型" options={[
               { value: "usage", label: "用量日志" },
@@ -224,16 +227,28 @@ export function PersonalPage({ auto }: { auto: boolean }) {
   );
 }
 
-function TodayTokens({ tokens }: { tokens: TokenBreakdown }) {
-  const items = [
-    ["普通输入", tokens.input], ["输出", tokens.output], ["缓存写入", tokens.cacheWrite], ["缓存读取", tokens.cacheRead],
-  ] as const;
+function TodayTokens({ tokens, totalAmount }: { tokens: TokenBreakdown; totalAmount: number }) {
+  const items: Array<[string, number | null]> = [
+    ["普通输入", tokens.input],
+    ["输出", tokens.output],
+    ["缓存读取", tokens.cacheRead],
+  ];
+  if ((tokens.cacheWrite ?? 0) > 0) items.splice(2, 0, ["缓存写入", tokens.cacheWrite]);
   return (
-    <div className="relative overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--primary-soft)] p-5 xl:col-span-4">
-      <div className="text-xs font-semibold text-[var(--primary)]">今天总Token</div>
-      <div className="mt-2 text-3xl font-semibold tabular-nums" title={tokens.total === null ? "无有效样本" : String(tokens.total)}>{formatMetric(tokens.total)}</div>
-      <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-3">
-        {items.map(([label, value]) => <div key={label} className="border-t border-[color-mix(in_srgb,var(--primary)_18%,transparent)] pt-2"><div className="text-xs muted">{label}</div><div className="mt-1 text-sm font-semibold tabular-nums">{formatMetric(value)}</div></div>)}
+    <div className="today-live-card relative overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--primary-soft)] xl:col-span-4">
+      <div className="grid grid-cols-2">
+        <div className="p-5">
+          <div className="text-xs font-semibold text-[var(--primary)]">总Token</div>
+          <div className="mt-2 text-3xl font-semibold tabular-nums" title={tokens.total === null ? "无有效样本" : String(tokens.total)}>{formatMetric(tokens.total)}</div>
+        </div>
+        <div className="border-l border-[color-mix(in_srgb,var(--primary)_18%,transparent)] p-5">
+          <div className="text-xs font-semibold text-[var(--primary)]">总金额</div>
+          <div className="mt-2 whitespace-nowrap text-3xl font-semibold tabular-nums" title={`${totalAmount} USD`}>${money(totalAmount)}</div>
+          <div className="mt-1 text-xs muted">USD</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 border-t border-[color-mix(in_srgb,var(--primary)_18%,transparent)] bg-[color-mix(in_srgb,var(--surface)_32%,transparent)]">
+        {items.map(([label, value]) => <div key={label} className="min-w-0 border-l border-[color-mix(in_srgb,var(--primary)_14%,transparent)] px-4 py-3 first:border-l-0"><div className="text-xs muted">{label}</div><div className="mt-1 truncate text-sm font-semibold tabular-nums" title={value === null ? "无有效样本" : String(value)}>{formatMetric(value)}</div></div>)}
       </div>
     </div>
   );
@@ -260,8 +275,8 @@ function SubscriptionCard({ subscription, timezone }: { subscription: Subscripti
   );
 }
 
-function LegendSwatch({ className, label }: { className: string; label: string }) {
-  return <span className="inline-flex items-center gap-1.5"><span className={"h-3 w-3 rounded-sm " + className} aria-hidden="true" />{label}</span>;
+function LegendSwatch({ className, label, help }: { className: string; label: string; help?: string }) {
+  return <span className="inline-flex items-center gap-1.5"><span className={"h-3 w-3 rounded-sm " + className} aria-hidden="true" />{label}{help && <HelpTip label={`${label}说明`}>{help}</HelpTip>}</span>;
 }
 
 function LogRow({ row, kind, timezone }: { row: UsageLog | ErrorLog; kind: "usage" | "errors"; timezone: string }) {

@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-type RuntimeOptions struct{ TrustedCollection bool }
+type RuntimeOptions struct {
+	TrustedCollection       bool
+	TrustedUsageHistoryFrom *time.Time
+}
 
 type runtimeRecorder struct {
 	store             *Store
@@ -80,6 +83,16 @@ func ConfigureRuntimeWithOptions(db *sql.DB, timezone string, queueSize int, opt
 		}
 		doneUsage()
 		r.usageCoverage = r.usageCoverage.Activate(time.Now())
+		if options.TrustedUsageHistoryFrom != nil {
+			historyCtx, historyDone := context.WithTimeout(context.Background(), 5*time.Second)
+			extended, extendErr := r.store.ExtendTrustedUsageHistory(historyCtx, r.usageCoverage, *options.TrustedUsageHistoryFrom, timezone)
+			historyDone()
+			if extendErr != nil {
+				log.Printf("[Insights] trusted usage history: %v", extendErr)
+			} else {
+				r.usageCoverage = extended
+			}
+		}
 	}
 	go r.run()
 	go r.maintain(ctx)

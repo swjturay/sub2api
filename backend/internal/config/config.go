@@ -66,7 +66,8 @@ const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 const DefaultModelsListReadMaxBytes int64 = 8 * 1024 * 1024
 
 type InsightsConfig struct {
-	TrustedCollection bool `mapstructure:"trusted_collection"`
+	TrustedCollection       bool   `mapstructure:"trusted_collection"`
+	TrustedUsageHistoryFrom string `mapstructure:"trusted_usage_history_from"`
 }
 
 type Config struct {
@@ -2346,6 +2347,7 @@ func setDefaults() {
 	viper.SetDefault("dashboard_aggregation.backfill_enabled", false)
 	viper.SetDefault("dashboard_aggregation.backfill_max_days", 31)
 	viper.SetDefault("insights.trusted_collection", false)
+	viper.SetDefault("insights.trusted_usage_history_from", "")
 	viper.SetDefault("dashboard_aggregation.retention.usage_logs_days", 90)
 	viper.SetDefault("dashboard_aggregation.retention.usage_billing_dedup_days", 365)
 	viper.SetDefault("dashboard_aggregation.retention.hourly_days", 180)
@@ -2657,6 +2659,14 @@ func setEnvReachableDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if value := strings.TrimSpace(c.Insights.TrustedUsageHistoryFrom); value != "" {
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			return fmt.Errorf("insights.trusted_usage_history_from must use YYYY-MM-DD")
+		}
+		if !c.Insights.TrustedCollection {
+			return fmt.Errorf("insights.trusted_usage_history_from requires insights.trusted_collection")
+		}
+	}
 	forwardedClientIPHeaders, err := NormalizeForwardedClientIPHeaders(c.Security.ForwardedClientIPHeaders)
 	if err != nil {
 		return fmt.Errorf("security.forwarded_client_ip_headers: %w", err)

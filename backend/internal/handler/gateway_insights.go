@@ -86,9 +86,8 @@ func insightsPopulateAuthIdentity(c *gin.Context, call *insights.Call) {
 	if apiKey.User != nil {
 		update.UserID = &apiKey.User.ID
 	}
-	if apiKey.Group != nil {
-		update.Platform = apiKey.Group.Platform
-	}
+	// Group platform describes the public routing boundary. The concrete provider
+	// is set by the selected-account path and must survive composite authorization.
 	call.UpdateIdentity(update)
 }
 

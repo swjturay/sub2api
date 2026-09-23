@@ -192,6 +192,7 @@ export const insightsApi = {
             : "active",
       })),
       todayTokens: adaptTokens(r.data.tokens),
+      totalAmount: Number(r.data.actual_cost ?? 0),
       timezone: r.meta.timezone,
       coverage: cov(r.meta),
     } as T.PersonalOverview;

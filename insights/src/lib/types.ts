@@ -13,7 +13,7 @@ export interface ModelOption { id:string; name:string; platform:string }
 export interface DepartmentOption { id:string; name:string; issue?:string }
 export interface FilterState { from:string; to:string; granularity:Granularity; models:string[]; departments:string[] }
 export interface SubscriptionUsage { id:string; name:string; used:number; limit:number|null; currency:string; remaining:number|null; resetsAt:string|null; status:"active"|"unlimited"|"exceeded" }
-export interface PersonalOverview { subscriptions:SubscriptionUsage[]; todayTokens:TokenBreakdown; timezone:string; coverage:Coverage }
+export interface PersonalOverview { subscriptions:SubscriptionUsage[]; todayTokens:TokenBreakdown; totalAmount:number; timezone:string; coverage:Coverage }
 export interface HeatmapDay { date:string; tokens:number|null; state:"value"|"zero"|"missing"|"future" }
 export interface PersonalAnalytics { activeDays:number; totalTokens:number|null; averageDailyTokens:number; requests:number; outputTokens:number|null; cacheHitRate:number|null; series:TimePoint[]; models:ModelSlice[]; coverage:Coverage }
 export interface UsageLog { id:string; recordedAt:string; department:string; model:string; apiKeyName:string; inputTokens:number; outputTokens:number; cacheReadTokens:number; cacheWriteTokens:number; durationMs:number|null; ttftMs:number|null; metadata:Record<string,unknown> }

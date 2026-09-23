@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"time"
@@ -82,6 +83,25 @@ func TestInsightsMiddlewareUsesCanonicalUsageIdentityAndPreservesAlias(t *testin
 	require.Equal(t, "openai", fact.Platform)
 	require.Equal(t, insights.OutcomeSuccess, fact.Outcome)
 	require.Equal(t, 1, fact.AttemptCount)
+}
+
+func TestInsightsAuthIdentityDoesNotReplaceConcreteProviderWithCompositeGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	user := &service.User{ID: 17}
+	apiKey := &service.APIKey{ID: 19, User: user, Group: &service.Group{Platform: service.PlatformComposite}}
+	c.Set(string(servermiddleware.ContextKeyAPIKey), apiKey)
+	call := insights.NewCall(insights.Identity{}, time.Now(), nil)
+	c.Request = c.Request.WithContext(insights.WithCall(c.Request.Context(), call))
+	insightsUpdateCall(c, "gpt-6-astra", service.PlatformOpenAI, true)
+	insightsPopulateAuthIdentity(c, call)
+	call.MarkUpstreamSend(time.Now())
+	fact := call.FinishSuccess(nil)
+	require.Equal(t, service.PlatformOpenAI, fact.Platform)
+	require.Equal(t, int64(17), *fact.UserID)
+	require.Equal(t, int64(19), *fact.APIKeyID)
 }
 
 func TestInsightsKnownUninstrumentedGenerationInventory(t *testing.T) {

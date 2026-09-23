@@ -1,5 +1,14 @@
 # Development Journal
 
+## Personal Insights clarity and history certification (2026-09-23)
+
+- Simplified the personal dashboard by moving statistical-time, coverage and chart explanations into keyboard-accessible tooltips. Renamed the daily section to `今日实况`, added today's actual amount beside total Token, and hides the daily cache-write item when its value is zero. Heatmap absence is now labelled `无可确认记录` instead of implying that collection definitely never happened.
+- Audited production read-only usage history: the billing ledger contains 2,576,729 rows across 112 distinct dates beginning on 2026-06-02, while explicit Insights completeness tracking began on 2026-09-23. Added the operator-only `INSIGHTS_TRUSTED_USAGE_HISTORY_FROM` boundary so audited ledger history can certify Token, amount and idle calendar days without inventing historical success, failure, error or retention facts. Because the first observed row on 2026-06-02 is at 15:28 Asia/Shanghai, 2026-06-03 is the conservative whole-day boundary unless an earlier service audit proves that partial day complete.
+- Preserved the concrete selected-account provider when an API key belongs to a composite routing group. Historical usage queries also ignore `composite` and `antigravity` fact values and fall back to the concrete account provider, correcting existing `composite:gpt-6-astra` personal logs to the OpenAI provider.
+- Widened the bounded desktop canvas for 2K displays and retained the fixed log-column contract. Browser checks at 1920×1080 and 2560×1440 found no horizontal document overflow; the filter row remains intact, Token/performance columns remain separated, and opening the account menu does not move the shell.
+
+Validation: full backend `go test -tags=unit ./...`, React ESLint, TypeScript, 17 files / 58 tests, production build, Docker Compose configuration and whitespace checks passed. Browser fixtures were synthetic; production access was read-only and no deployment was performed.
+
 ## Independent CCE release automation (2026-09-23)
 
 - Split the release boundary permanently: GitHub builds linux/amd64 backend and Insights images, pushes only immutable Alibaba ACR images, and archives a combined schema-v2 release manifest. GitHub has no SSH, kubeconfig, or operations-host credential and never starts a deployment.

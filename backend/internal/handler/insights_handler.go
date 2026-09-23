@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -31,7 +32,16 @@ func NewInsightsHandler(db *sql.DB, cfg *config.Config, subscriptionService *ser
 		loc = time.UTC
 		tz = "UTC"
 	}
-	insights.ConfigureRuntimeWithOptions(db, tz, 4096, insights.RuntimeOptions{TrustedCollection: cfg.Insights.TrustedCollection})
+	var trustedUsageHistoryFrom *time.Time
+	if value := strings.TrimSpace(cfg.Insights.TrustedUsageHistoryFrom); value != "" {
+		if parsed, parseErr := time.ParseInLocation("2006-01-02", value, loc); parseErr == nil {
+			trustedUsageHistoryFrom = &parsed
+		}
+	}
+	insights.ConfigureRuntimeWithOptions(db, tz, 4096, insights.RuntimeOptions{
+		TrustedCollection:       cfg.Insights.TrustedCollection,
+		TrustedUsageHistoryFrom: trustedUsageHistoryFrom,
+	})
 	usageDays := cfg.DashboardAgg.Retention.UsageLogsDays
 	if usageDays <= 0 {
 		usageDays = 365
@@ -112,19 +122,17 @@ func (h *InsightsHandler) Today(c *gin.Context) {
 	items := mapTodaySubscriptions(subs, progresses)
 	now := time.Now().In(h.loc)
 	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
-	usage, err := h.query.PersonalUsage(c.Request.Context(), subject.UserID, from, from.AddDate(0, 0, 1), "day", nil)
+	todayUsage, coverage, err := h.query.PersonalToday(c.Request.Context(), subject.UserID, from, from.AddDate(0, 0, 1))
 	if err != nil {
-		response.InternalError(c, "failed to query today tokens")
+		response.InternalError(c, "failed to query today usage")
 		return
 	}
-	usageData, ok := usage.Data.(insights.UsageData)
-	if !ok {
-		response.InternalError(c, "invalid today token response")
-		return
-	}
-	summary := usageData.Summary
-	usage.Data = map[string]any{"date": from.Format("2006-01-02"), "subscriptions": items, "tokens": summary.Tokens}
-	c.JSON(http.StatusOK, usage)
+	c.JSON(http.StatusOK, h.query.Envelope(map[string]any{
+		"date":          from.Format("2006-01-02"),
+		"subscriptions": items,
+		"tokens":        todayUsage.Tokens,
+		"actual_cost":   todayUsage.ActualCost,
+	}, []insights.CoverageInfo{coverage}))
 }
 
 func mapTodaySubscriptions(subs []service.UserSubscription, progresses []service.SubscriptionProgress) []todaySubscription {

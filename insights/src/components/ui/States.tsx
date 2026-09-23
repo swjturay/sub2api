@@ -1,5 +1,6 @@
 import { AlertCircle, AlertTriangle, Database, Info } from "lucide-react";
 import { Button } from "./Button";
+import { HelpTip } from "./HelpTip";
 import type { Coverage } from "../../lib/types";
 export function Loading({ label = "正在读取数据" }: { label?: string }) {
   return (
@@ -56,9 +57,10 @@ export function CoverageBanner({ coverage }: { coverage: Coverage }) {
   const title = coverage.state === "partial" ? "部分覆盖" : coverage.state === "uncollected" ? "尚未采集" : "覆盖未知";
   const Icon = coverage.state === "unavailable" ? AlertCircle : Info;
   return (
-    <div className="coverage-note" data-coverage={coverage.state} role="note">
+    <div className="coverage-note" data-coverage={coverage.state} role="note" aria-label={coverage.message ? `${title}：${coverage.message}` : title}>
       <Icon aria-hidden="true" />
-      <span><strong>{title}</strong>{coverage.message && ` · ${coverage.message}`}</span>
+      <strong>{title}</strong>
+      {coverage.message && <HelpTip label={`${title}说明`}>{coverage.message}</HelpTip>}
     </div>
   );
 }

@@ -91,7 +91,7 @@ svg { stroke-width: 1.8; }
 .skip-link:focus { transform: translateY(0); }
 
 .app-header { position: sticky; top: 0; z-index: 30; height: 64px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, transparent); backdrop-filter: blur(14px); }
-.app-header__inner, .app-main { width: min(calc(100% - 48px), 1720px); margin-inline: auto; }
+.app-header__inner, .app-main { width: min(calc(100% - 48px), 1920px); margin-inline: auto; }
 .app-header__inner { display: grid; height: 64px; grid-template-columns: minmax(220px, 1fr) auto minmax(190px, 1fr); align-items: center; gap: 20px; }
 .brand-mark { display: inline-flex; min-width: 0; align-items: center; gap: 9px; justify-self: start; text-decoration: none; }
 .brand-mark__icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-sm); }
@@ -146,6 +146,10 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .metric-card__formula { display: grid; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
 .metric-card__formula:hover { background: var(--surface-muted); color: var(--ink); }
 .metric-card__formula svg { width: 13px; height: 13px; }
+.help-tip { display: inline-grid; width: 20px; height: 20px; flex: none; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 0; vertical-align: middle; }
+.help-tip:hover { background: var(--surface-muted); color: var(--ink); }
+.help-tip:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.help-tip svg { width: 13px; height: 13px; }
 .metric-card__value { margin-top: 6px; overflow: hidden; color: var(--ink); font-size: 20px; font-weight: 680; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .metric-card__detail { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .department-metrics-primary .metric-card { min-height: 92px !important; padding-block: 15px !important; }
@@ -154,10 +158,13 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .department-metrics-primary .metric-card:last-child .metric-card__value { color: var(--primary); }
 .today-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px !important; background: var(--border); }
 .today-overview-grid .metric-card, .overview-summary-cell { min-width: 0; border: 0 !important; background: var(--surface); }
+.today-live-card { min-width: 0; }
+.today-live-card .tabular-nums { letter-spacing: -0.025em; }
+.personal-page .panel { contain: inline-size; }
 .overview-summary-cell { padding: 15px; }
 
-.coverage-note { display: flex; width: fit-content; max-width: 100%; align-items: flex-start; gap: 7px; border-radius: 6px; background: var(--surface-subtle); padding: 6px 9px; color: var(--muted); font-size: 12px; line-height: 1.4; }
-.coverage-note svg { width: 14px; height: 14px; flex: none; margin-top: 1px; color: var(--secondary); }
+.coverage-note { display: inline-flex; width: fit-content; max-width: 100%; min-height: 28px; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-subtle); padding: 3px 7px; color: var(--muted); font-size: 11px; line-height: 1.25; }
+.coverage-note > svg { width: 13px; height: 13px; flex: none; color: var(--secondary); }
 .coverage-note strong { color: var(--ink); font-weight: 650; }
 .coverage-note[data-coverage="unavailable"] svg { color: var(--danger); }
 .empty-state { display: flex; min-height: 154px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; text-align: center; }
@@ -184,7 +191,7 @@ tbody tr:hover { background: var(--surface-subtle); }
 .model-card:hover { border-color: var(--border-strong); box-shadow: 0 4px 14px rgba(24, 24, 27, 0.06); }
 
 @media (min-width: 1600px) {
-  .app-header__inner, .app-main { width: min(calc(100% - 80px), 1720px); }
+  .app-header__inner, .app-main { width: min(calc(100% - 80px), 1920px); }
   .app-main { padding-top: 24px; }
 }
 @media (max-width: 1180px) {
