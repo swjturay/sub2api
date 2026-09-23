@@ -100,15 +100,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100"
-          for attempt in $(seq 1 30); do
+          workflow_state() {
+            local workflow_file="$1"
+            local absent_state="$2"
+            local api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow_file/runs?head_sha=$SOURCE_SHA&per_page=20"
+            local runs
             runs="$(curl --fail --silent --show-error \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
               "$api")"
-            ci="$(jq -r '[.workflow_runs[] | select(.name == "CI")] | sort_by(.run_number) | last | .conclusion // "missing"' <<<"$runs")"
-            security="$(jq -r '[.workflow_runs[] | select(.name == "Security Scan")] | sort_by(.run_number) | last | .conclusion // "missing"' <<<"$runs")"
-            insights="$(jq -r '[.workflow_runs[] | select(.name == "Insights CI")] | sort_by(.run_number) | last | if . == null then "not_applicable" elif .status != "completed" then .status else .conclusion end' <<<"$runs")"
+            jq -r --arg absent "$absent_state" \
+              '.workflow_runs | sort_by(.run_number) | last | if . == null then $absent elif .status != "completed" then .status else .conclusion end' \
+              <<<"$runs"
+          }
+
+          for attempt in $(seq 1 60); do
+            ci="$(workflow_state backend-ci.yml missing)"
+            security="$(workflow_state security-scan.yml missing)"
+            insights="$(workflow_state insights-ci.yml not_applicable)"
             if [[ "$ci" == success && "$security" == success && ( "$insights" == success || "$insights" == not_applicable ) ]]; then
               printf 'CI gates passed: CI=%s Security=%s Insights=%s\n' "$ci" "$security" "$insights"
               exit 0
@@ -117,7 +126,7 @@ jobs:
               printf 'CI gate failed: CI=%s Security=%s Insights=%s\n' "$ci" "$security" "$insights" >&2
               exit 1
             fi
-            printf 'Waiting for CI gates (%s/30): CI=%s Security=%s Insights=%s\n' "$attempt" "$ci" "$security" "$insights"
+            printf 'Waiting for CI gates (%s/60): CI=%s Security=%s Insights=%s\n' "$attempt" "$ci" "$security" "$insights"
             sleep 10
           done
           echo 'timed out waiting for source CI gates' >&2
