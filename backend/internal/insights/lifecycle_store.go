@@ -34,7 +34,7 @@ func (s *Store) rebuildLifecycle(ctx context.Context, timezone string, coverage 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('sub2api_insights_lifecycle'))`); err != nil {
 		return err
 	}

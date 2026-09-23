@@ -55,7 +55,7 @@ func (q *Query) resolveDepartmentBinding(ctx context.Context) (departmentBinding
 	if err != nil {
 		return departmentBinding{}, DepartmentDimension{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var c candidate
 		if err := rows.Scan(&c.id, &c.key, &c.kind, &c.options, &c.enabled); err != nil {
@@ -123,7 +123,7 @@ func (q *Query) resolveDepartmentBinding(ctx context.Context) (departmentBinding
 		for valueRows.Next() {
 			var value string
 			if err := valueRows.Scan(&value); err != nil {
-				valueRows.Close()
+				_ = valueRows.Close()
 				return departmentBinding{}, DepartmentDimension{}, err
 			}
 			binding.Options = append(binding.Options, DimensionOption{Value: value, Label: value})

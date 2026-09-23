@@ -28,6 +28,12 @@ Validation:
 - React lint/typecheck/build and 13 files / 43 tests passed. Independent PC checks cover 1366/1440/1920 widths, real same-origin login/API integration, roles, filters, model comparison/profile conflict, chart/theme behavior, unknown data, heatmap selection and refresh retention.
 - Docker Compose configuration validates. Docker daemon execution, real external OAuth/2FA callbacks and production data/load were not tested. All database/browser fixtures are synthetic; no paid model inference or production deployment occurred.
 
+## Insights release lint closure (2026-09-23)
+
+- Closed the new Insights `errcheck` findings by making database row, transaction and test-fixture cleanup handling explicit.
+- Replaced unchecked combined-department response assertions with validated contract errors and removed two unused aggregation locals.
+- Preserved the four pre-existing Codex test-helper lint findings outside the Insights release scope.
+
 ## CCE 0.2.7 Selective KLNO Intake
 
 Base: 20d0294f9ec8945ee9933d320a127a3861d1de46.

@@ -19,13 +19,21 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	db.SetMaxOpenConns(1)
 	schema := fmt.Sprintf("insights_lifecycle_%d", time.Now().UnixNano())
 	if _, e = db.Exec(`CREATE SCHEMA ` + schema); e != nil {
 		t.Fatal(e)
 	}
-	defer db.Exec(`DROP SCHEMA ` + schema + ` CASCADE`)
+	t.Cleanup(func() {
+		if _, err := db.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); err != nil {
+			t.Errorf("drop test schema: %v", err)
+		}
+	})
 	if _, e = db.Exec(`SET search_path TO ` + schema); e != nil {
 		t.Fatal(e)
 	}

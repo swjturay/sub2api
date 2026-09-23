@@ -103,7 +103,7 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	}
 	var oldest sql.NullTime
 	if err = readTx.QueryRowContext(ctx, `SELECT MIN(statistical_at) FROM insights_call_facts WHERE statistical_at<$1`, cutoff).Scan(&oldest); err != nil {
-		readTx.Rollback()
+		_ = readTx.Rollback()
 		return err
 	}
 	var sourceCoverage Coverage
@@ -115,22 +115,22 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	if oldest.Valid {
 		rows, e := readTx.QueryContext(ctx, `SELECT DISTINCT user_id FROM (SELECT user_id FROM insights_call_facts WHERE statistical_at<$1 ORDER BY statistical_at,call_id LIMIT 10000) f WHERE user_id IS NOT NULL`, cutoff)
 		if e != nil {
-			readTx.Rollback()
+			_ = readTx.Rollback()
 			return e
 		}
 		for rows.Next() {
 			var id int64
 			if e = rows.Scan(&id); e != nil {
-				rows.Close()
-				readTx.Rollback()
+				_ = rows.Close()
+				_ = readTx.Rollback()
 				return e
 			}
 			ids = append(ids, id)
 		}
 		e = rows.Err()
-		rows.Close()
+		_ = rows.Close()
 		if e != nil {
-			readTx.Rollback()
+			_ = readTx.Rollback()
 			return e
 		}
 	}

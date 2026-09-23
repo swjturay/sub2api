@@ -21,7 +21,11 @@ func TestModelStorePostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	ctx := context.Background()
 	schema := fmt.Sprintf("insights_models_%d", time.Now().UnixNano())
 	if _, err = db.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {

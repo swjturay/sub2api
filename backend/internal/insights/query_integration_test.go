@@ -22,7 +22,11 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	db.SetMaxOpenConns(1)
 	ctx := context.Background()
 	schema := fmt.Sprintf("insights_api_%d", time.Now().UnixNano())

@@ -78,7 +78,7 @@ func (q *Query) Departments(ctx context.Context, from, to time.Time, granularity
 		var a departmentAggregate
 		var i, w, r, o int64
 		if err := rows.Scan(&a.bucket, &a.userID, &a.username, &a.department, &a.model, &a.requests, &i, &w, &r, &o, &a.ttftSum, &a.ttftN, &a.tpotSum, &a.tpotN); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return Envelope{}, err
 		}
 		a.tokens = NewTokens(i, w, r, o)
@@ -101,8 +101,8 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 	modelMap := map[string]*UsageModel{}
 	deptTotals := map[string]int64{}
 	userTotals := map[int64]*TopUser{}
-	var ttftSum, tpotSum float64
-	var ttftN, tpotN int64
+	var ttftSum float64
+	var ttftN int64
 	for _, a := range aggs {
 		summary.RequestCount += a.requests
 		addTokens(&summary.Tokens, a.tokens)
@@ -132,8 +132,6 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 		u.TotalTokens += a.tokens.Total
 		ttftSum += a.ttftSum
 		ttftN += a.ttftN
-		tpotSum += a.tpotSum
-		tpotN += a.tpotN
 	}
 	summary.ActiveMemberCount = int64(len(active))
 	days := calendarDays(from, to, q.now().In(mustLocation(q.timezone)))
@@ -325,10 +323,22 @@ func (q *Query) DepartmentsCombined(ctx context.Context, from, to, split time.Ti
 	if err != nil {
 		return Envelope{}, err
 	}
-	a := oldEnv.Data.(map[string]any)
-	b := newEnv.Data.(map[string]any)
-	sa := a["summary"].(DepartmentSummary)
-	sb := b["summary"].(DepartmentSummary)
+	a, ok := oldEnv.Data.(map[string]any)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department response")
+	}
+	b, ok := newEnv.Data.(map[string]any)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department response")
+	}
+	sa, ok := a["summary"].(DepartmentSummary)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department summary")
+	}
+	sb, ok := b["summary"].(DepartmentSummary)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department summary")
+	}
 	summary := sa
 	summary.MemberCount = sb.MemberCount
 	summary.RequestCount += sb.RequestCount

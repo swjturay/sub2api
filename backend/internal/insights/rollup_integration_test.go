@@ -19,13 +19,21 @@ func TestRollupRangePostgresLateWriteIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
 	ctx := context.Background()
 	schema := fmt.Sprintf("insights_rollup_%d", time.Now().UnixNano())
 	if _, err = db.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer db.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`)
+	t.Cleanup(func() {
+		if _, err := db.ExecContext(context.Background(), `DROP SCHEMA `+schema+` CASCADE`); err != nil {
+			t.Errorf("drop test schema: %v", err)
+		}
+	})
 	if _, err = db.ExecContext(ctx, `SET search_path TO `+schema); err != nil {
 		t.Fatal(err)
 	}
