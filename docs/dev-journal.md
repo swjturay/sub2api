@@ -1,5 +1,14 @@
 # Development Journal
 
+## Insights v1 bounded release workflow
+
+Source: dee8a2aecd3bd5400df95183cc60c8f9e9822354. Branch: codex/insights-v1.
+
+- Added the registered `cce-clean-image.yml` manual workflow for an exact full source SHA. Dispatch inputs are validated before use and the checked-out commit must equal the requested SHA.
+- GitHub builds and pushes separate linux/amd64 backend and Insights images to GHCR with version-plus-full-SHA tags and OCI source, revision and version labels. Only the backend build stages the existing checksum-verified portable Python asset.
+- The Insights production build disables source-map emission so the standalone static image does not publish application sources alongside its assets.
+- Each pushed image is pulled by immutable digest and exported as a gzip Docker archive with a SHA-256 checksum and JSON transfer manifest. The per-image GitHub artifact is the bounded handoff for the separate ops-host SWR import; the workflow contains no SWR credentials or deployment step.
+
 ## Insights v1 and PC visual refinement
 
 Base: af4fa53d3bd6a1bf80924bcbd54212dc983354c3. Branch: codex/insights-v1.

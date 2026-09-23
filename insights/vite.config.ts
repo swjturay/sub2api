@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    build: { outDir: "dist", sourcemap: true },
+    build: { outDir: "dist", sourcemap: false },
     test: {
       environment: "jsdom",
       setupFiles: ["./src/test/setup.ts"],
