@@ -59,11 +59,13 @@ jobs:
         include:
           - component: backend
             repository: sub2api
+            acr_tag_prefix: backend-
             context: .
             dockerfile: ./Dockerfile
             cache_scope: cce-clean-backend-amd64
           - component: insights
             repository: sub2api-insights
+            acr_tag_prefix: insights-
             context: ./insights
             dockerfile: ./insights/Dockerfile
             cache_scope: cce-clean-insights-amd64
@@ -72,6 +74,7 @@ jobs:
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION: ${{ inputs.version }}
       IMAGE: ghcr.io/swjturay/${{ matrix.repository }}:${{ inputs.version }}-${{ inputs.source_sha }}
+      ACR_IMAGE: registry.cn-shanghai.aliyuncs.com/rayless/sub2api:${{ matrix.acr_tag_prefix }}${{ inputs.version }}-${{ inputs.source_sha }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v4
@@ -112,6 +115,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-shanghai.aliyuncs.com
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
       - name: Stage verified Windows portable Python
         if: matrix.component == 'backend'
         shell: bash
@@ -136,7 +146,11 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE }}
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.ACR_IMAGE }}
+          provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ inputs.version }}
             COMMIT=${{ inputs.source_sha }}
@@ -167,6 +181,17 @@ jobs:
           immutable_image="ghcr.io/swjturay/${REPOSITORY}@${image_digest}"
           docker pull --platform linux/amd64 "$immutable_image"
           docker tag "$immutable_image" "$IMAGE"
+
+          ghcr_manifest="$RUNNER_TEMP/${COMPONENT}-ghcr-manifest.json"
+          acr_manifest="$RUNNER_TEMP/${COMPONENT}-acr-manifest.json"
+          docker buildx imagetools inspect "$IMAGE" --raw > "$ghcr_manifest"
+          docker buildx imagetools inspect "$ACR_IMAGE" --raw > "$acr_manifest"
+          ghcr_digest="sha256:$(sha256sum "$ghcr_manifest" | cut -d' ' -f1)"
+          acr_digest="sha256:$(sha256sum "$acr_manifest" | cut -d' ' -f1)"
+          test "$ghcr_digest" = "$image_digest"
+          test "$acr_digest" = "$image_digest"
+          acr_immutable_image="${ACR_IMAGE%%:*}@${acr_digest}"
+
           docker save "$IMAGE" | gzip -1 > "$archive"
           archive_sha256="$(sha256sum "$archive" | cut -d' ' -f1)"
           printf '%s  %s\n' "$archive_sha256" "$archive_name" > "$archive.sha256"
@@ -176,6 +201,9 @@ jobs:
             --arg component "$COMPONENT" \
             --arg image "$IMAGE" \
             --arg immutable_image "$immutable_image" \
+            --arg acr_image "$ACR_IMAGE" \
+            --arg acr_immutable_image "$acr_immutable_image" \
+            --arg acr_digest "$acr_digest" \
             --arg digest "$image_digest" \
             --arg platform 'linux/amd64' \
             --arg source_repository "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
@@ -190,6 +218,9 @@ jobs:
               component: $component,
               image: $image,
               immutable_image: $immutable_image,
+              acr_image: $acr_image,
+              acr_immutable_image: $acr_immutable_image,
+              acr_digest: $acr_digest,
               digest: $digest,
               platform: $platform,
               source_repository: $source_repository,
@@ -203,6 +234,7 @@ jobs:
 
           {
             echo "image_digest=$image_digest"
+            echo "acr_image=$acr_immutable_image"
             echo "archive=$archive_name"
             echo "archive_sha256=$archive_sha256"
           } >> "$GITHUB_STEP_SUMMARY"
