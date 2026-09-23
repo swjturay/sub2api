@@ -1232,7 +1232,10 @@ func accountCodexModelSupportsImageInput(account *Account, upstreamModel string)
 		if account.Platform != PlatformOpenAI || !isOpenAICodexImageInputModel(upstreamModel) {
 			return false
 		}
-		if account.IsOpenAIOAuth() {
+		// CPR relays the same Codex Responses models as OAuth accounts. When its
+		// model catalog omits modalities, use the known GPT capability fallback;
+		// an explicit metadata snapshot above remains authoritative.
+		if account.IsOpenAIOAuth() || account.IsCPR() {
 			return true
 		}
 		if !account.IsOpenAIApiKey() {

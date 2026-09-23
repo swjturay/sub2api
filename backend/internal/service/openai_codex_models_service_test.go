@@ -640,6 +640,62 @@ func TestBuildCodexModelsManifestForGroupAdvertisesOfficialOpenAIResponsesImageI
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
 }
 
+func TestBuildCodexModelsManifestForCompositeOpenAICPRImageInput(t *testing.T) {
+	t.Parallel()
+
+	newCPRAccount := func(id int64, modalities []string) Account {
+		account := Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeCPR}
+		if modalities != nil {
+			account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+				"gpt-5.6-sol": {ID: "gpt-5.6-sol", InputModalities: modalities},
+			}})
+		}
+		return account
+	}
+
+	tests := []struct {
+		name       string
+		cpr        Account
+		modalities []any
+	}{
+		{
+			name:       "CPR without metadata uses known GPT image fallback",
+			cpr:        newCPRAccount(3, nil),
+			modalities: []any{"text", "image"},
+		},
+		{
+			name:       "CPR explicit text-only metadata narrows group capability",
+			cpr:        newCPRAccount(4, []string{"text"}),
+			modalities: []any{"text"},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			groupID := int64(703 + i)
+			svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
+				groupID: {
+					{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+					tt.cpr,
+				},
+			}}}
+
+			body, err := svc.BuildCodexModelsManifestForGroup(
+				context.Background(),
+				&Group{ID: groupID, Platform: PlatformComposite},
+				"",
+				[]string{"gpt-5.6-sol"},
+			)
+			require.NoError(t, err)
+
+			models := decodeCodexManifestModels(t, body)
+			require.Len(t, models, 1)
+			require.Equal(t, tt.modalities, models[0]["input_modalities"])
+		})
+	}
+}
+
 func TestBuildCodexModelsManifestForGroupUsesProviderImageCapabilities(t *testing.T) {
 	t.Parallel()
 

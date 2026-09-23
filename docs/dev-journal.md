@@ -6,6 +6,14 @@
 - This boundary certifies the existing billing ledger rather than backfilling raw data. Existing Token and amount rows are aggregated as recorded; calendar dates on or after launch with no usage rows are zero-use days. Dates before launch are marked `统计范围外`, while explicit post-launch collection gaps remain `数据缺口`.
 - Heatmap coverage evaluation starts at the launch boundary, so pre-launch dates no longer make an otherwise complete year appear partially collected. Operations documentation records the same rule and requires the repository-owned CCE release command to be refreshed before rollout.
 
+## CPR Composite Codex image capability (2026-09-23)
+
+- Fixed Codex model-manifest capability aggregation for Composite groups that mix OpenAI OAuth and CPR accounts. CPR accounts now use the same known GPT image-input fallback as OAuth when their model metadata omits modalities, so a schedulable CPR account no longer downgrades `gpt-5.6-sol` to text-only.
+- Kept explicit upstream metadata authoritative: a CPR snapshot that declares only `text` still narrows the Composite group capability to text-only. The conservative all-candidates intersection remains unchanged.
+- Added regression coverage for both the missing-metadata fallback and explicit text-only behavior.
+
+Validation: targeted Codex manifest regressions, the complete `internal/service` plus `internal/repository` unit suites, and the backend production build passed. No deployment or production configuration change was performed.
+
 ## Personal Insights clarity and history certification (2026-09-23)
 
 - Simplified the personal dashboard by moving statistical-time, coverage and chart explanations into keyboard-accessible tooltips. Renamed the daily section to `今日实况`, added today's actual amount beside total Token, and hides the daily cache-write item when its value is zero. The heatmap now distinguishes zero use, explicit data gaps, pre-launch dates and future dates.
