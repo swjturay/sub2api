@@ -2,7 +2,6 @@ package handler
 
 import (
 	"database/sql"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,12 +10,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-// InsightsModelsHandler owns the model catalog, comparison, and editable profile slice.
+// InsightsModelsHandler owns the read-only official model catalog and comparison slice.
 type InsightsModelsHandler struct {
 	store    *insights.ModelStore
 	catalog  *service.ModelPlazaService
@@ -32,12 +30,10 @@ func NewInsightsModelsHandler(db *sql.DB, cfg *config.Config, catalog *service.M
 }
 
 // RegisterRoutes exposes the stable v1 paths on already-authenticated groups.
-func (h *InsightsModelsHandler) RegisterRoutes(user, admin *gin.RouterGroup) {
+func (h *InsightsModelsHandler) RegisterRoutes(user *gin.RouterGroup) {
 	user.GET("/models", h.List)
 	user.GET("/models/detail", h.Detail)
 	user.GET("/models/compare", h.Compare)
-	admin.PUT("/models/profile", h.PutProfile)
-	admin.DELETE("/models/profile", h.DeleteProfile)
 }
 func modelWindow(raw string) (time.Time, time.Time, string, bool) {
 	now := time.Now()
@@ -117,10 +113,6 @@ func (h *InsightsModelsHandler) catalogViews(c *gin.Context, ids []insights.Mode
 	out := make([]insights.ModelView, 0, len(selected))
 	for _, m := range selected {
 		id := insights.ModelIdentity{Platform: m.Platform, Name: m.Name, DisplayName: m.DisplayName}
-		profile, e := h.store.Profile(c.Request.Context(), id)
-		if e != nil {
-			return nil, e
-		}
 		trend, e := h.store.Trend(c.Request.Context(), id, from, to, step)
 		if e != nil {
 			return nil, e
@@ -131,7 +123,7 @@ func (h *InsightsModelsHandler) catalogViews(c *gin.Context, ids []insights.Mode
 			perf.AverageTPM = &zero
 			perf.AverageRPM = &zero
 		}
-		out = append(out, insights.ModelView{Identity: id, Configured: true, Profile: profile, ReferencePricing: pricingProjection(m.OfficialPricing), Performance: perf, Trend: trend})
+		out = append(out, insights.ModelView{Identity: id, Configured: true, Profile: m.Profile, ReferencePricing: pricingProjection(m.OfficialPricing), Performance: perf, Trend: trend})
 	}
 	return out, nil
 }
@@ -164,7 +156,7 @@ func (h *InsightsModelsHandler) List(c *gin.Context) {
 		}
 		filtered = append(filtered, v)
 	}
-	c.JSON(http.StatusOK, insights.Envelope{Data: map[string]any{"items": filtered}, Meta: insights.Meta{Timezone: h.timezone, GeneratedAt: time.Now(), Coverage: []insights.CoverageInfo{{Dataset: "model_catalog", Status: "complete"}, {Dataset: "model_profile", Status: "partial"}, {Dataset: "usage_detail", Status: "partial"}}}})
+	c.JSON(http.StatusOK, insights.Envelope{Data: map[string]any{"items": filtered}, Meta: insights.Meta{Timezone: h.timezone, GeneratedAt: time.Now(), Coverage: []insights.CoverageInfo{{Dataset: "model_catalog", Status: "complete"}, {Dataset: "model_profile", Status: "complete"}, {Dataset: "usage_detail", Status: "partial"}}}})
 }
 
 func (h *InsightsModelsHandler) Detail(c *gin.Context) {
@@ -254,54 +246,4 @@ func (h *InsightsModelsHandler) Compare(c *gin.Context) {
 		trends = append(trends, *byAt[at])
 	}
 	c.JSON(http.StatusOK, insights.Envelope{Data: map[string]any{"models": views, "trends": trends}, Meta: insights.Meta{Timezone: h.timezone, GeneratedAt: time.Now()}})
-}
-
-func (h *InsightsModelsHandler) PutProfile(c *gin.Context) {
-	id, err := insights.ParseModelIdentity(c.Query("model"))
-	if err != nil {
-		response.BadRequest(c, "invalid model")
-		return
-	}
-	var in insights.ModelProfileInput
-	if err = c.ShouldBindJSON(&in); err != nil {
-		response.BadRequest(c, "invalid profile")
-		return
-	}
-	subject, ok := middleware.GetAuthSubjectFromContext(c)
-	if !ok {
-		response.Unauthorized(c, "user not found")
-		return
-	}
-	profile, err := h.store.PutProfile(c.Request.Context(), id, in, subject.UserID)
-	if errors.Is(err, insights.ErrModelProfileConflict) {
-		response.Error(c, http.StatusConflict, "profile version conflict")
-		return
-	}
-	if err != nil {
-		response.InternalError(c, "failed to update profile")
-		return
-	}
-	c.JSON(http.StatusOK, insights.Envelope{Data: profile, Meta: insights.Meta{Timezone: h.timezone, GeneratedAt: time.Now()}})
-}
-func (h *InsightsModelsHandler) DeleteProfile(c *gin.Context) {
-	id, err := insights.ParseModelIdentity(c.Query("model"))
-	if err != nil {
-		response.BadRequest(c, "invalid model")
-		return
-	}
-	expected, err := strconv.ParseInt(c.Query("expected_version"), 10, 64)
-	if err != nil || expected < 1 {
-		response.BadRequest(c, "invalid expected_version")
-		return
-	}
-	err = h.store.DeleteProfile(c.Request.Context(), id, expected)
-	if errors.Is(err, insights.ErrModelProfileConflict) {
-		response.Error(c, http.StatusConflict, "profile version conflict")
-		return
-	}
-	if err != nil {
-		response.InternalError(c, "failed to delete profile")
-		return
-	}
-	c.JSON(http.StatusOK, insights.Envelope{Data: map[string]any{"deleted": true}, Meta: insights.Meta{Timezone: h.timezone, GeneratedAt: time.Now()}})
 }

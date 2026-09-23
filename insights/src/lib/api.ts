@@ -133,7 +133,6 @@ export const adaptModelProfile = (x: any): T.ModelProfile => ({
     ttft: mv(x.performance?.average_ttft_ms, x.performance?.ttft_samples),
     tpot: mv(x.performance?.estimated_tpot_ms, x.performance?.tpot_samples),
   },
-  editable: true,
 });
 
 export const insightsApi = {
@@ -314,28 +313,7 @@ export const insightsApi = {
       })),
     } as T.ModelComparison;
   },
-  saveModel: async (id: string, data: T.ModelProfile) => {
-    const r = await apiFetch<any>(
-      `/admin/insights/models/profile${q({ model: id })}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          expected_version: data.version,
-          description: data.description,
-          use_cases: data.useCases,
-          context_limit: data.contextLimit,
-          max_output: data.maxOutput,
-          input_modalities: data.inputModalities,
-          output_modalities: data.outputModalities,
-          reasoning: data.reasoning,
-          tool_calling: data.toolCalling,
-          structured_output: data.structuredOutput,
-          sources: data.sources.map((s) => ({ label: s.label, url: s.url, updated_at: s.updatedAt })),
-        }),
-      },
-    );
-    return r;
-  },  departments: async (
+  departments: async (
     f: T.FilterState,
     performanceModel: string,
     signal?: AbortSignal,

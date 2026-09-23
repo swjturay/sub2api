@@ -1,5 +1,13 @@
 # Development Journal
 
+## Insights official model catalog completion (2026-09-23)
+
+- Replaced the channel-derived Insights model directory with a 77-entry version-controlled allowlist of formal production models across OpenAI, Anthropic/Antigravity, Gemini, DeepSeek/OpenCode and Z.AI. The catalog now includes previously omitted current families and variants while excluding internal names such as `codex-auto-review`.
+- Added read-only profiles sourced from official vendor documentation, including descriptions, use cases, context/output limits, modalities and capability declarations. Existing Sub2API pricing resolution still supplies reference prices and remains independent from catalog membership.
+- Removed admin profile PUT/DELETE routes, database-backed profile reads/writes, the frontend edit form and the client mutation API. The legacy migration-239 table remains untouched for compatibility; no automatic discovery, scheduled sync or periodic validation was introduced.
+
+Validation: full backend `go test -tags=unit ./...` passed with Git's `bin` on PATH and Go temp/cache redirected to the D drive; catalog/route regressions passed without an `insights_model_metadata` fixture. React ESLint, TypeScript, 17 files / 57 tests and production build passed. No production write, deployment or paid inference request was performed.
+
 ## Insights coverage and navigation fixes (2026-09-23)
 
 - Replaced permanently hard-coded partial status on personal usage, usage logs, error logs, daily rollups and the heatmap with range-aware coverage derived from the trusted collection interval and verified daily rollup rows. Partial responses now include the trusted start/observed-through boundary so the UI can explain exactly which earlier dates cannot be certified; unavailable pre-activation history is not fabricated or silently labelled complete.

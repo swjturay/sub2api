@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"sort"
-	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 )
 
 // InsightsCatalogModel is the deliberately small projection exposed to Insights.
@@ -12,39 +12,25 @@ type InsightsCatalogModel struct {
 	Platform        string
 	Name            string
 	DisplayName     string
+	Profile         insights.ModelProfile
 	OfficialPricing *PlazaOfficialPricing
 }
 
-// ListInsightsCatalog returns the system-wide configured model catalog.
+// ListInsightsCatalog returns the manually curated production model catalog.
+// Account mappings, channel configuration, and request history never add names
+// to this list; they may only supply reference pricing for an allowed entry.
 func (s *ModelPlazaService) ListInsightsCatalog(ctx context.Context) ([]InsightsCatalogModel, error) {
-	groups, err := s.ListGroups(ctx)
-	if err != nil {
-		return nil, err
+	official := insights.OfficialModelCatalog()
+	out := make([]InsightsCatalogModel, 0, len(official))
+	pricingMemo := make(map[string]*PlazaOfficialPricing, len(official))
+	for _, model := range official {
+		out = append(out, InsightsCatalogModel{
+			Platform:        model.Platform,
+			Name:            model.Name,
+			DisplayName:     model.DisplayName,
+			Profile:         model.Profile,
+			OfficialPricing: s.lookupOfficialPricing(ctx, model.Name, pricingMemo),
+		})
 	}
-	type key struct{ platform, name string }
-	seen := make(map[key]int)
-	out := make([]InsightsCatalogModel, 0)
-	for _, group := range groups {
-		for _, model := range group.Models {
-			k := key{strings.ToLower(strings.TrimSpace(model.Platform)), strings.ToLower(strings.TrimSpace(model.Name))}
-			if k.platform == "" || k.name == "" {
-				continue
-			}
-			if at, ok := seen[k]; ok {
-				if out[at].OfficialPricing == nil && model.OfficialPricing != nil {
-					out[at].OfficialPricing = model.OfficialPricing
-				}
-				continue
-			}
-			seen[k] = len(out)
-			out = append(out, InsightsCatalogModel{Platform: model.Platform, Name: model.Name, DisplayName: model.Name, OfficialPricing: model.OfficialPricing})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if strings.EqualFold(out[i].Platform, out[j].Platform) {
-			return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
-		}
-		return strings.ToLower(out[i].Platform) < strings.ToLower(out[j].Platform)
-	})
 	return out, nil
 }

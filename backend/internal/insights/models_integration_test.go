@@ -3,7 +3,6 @@ package insights
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -35,7 +34,7 @@ func TestModelStorePostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `SET search_path TO `+schema); err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`CREATE TABLE accounts(id BIGINT PRIMARY KEY,platform TEXT NOT NULL)`, `CREATE TABLE usage_logs(id BIGSERIAL PRIMARY KEY,request_id TEXT,user_id BIGINT NOT NULL,api_key_id BIGINT NOT NULL,account_id BIGINT NOT NULL,stream BOOLEAN NOT NULL,model TEXT NOT NULL,requested_model TEXT,input_tokens BIGINT NOT NULL,cache_creation_tokens BIGINT NOT NULL,cache_read_tokens BIGINT NOT NULL,output_tokens BIGINT NOT NULL,duration_ms INT,first_token_ms INT,actual_cost NUMERIC NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL)`, `CREATE TABLE insights_call_facts(id BIGSERIAL PRIMARY KEY,call_id UUID,request_id TEXT,user_id BIGINT,api_key_id BIGINT,platform TEXT,model TEXT,statistical_at TIMESTAMPTZ NOT NULL)`, `CREATE TABLE insights_model_metadata(platform TEXT NOT NULL,model TEXT NOT NULL,introduction TEXT,use_cases JSONB,capabilities JSONB,source_url TEXT,source_label TEXT,source_updated_at TIMESTAMPTZ,expected_version BIGINT NOT NULL DEFAULT 1,updated_by BIGINT,created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),PRIMARY KEY(platform,model))`} {
+	for _, q := range []string{`CREATE TABLE accounts(id BIGINT PRIMARY KEY,platform TEXT NOT NULL)`, `CREATE TABLE usage_logs(id BIGSERIAL PRIMARY KEY,request_id TEXT,user_id BIGINT NOT NULL,api_key_id BIGINT NOT NULL,account_id BIGINT NOT NULL,stream BOOLEAN NOT NULL,model TEXT NOT NULL,requested_model TEXT,input_tokens BIGINT NOT NULL,cache_creation_tokens BIGINT NOT NULL,cache_read_tokens BIGINT NOT NULL,output_tokens BIGINT NOT NULL,duration_ms INT,first_token_ms INT,actual_cost NUMERIC NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL)`, `CREATE TABLE insights_call_facts(id BIGSERIAL PRIMARY KEY,call_id UUID,request_id TEXT,user_id BIGINT,api_key_id BIGINT,platform TEXT,model TEXT,statistical_at TIMESTAMPTZ NOT NULL)`} {
 		if _, err = db.ExecContext(ctx, q); err != nil {
 			t.Fatal(err)
 		}
@@ -92,24 +91,5 @@ func TestModelStorePostgresIntegration(t *testing.T) {
 	partial, err := store.Trend(ctx, id, now.Add(5*time.Minute), now.Add(20*time.Minute), "hour")
 	if err != nil || len(partial) != 1 || partial[0].Performance.AverageRPM == nil || *partial[0].Performance.AverageRPM != 4.0/15.0 || partial[0].Complete {
 		t.Fatalf("partial trend=%+v err=%v", partial, err)
-	}
-	description := "profile"
-	p, err := store.PutProfile(ctx, id, ModelProfileInput{Description: &description, UseCases: []string{"chat"}, Reasoning: CapabilitySupported, ExpectedVersion: 0}, 99)
-	if err != nil || p.Version != 1 {
-		t.Fatalf("create=%+v err=%v", p, err)
-	}
-	_, err = store.PutProfile(ctx, id, ModelProfileInput{ExpectedVersion: 0}, 99)
-	if !errors.Is(err, ErrModelProfileConflict) {
-		t.Fatalf("stale create=%v", err)
-	}
-	p, err = store.PutProfile(ctx, id, ModelProfileInput{Description: &description, ExpectedVersion: 1}, 99)
-	if err != nil || p.Version != 2 {
-		t.Fatalf("update=%+v err=%v", p, err)
-	}
-	if err = store.DeleteProfile(ctx, id, 1); !errors.Is(err, ErrModelProfileConflict) {
-		t.Fatalf("stale delete=%v", err)
-	}
-	if err = store.DeleteProfile(ctx, id, 2); err != nil {
-		t.Fatal(err)
 	}
 }

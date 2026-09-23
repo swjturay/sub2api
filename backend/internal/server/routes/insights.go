@@ -19,7 +19,7 @@ func RegisterInsightsRoutes(v1 *gin.RouterGroup, h *handler.Handlers, jwtAuth mi
 	admin := v1.Group("/admin/insights")
 	admin.Use(gin.HandlerFunc(adminAuth), limiter.Heavy())
 	if h.InsightsModels != nil {
-		h.InsightsModels.RegisterRoutes(user, admin)
+		h.InsightsModels.RegisterRoutes(user)
 	}
 
 	admin.GET("/dimensions", h.Insights.Dimensions)

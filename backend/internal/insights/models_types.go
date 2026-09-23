@@ -2,13 +2,10 @@ package insights
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 )
-
-var ErrModelProfileConflict = errors.New("model profile version conflict")
 
 type ModelDisplayIdentity struct {
 	Platform    string `json:"platform"`
@@ -65,20 +62,6 @@ type ModelProfile struct {
 	Sources          []ProfileSource `json:"sources"`
 	UpdatedAt        *time.Time      `json:"updated_at"`
 	Version          int64           `json:"version"`
-}
-
-type ModelProfileInput struct {
-	Description      *string         `json:"description"`
-	UseCases         []string        `json:"use_cases"`
-	ContextLimit     *int64          `json:"context_limit"`
-	MaxOutput        *int64          `json:"max_output"`
-	InputModalities  []string        `json:"input_modalities"`
-	OutputModalities []string        `json:"output_modalities"`
-	Reasoning        Capability      `json:"reasoning"`
-	ToolCalling      Capability      `json:"tool_calling"`
-	StructuredOutput Capability      `json:"structured_output"`
-	Sources          []ProfileSource `json:"sources"`
-	ExpectedVersion  int64           `json:"expected_version"`
 }
 
 type ReferencePriceItem struct {

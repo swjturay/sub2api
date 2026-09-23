@@ -11,7 +11,7 @@ import type { ModelProfile } from "../lib/types";
 import { useRemote } from "../lib/useRemote";
 import { cn } from "../lib/cn";
 
-export function ModelsPage({ auto, admin }: { auto: boolean; admin: boolean }) {
+export function ModelsPage({ auto }: { auto: boolean }) {
   const [window, setWindow] = useState<"24h" | "7d">("24h");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -133,10 +133,7 @@ export function ModelsPage({ auto, admin }: { auto: boolean; admin: boolean }) {
       {detail && (
         <ModelDetailDialog
           model={detail}
-          admin={admin}
           close={() => setDetail(null)}
-          reload={() => openDetail(detail.id)}
-          onSaved={async () => { await openDetail(detail.id); await state.refresh(); }}
           restoreFocusElement={detailOpener.current}
         />
       )}

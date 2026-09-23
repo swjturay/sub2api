@@ -1,24 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ExternalLink, SlidersHorizontal } from "lucide-react";
-import { Button } from "../../components/ui/Button";
-import { Input, Select } from "../../components/ui/Controls";
+import { useEffect, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/Dialog";
-import { insightsApi } from "../../lib/api";
-import { ApiRequestError } from "../../lib/auth";
 import type { Capability, ModelProfile } from "../../lib/types";
 import { PricingList } from "./PricingList";
 import { restoreModelDialogFocus } from "./modelDialogFocus";
 
 const capability = (value: Capability) => value === "supported" ? "支持" : value === "unsupported" ? "不支持" : "未知";
-const splitLines = (value: string) => value.split(String.fromCharCode(10)).map((item) => item.replace(String.fromCharCode(13), ""));
-
 function safeUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -28,62 +21,18 @@ function safeUrl(url: string) {
   }
 }
 
-export function ModelDetailDialog({ model, admin, close, reload, onSaved, restoreFocusElement }: {
+export function ModelDetailDialog({ model, close, restoreFocusElement }: {
   model: ModelProfile;
-  admin: boolean;
   close: () => void;
-  reload: () => Promise<void>;
-  onSaved: () => Promise<void>;
   restoreFocusElement: HTMLElement | null;
 }) {
   const [open, setOpen] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(model);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [conflict, setConflict] = useState(false);
   const closeTimer = useRef<number | null>(null);
-  const canEdit = admin && model.editable;
 
-  useEffect(() => {
-    if (!editing) setDraft(model);
-  }, [editing, model]);
   useEffect(() => () => {
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
   }, []);
 
-  const set = <K extends keyof ModelProfile>(key: K, value: ModelProfile[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const cancelEditing = () => {
-    setDraft(model);
-    setEditing(false);
-    setError("");
-    setConflict(false);
-  };
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    setConflict(false);
-    try {
-      await insightsApi.saveModel(model.id, draft);
-      await onSaved();
-      setEditing(false);
-    } catch (caught) {
-      if (caught instanceof ApiRequestError && caught.status === 409) {
-        setConflict(true);
-        setError("资料已被其他管理员更新，请重新加载后再编辑。");
-      } else {
-        setError((caught as Error).message);
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-  const reloadLatest = async () => {
-    setEditing(false);
-    setError("");
-    setConflict(false);
-    await reload();
-  };
   const changeOpen = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) {
@@ -100,72 +49,12 @@ export function ModelDetailDialog({ model, admin, close, reload, onSaved, restor
       >
         <DialogHeader>
           <DialogTitle>{model.name}</DialogTitle>
-          <DialogDescription>{model.platform} · 模型资料与当前聚合指标</DialogDescription>
+          <DialogDescription>{model.platform} · 官方模型资料与当前聚合指标</DialogDescription>
         </DialogHeader>
-        {error && (
-          <div role="alert" className="mt-4 flex flex-wrap items-center gap-2 rounded-[8px] border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-            <span className="flex-1">{error}</span>
-            {conflict && <Button variant="secondary" onClick={() => void reloadLatest()}>重新加载</Button>}
-          </div>
-        )}
-        <div className="mt-5">{editing ? <ProfileForm value={draft} set={set} /> : <ProfileView model={model} />}</div>
-        <DialogFooter>
-          {canEdit && (editing ? (
-            <>
-              <Button variant="secondary" disabled={saving} onClick={cancelEditing}>取消</Button>
-              <Button disabled={saving} onClick={() => void save()}>{saving ? "保存中" : "保存资料"}</Button>
-            </>
-          ) : <Button onClick={() => setEditing(true)}><SlidersHorizontal aria-hidden="true" />编辑资料</Button>)}
-        </DialogFooter>
+        <div className="mt-5"><ProfileView model={model} /></div>
       </DialogContent>
     </Dialog>
   );
-}
-
-function ProfileForm({ value, set }: {
-  value: ModelProfile;
-  set: <K extends keyof ModelProfile>(key: K, value: ModelProfile[K]) => void;
-}) {
-  const capabilities: Array<[keyof Pick<ModelProfile, "reasoning" | "toolCalling" | "structuredOutput">, string]> = [
-    ["reasoning", "推理"],
-    ["toolCalling", "工具调用"],
-    ["structuredOutput", "结构化输出"],
-  ];
-  return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="介绍" wide><textarea className="min-h-24 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-3 text-sm" value={value.description || ""} onChange={(event) => set("description", event.target.value || null)} /></Field>
-      <Field label="适用场景（每行一项）" wide><textarea className="min-h-24 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-3 text-sm" value={value.useCases.join(String.fromCharCode(10))} onChange={(event) => set("useCases", splitLines(event.target.value).map((item) => item.trim()).filter(Boolean))} /></Field>
-      <NumberField label="上下文上限" value={value.contextLimit} set={(next) => set("contextLimit", next)} />
-      <NumberField label="最大输出" value={value.maxOutput} set={(next) => set("maxOutput", next)} />
-      <TextList label="输入模态（逗号分隔）" value={value.inputModalities} set={(next) => set("inputModalities", next)} />
-      <TextList label="输出模态（逗号分隔）" value={value.outputModalities} set={(next) => set("outputModalities", next)} />
-      {capabilities.map(([key, label]) => (
-        <Field label={label} key={key}><Select value={value[key]} onChange={(event) => set(key, event.target.value as Capability)}><option value="unknown">未知</option><option value="supported">支持</option><option value="unsupported">不支持</option></Select></Field>
-      ))}
-      <Field label="资料来源（每行：标签 | URL | YYYY-MM-DD）" wide>
-        <textarea
-          className="min-h-28 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-3 text-sm"
-          value={value.sources.map((source) => [source.label, source.url, source.updatedAt?.slice(0, 10) || ""].join(" | ")).join(String.fromCharCode(10))}
-          onChange={(event) => set("sources", splitLines(event.target.value).map((line) => {
-            const [label = "", url = "", updatedAt = ""] = line.split("|").map((part) => part.trim());
-            return { label, url, updatedAt: updatedAt || null };
-          }).filter((source) => source.label || source.url))}
-        />
-      </Field>
-    </div>
-  );
-}
-
-function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
-  return <label className={(wide ? "sm:col-span-2 " : "") + "grid gap-1.5 text-sm font-medium"}>{label}{children}</label>;
-}
-
-function NumberField({ label, value, set }: { label: string; value: number | null; set: (value: number | null) => void }) {
-  return <Field label={label}><Input type="number" min="0" step="1" value={value ?? ""} onChange={(event) => set(event.target.value ? Number(event.target.value) : null)} /></Field>;
-}
-
-function TextList({ label, value, set }: { label: string; value: string[]; set: (value: string[]) => void }) {
-  return <Field label={label}><Input value={value.join(", ")} onChange={(event) => set(event.target.value.split(",").map((item) => item.trim()).filter(Boolean))} /></Field>;
 }
 
 function ProfileView({ model }: { model: ModelProfile }) {

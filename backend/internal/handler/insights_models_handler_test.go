@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/insights"
@@ -28,5 +29,20 @@ func TestInsightsModelsIdentityPreservesSlashAndFurtherColon(t *testing.T) {
 	id, err := insights.ParseModelIdentity("OpenAI:org/model:latest")
 	if err != nil || id.Platform != "OpenAI" || id.Name != "org/model:latest" {
 		t.Fatalf("identity=%+v err=%v", id, err)
+	}
+}
+
+func TestInsightsModelsRoutesAreReadOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	h := &InsightsModelsHandler{}
+	h.RegisterRoutes(r.Group("/api/v1/insights"))
+	for _, route := range r.Routes() {
+		if route.Method != http.MethodGet {
+			t.Fatalf("unexpected writable model route: %s %s", route.Method, route.Path)
+		}
+		if strings.Contains(route.Path, "/profile") {
+			t.Fatalf("editable profile route remains registered: %s", route.Path)
+		}
 	}
 }

@@ -35,7 +35,6 @@ const model: ModelProfile = {
     ttft: { value: null },
     tpot: { value: null },
   },
-  editable: true,
 };
 
 function ComparisonHarness() {
@@ -81,10 +80,7 @@ function DetailHarness() {
       {detail && (
         <ModelDetailDialog
           model={model}
-          admin={false}
           close={() => setDetail(false)}
-          reload={async () => undefined}
-          onSaved={async () => undefined}
           restoreFocusElement={opener.current}
         />
       )}
