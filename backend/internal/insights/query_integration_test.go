@@ -311,7 +311,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	gotQuality := mustType[Quality](t, mustType[map[string]any](t, quality.Data)["summary"])
-	if gotQuality.Total == nil || *gotQuality.Total != 9 || gotQuality.SuccessRate == nil || *gotQuality.SuccessRate != float64(8)/9 {
+	if gotQuality.Total == nil || *gotQuality.Total != 10 || gotQuality.SuccessRate == nil || *gotQuality.SuccessRate != float64(9)/10 {
 		t.Fatalf("quality=%+v", gotQuality)
 	}
 	filteredQuality, err := q.GatewayQualityFiltered(ctx, from, to, "day", []string{"A/B"})
