@@ -41,9 +41,23 @@ const coverageLabels: Record<string, string> = {
   department_attribute: "部门字段",
   first_activity: "首次活跃记录",
 };
-const coverageMessage = (x: Meta["coverage"][number]) => {
+const coverageBoundary = (value: string, timezone: string) => {
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(at);
+};
+const coverageMessage = (x: Meta["coverage"][number], timezone: string) => {
   if (x.dataset === "department_attribute" && x.status === "not_configured") return "部门字段尚未配置";
-  if (x.status === "partial") return `${coverageLabels[x.dataset] || "部分数据"}尚未完整采集`;
+  if (x.status === "partial" && x.from) return (coverageLabels[x.dataset] || "部分数据") + "仅从 " + coverageBoundary(x.from, timezone) + " 起可确认完整；所选范围包含更早记录";
+  if (x.status === "partial") return (coverageLabels[x.dataset] || "部分数据") + "尚未完整采集";
   if (x.status === "not_collected") return `${coverageLabels[x.dataset] || "相关数据"}尚未采集`;
   return `${coverageLabels[x.dataset] || "相关数据"}暂不可用`;
 };
@@ -57,7 +71,7 @@ const cov = (m: Meta, datasets?: string[]): T.Coverage => {
             : x.status === "not_collected" || x.status === "not_configured"
               ? "uncollected"
               : "unavailable",
-        message: coverageMessage(x),
+        message: coverageMessage(x, m.timezone),
         from: x.from,
         to: x.to,
       }

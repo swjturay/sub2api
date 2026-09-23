@@ -1,5 +1,13 @@
 # Development Journal
 
+## Insights coverage and navigation fixes (2026-09-23)
+
+- Replaced permanently hard-coded partial status on personal usage, usage logs, error logs, daily rollups and the heatmap with range-aware coverage derived from the trusted collection interval and verified daily rollup rows. Partial responses now include the trusted start/observed-through boundary so the UI can explain exactly which earlier dates cannot be certified; unavailable pre-activation history is not fabricated or silently labelled complete.
+- Renamed the independent application brand to `AI基础设施看板`. The account dropdown is non-modal so opening it no longer applies document scroll locking or shifts the page.
+- Moved the original Sub2API navigation entry out of both user and administrator sidebars and placed it immediately after the announcement bell in the desktop header.
+- Gave the personal usage log a fixed column contract, wider Token detail column, separate performance column, borders and subtle group background so token and latency details remain distinct.
+
+Validation: PostgreSQL-backed Insights query tests, handler/route unit tests, React tests/lint/typecheck/build, original Vue targeted tests/lint/typecheck/build and whitespace checks pass. A real 1440×900 local browser session confirmed zero shell movement when the account menu opens, one header Insights link directly after the announcement bell, no sidebar Insights link, and non-overlapping Token/performance columns. Browser fixtures are synthetic.
 ## Insights PC composition and component redesign (2026-09-23)
 
 Base: 4eb2620eadf2ebe56134ffd6fffeb105222de50e. Branch: codex/insights-pc-polish.

@@ -212,7 +212,14 @@ func (q *Query) UsageLogs(ctx context.Context, userID int64, from, to time.Time,
 		last := items[len(items)-1]
 		page.NextCursor = encodeCursor(last.RecordedAt, strconv.FormatInt(last.ID, 10))
 	}
-	return q.envelope(map[string]any{"items": items, "page": page}, []CoverageInfo{{Dataset: "usage_detail", Status: "partial"}, departmentCoverage}), rows.Err()
+	if err := rows.Err(); err != nil {
+		return Envelope{}, err
+	}
+	usageCoverage, err := q.rawCoverageInfo(ctx, "usage", "usage_detail", from, to)
+	if err != nil {
+		return Envelope{}, err
+	}
+	return q.envelope(map[string]any{"items": items, "page": page}, []CoverageInfo{usageCoverage, departmentCoverage}), nil
 }
 
 func nullableTime(value time.Time) any {
@@ -258,7 +265,14 @@ func (q *Query) ErrorLogs(ctx context.Context, userID int64, from, to time.Time,
 		last := items[len(items)-1]
 		page.NextCursor = encodeCursor(last.RecordedAt, last.ID)
 	}
-	return q.envelope(map[string]any{"items": items, "page": page}, []CoverageInfo{{Dataset: "error_detail", Status: "partial"}, departmentCoverage}), rows.Err()
+	if err := rows.Err(); err != nil {
+		return Envelope{}, err
+	}
+	errorCoverage, err := q.rawCoverageInfo(ctx, "errors", "error_detail", from, to)
+	if err != nil {
+		return Envelope{}, err
+	}
+	return q.envelope(map[string]any{"items": items, "page": page}, []CoverageInfo{errorCoverage, departmentCoverage}), nil
 }
 
 func NewQuery(db *sql.DB, timezone string) *Query {
@@ -359,8 +373,15 @@ func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.T
 		item.Ratio = Ratio(item.RequestCount, requests)
 		modelItems = append(modelItems, item)
 	}
+	if err := modelRows.Err(); err != nil {
+		return Envelope{}, err
+	}
 	data := UsageData{Summary: summary, Buckets: buckets, Models: modelItems}
-	return q.envelope(data, []CoverageInfo{{Dataset: "usage_detail", Status: "partial", Detail: "bounded by retained usage_logs"}}), nil
+	coverage, err := q.rawCoverageInfo(ctx, "usage", "usage_detail", from, to)
+	if err != nil {
+		return Envelope{}, err
+	}
+	return q.envelope(data, []CoverageInfo{coverage}), nil
 }
 
 func nullableTextArray(values []string) any {
@@ -424,7 +445,14 @@ func (q *Query) PersonalUsageDaily(ctx context.Context, userID int64, from, to t
 		item.Ratio = Ratio(item.RequestCount, requests)
 		items = append(items, item)
 	}
-	return q.envelope(UsageData{Summary: summary, Buckets: buckets, Models: items}, []CoverageInfo{{Dataset: "daily_user_model", Status: "partial", Detail: "daily rollup fallback"}}), nil
+	if err := modelRows.Err(); err != nil {
+		return Envelope{}, err
+	}
+	coverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_user_model", from, to)
+	if err != nil {
+		return Envelope{}, err
+	}
+	return q.envelope(UsageData{Summary: summary, Buckets: buckets, Models: items}, []CoverageInfo{coverage}), nil
 }
 
 // PersonalUsageCombined reads closed historical days from the daily rollup and
@@ -453,7 +481,15 @@ func (q *Query) PersonalUsageCombined(ctx context.Context, userID int64, from, t
 		return Envelope{}, fmt.Errorf("invalid current usage response")
 	}
 	data := mergeUsageData(oldData, newData, from, to, q.now().In(mustLocation(q.timezone)))
-	return q.envelope(data, []CoverageInfo{{Dataset: "daily_user_model", Status: "partial", Detail: "historical closed days"}, {Dataset: "usage_detail", Status: "partial", Detail: "retained raw days"}}), nil
+	dailyCoverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_user_model", from, split)
+	if err != nil {
+		return Envelope{}, err
+	}
+	rawCoverage, err := q.rawCoverageInfo(ctx, "usage", "usage_detail", split, to)
+	if err != nil {
+		return Envelope{}, err
+	}
+	return q.envelope(data, []CoverageInfo{dailyCoverage, rawCoverage}), nil
 }
 
 func mergeUsageData(a, b UsageData, from, to, now time.Time) UsageData {
@@ -680,7 +716,15 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 		}
 		days = append(days, d)
 	}
-	coverage := []CoverageInfo{{Dataset: "daily_rollups", Status: q.coverageWindowStatus(states["daily_rollups"], start, dailyEnd)}, {Dataset: "usage_detail", Status: "partial", Detail: "only observed rows or verified source coverage distinguish zero from missing"}}
+	dailyCoverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_rollups", start, dailyEnd)
+	if err != nil {
+		return Envelope{}, err
+	}
+	rawCoverage := CoverageInfo{Dataset: "usage_detail", Status: "complete"}
+	if rawStart.Before(end) {
+		rawCoverage = coverageInfoFromState("usage_detail", states["usage"], q.coverageWindowStatus(states["usage"], rawStart, end))
+	}
+	coverage := []CoverageInfo{dailyCoverage, rawCoverage}
 	return q.envelope(map[string]any{"year": year, "days": days, "scale": HeatmapScale{MaxTokens: maxTokens, Thresholds: thresholds}}, coverage), nil
 }
 
@@ -761,6 +805,53 @@ func (q *Query) coverageStates(ctx context.Context) (map[string]Coverage, error)
 		states[dataset] = coverage
 	}
 	return states, nil
+}
+
+func coverageInfoFromState(dataset string, coverage Coverage, status string) CoverageInfo {
+	info := CoverageInfo{Dataset: dataset, Status: status}
+	if coverage.TrustedSince != nil {
+		value := coverage.TrustedSince.UTC().Format(time.RFC3339)
+		info.From = &value
+	}
+	if coverage.ObservedThrough != nil {
+		value := coverage.ObservedThrough.UTC().Format(time.RFC3339)
+		info.To = &value
+	}
+	if status != "complete" {
+		info.Detail = "the trusted collection interval does not fully cover the requested range"
+	}
+	return info
+}
+
+func (q *Query) rawCoverageInfo(ctx context.Context, source, dataset string, from, to time.Time) (CoverageInfo, error) {
+	if !from.Before(to) {
+		return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
+	}
+	states, err := q.coverageStates(ctx)
+	if err != nil {
+		return CoverageInfo{}, err
+	}
+	coverage := states[source]
+	return coverageInfoFromState(dataset, coverage, q.coverageWindowStatus(coverage, from, to)), nil
+}
+
+func (q *Query) rollupCoverageInfo(ctx context.Context, source, dataset string, from, to time.Time) (CoverageInfo, error) {
+	if !from.Before(to) {
+		return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
+	}
+	loc := mustLocation(q.timezone)
+	fromDate := from.In(loc).Format("2006-01-02")
+	toDate := to.In(loc).Format("2006-01-02")
+	var complete bool
+	err := q.db.QueryRowContext(ctx, `SELECT COALESCE(BOOL_AND(COALESCE(c.complete,false)),false) FROM generate_series($1::date,$2::date-1,interval '1 day') d LEFT JOIN insights_rollup_coverage c ON c.source=$3 AND c.stat_date=d::date`, fromDate, toDate, source).Scan(&complete)
+	if err != nil {
+		return CoverageInfo{}, err
+	}
+	info := CoverageInfo{Dataset: dataset, Status: boolCoverage(complete)}
+	if !complete {
+		info.Detail = "one or more requested calendar days lack verified source coverage"
+	}
+	return info, nil
 }
 
 func (q *Query) coverageWindowStatus(coverage Coverage, from, to time.Time) string {

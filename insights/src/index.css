@@ -92,12 +92,11 @@ svg { stroke-width: 1.8; }
 
 .app-header { position: sticky; top: 0; z-index: 30; height: 64px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, transparent); backdrop-filter: blur(14px); }
 .app-header__inner, .app-main { width: min(calc(100% - 48px), 1720px); margin-inline: auto; }
-.app-header__inner { display: grid; height: 64px; grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr); align-items: center; gap: 20px; }
+.app-header__inner { display: grid; height: 64px; grid-template-columns: minmax(220px, 1fr) auto minmax(190px, 1fr); align-items: center; gap: 20px; }
 .brand-mark { display: inline-flex; min-width: 0; align-items: center; gap: 9px; justify-self: start; text-decoration: none; }
 .brand-mark__icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-sm); }
 .brand-mark__icon svg { width: 16px; height: 16px; }
-.brand-mark__name { font-size: 14px; font-weight: 750; }
-.brand-mark__product { border-left: 1px solid var(--border); padding-left: 9px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.brand-mark__name { font-size: 14px; font-weight: 750; white-space: nowrap; }
 .module-tabs { display: flex; height: 40px; align-items: center; gap: 3px; border-radius: 8px; background: var(--surface-subtle); padding: 3px; }
 .module-tab { display: inline-flex; height: 34px; align-items: center; gap: 6px; border-radius: 6px; padding: 0 11px; color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; transition: color 150ms, background-color 150ms, box-shadow 150ms; }
 .module-tab svg { width: 15px; height: 15px; }
@@ -175,6 +174,12 @@ thead th { padding-block: 9px; color: var(--muted); font-size: 12px; font-weight
 tbody td { font-size: 13px; }
 tbody tr { transition: background-color 140ms; }
 tbody tr:hover { background: var(--surface-subtle); }
+.usage-log-table th, .usage-log-table td, .error-log-table th, .error-log-table td { padding-inline: 12px; }
+.usage-log-table th:first-child, .usage-log-table td:first-child, .error-log-table th:first-child, .error-log-table td:first-child { padding-left: 16px; }
+.usage-log-table th:last-child, .usage-log-table td:last-child, .error-log-table th:last-child, .error-log-table td:last-child { padding-right: 16px; }
+.log-token-column { border-left: 1px solid var(--border); background: color-mix(in srgb, var(--surface-subtle) 38%, transparent); }
+.log-performance-column { border-left: 1px solid var(--border); }
+.usage-log-table tbody tr:hover .log-token-column { background: color-mix(in srgb, var(--surface-muted) 48%, var(--surface)); }
 .model-card { transition: border-color 150ms, background-color 150ms, box-shadow 150ms; }
 .model-card:hover { border-color: var(--border-strong); box-shadow: 0 4px 14px rgba(24, 24, 27, 0.06); }
 

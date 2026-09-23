@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 
 const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSidebar.vue')
 const componentSource = readFileSync(componentPath, 'utf8')
+const headerPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppHeader.vue')
+const headerSource = readFileSync(headerPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
 
@@ -78,5 +80,21 @@ describe('AppSidebar subscription feature flag', () => {
     expect(componentSource).toMatch(/case 'recharge_only':\s*return t\('nav\.recharge'\)/)
     expect(componentSource).toMatch(/case 'subscription_only':\s*return t\('nav\.subscribe'\)/)
     expect(componentSource).toMatch(/path: '\/purchase'[^\n]*label: purchaseNavLabel\.value/)
+  })
+})
+
+describe('Insights navigation placement', () => {
+  it('keeps the independent dashboard out of the sidebar', () => {
+    expect(componentSource).not.toContain("path: '/insights/'")
+  })
+
+  it('places the independent dashboard immediately after the announcement bell', () => {
+    const announcementIndex = headerSource.indexOf('<AnnouncementBell v-if="user" />')
+    const insightsIndex = headerSource.indexOf('href="/insights/"')
+    const docsIndex = headerSource.indexOf('v-if="docUrl"')
+
+    expect(announcementIndex).toBeGreaterThan(-1)
+    expect(insightsIndex).toBeGreaterThan(announcementIndex)
+    expect(insightsIndex).toBeLessThan(docsIndex)
   })
 })

@@ -49,10 +49,9 @@ export function Shell({ user, children, autoRefresh, setAutoRefresh, updatedAt, 
         <a href="#insights-main" className="skip-link">跳到主要内容</a>
         <header className="app-header">
           <div className="app-header__inner">
-            <a href={dashboardUrl} className="brand-mark" aria-label="Sub2API Insights">
+            <a href={dashboardUrl} className="brand-mark" aria-label="AI基础设施看板">
               <span className="brand-mark__icon"><BarChart3 aria-hidden="true" /></span>
-              <span className="brand-mark__name">Sub2API</span>
-              <span className="brand-mark__product">Insights</span>
+              <span className="brand-mark__name">AI基础设施看板</span>
             </a>
             <ModuleTabs admin={admin} />
             <div className="header-actions">
@@ -64,7 +63,7 @@ export function Shell({ user, children, autoRefresh, setAutoRefresh, updatedAt, 
                 <TooltipTrigger asChild><Button type="button" variant="ghost" className="icon-button" onClick={() => setDark(!dark)} aria-label={dark ? "切换为浅色模式" : "切换为深色模式"}>{dark ? <Sun /> : <Moon />}</Button></TooltipTrigger>
                 <TooltipContent>{dark ? "浅色模式" : "深色模式"}</TooltipContent>
               </Tooltip>
-              <DropdownMenu>
+              <DropdownMenu modal={false}>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" variant="ghost" className="account-menu-trigger" aria-label="用户菜单">
                     <span className="account-avatar">{initial}</span>

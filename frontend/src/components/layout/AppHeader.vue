@@ -26,6 +26,18 @@
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
+        <!-- Independent Insights application -->
+        <a
+          v-if="user"
+          href="/insights/"
+          :title="t('nav.insights')"
+          :aria-label="t('nav.insights')"
+          class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+        >
+          <Icon name="chart" size="sm" />
+          <span class="hidden xl:inline">{{ t('nav.insights') }}</span>
+        </a>
+
         <!-- Docs Link -->
         <a
           v-if="docUrl"

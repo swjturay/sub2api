@@ -190,10 +190,19 @@ export function PersonalPage({ auto }: { auto: boolean }) {
         {logs.data && <div className="mt-4"><CoverageBanner coverage={logs.data.coverage} /></div>}
         {logs.loading && !logs.data ? <Loading /> : logs.data?.items.length ? (
           <div className="mt-3 min-w-0 max-w-full overflow-x-auto rounded-[10px] border border-[var(--border)]">
-            <table className="w-full min-w-[1040px] text-sm">
+            <table className={tab === "usage" ? "usage-log-table w-full min-w-[1240px] table-fixed text-sm" : "error-log-table w-full min-w-[1040px] table-fixed text-sm"}>
+              {tab === "usage" ? (
+                <colgroup>
+                  <col className="w-[170px]" /><col className="w-[130px]" /><col className="w-[230px]" /><col className="w-[180px]" /><col className="w-[280px]" /><col className="w-[160px]" /><col className="w-[90px]" />
+                </colgroup>
+              ) : (
+                <colgroup>
+                  <col className="w-[180px]" /><col className="w-[240px]" /><col className="w-[180px]" /><col /><col className="w-[90px]" />
+                </colgroup>
+              )}
               <thead className="bg-[var(--surface-subtle)] text-left muted">
                 <tr>{tab === "usage" ? (
-                  <><th className="pl-4">统计时间</th><th>部门</th><th>模型</th><th>API Key</th><th>Token 明细</th><th>性能</th></>
+                  <><th className="pl-4">统计时间</th><th>部门</th><th>模型</th><th>API Key</th><th className="log-token-column">Token 明细</th><th className="log-performance-column">性能</th></>
                 ) : (
                   <><th className="pl-4">时间</th><th>模型</th><th>错误类型</th><th>简要原因</th></>
                 )}<th className="pr-4 text-right">元数据</th></tr>
@@ -262,9 +271,9 @@ function LogRow({ row, kind, timezone }: { row: UsageLog | ErrorLog; kind: "usag
     const usage = row as UsageLog;
     return <>
       <tr className="border-t border-[var(--border)] align-top">
-        <td className="py-3 pl-4 whitespace-nowrap">{dateTime(usage.recordedAt, timezone)}</td><td>{usage.department || "未分配"}</td><td className="max-w-64 [overflow-wrap:anywhere]">{usage.model}</td><td className="max-w-48 [overflow-wrap:anywhere]">{usage.apiKeyName}</td>
-        <td><div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs"><LogValue label="输入" value={usage.inputTokens} /><LogValue label="输出" value={usage.outputTokens} /><LogValue label="缓存写" value={usage.cacheWriteTokens} /><LogValue label="缓存读" value={usage.cacheReadTokens} /></div></td>
-        <td><div className="grid gap-1 text-xs"><LogValue label="耗时" value={usage.durationMs} unit="ms" /><LogValue label="TTFT" value={usage.ttftMs} unit="ms" /></div></td><td className="pr-4 text-right">{toggle}</td>
+        <td className="py-3 pl-4 whitespace-nowrap">{dateTime(usage.recordedAt, timezone)}</td><td>{usage.department || "未分配"}</td><td className="[overflow-wrap:anywhere]">{usage.model}</td><td className="[overflow-wrap:anywhere]">{usage.apiKeyName}</td>
+        <td className="log-token-column"><div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-xs"><LogValue label="输入" value={usage.inputTokens} /><LogValue label="输出" value={usage.outputTokens} /><LogValue label="缓存写" value={usage.cacheWriteTokens} /><LogValue label="缓存读" value={usage.cacheReadTokens} /></div></td>
+        <td className="log-performance-column"><div className="grid gap-1.5 text-xs"><LogValue label="耗时" value={usage.durationMs} unit="ms" /><LogValue label="TTFT" value={usage.ttftMs} unit="ms" /></div></td><td className="pr-4 text-right">{toggle}</td>
       </tr>
       {open && <tr><td colSpan={7} className="border-t border-[var(--border)] bg-[var(--surface-subtle)] px-4 py-3"><pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(usage.metadata, null, 2)}</pre></td></tr>}
     </>;

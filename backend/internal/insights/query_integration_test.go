@@ -108,6 +108,20 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_settings VALUES('coverage',jsonb_build_object('usage',jsonb_build_object('status','complete','trusted_since',$1::timestamptz,'observed_through',$2::timestamptz)))`, from, to); err != nil {
 		t.Fatal(err)
 	}
+	coveredUsage, err := q.PersonalUsage(ctx, 7, from, to, "day", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(coveredUsage.Meta.Coverage) != 1 || coveredUsage.Meta.Coverage[0].Status != "complete" {
+		t.Fatalf("covered usage metadata=%+v", coveredUsage.Meta.Coverage)
+	}
+	preTrustUsage, err := q.PersonalUsage(ctx, 7, from.Add(-time.Hour), to, "day", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preTrustUsage.Meta.Coverage) != 1 || preTrustUsage.Meta.Coverage[0].Status != "partial" || preTrustUsage.Meta.Coverage[0].From == nil {
+		t.Fatalf("pre-trust usage metadata=%+v", preTrustUsage.Meta.Coverage)
+	}
 	coveredHeatmap, e := q.Heatmap(ctx, 7, 2026, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if e != nil {
 		t.Fatal(e)
