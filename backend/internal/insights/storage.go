@@ -144,7 +144,7 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('insights_daily_rollup_v1'))`); err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (s *Store) SaveCoverage(ctx context.Context, coverage map[string]Coverage) 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var raw []byte
 	err = tx.QueryRowContext(ctx, `SELECT value FROM insights_settings WHERE key='coverage' FOR UPDATE`).Scan(&raw)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

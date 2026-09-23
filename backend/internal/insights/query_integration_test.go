@@ -13,6 +13,15 @@ import (
 	_ "github.com/lib/pq"
 )
 
+func mustType[T any](t *testing.T, value any) T {
+	t.Helper()
+	typed, ok := value.(T)
+	if !ok {
+		t.Fatalf("unexpected type %T", value)
+	}
+	return typed
+}
+
 func TestQueryPostgresIntegration(t *testing.T) {
 	dsn := os.Getenv("INSIGHTS_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -76,7 +85,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	summary := usage.Data.(UsageData).Summary
+	summary := mustType[UsageData](t, usage.Data).Summary
 	if summary.RequestCount != 2 || summary.Tokens.Total != 200 || summary.ActiveDays != 1 {
 		t.Fatalf("usage=%+v", summary)
 	}
@@ -84,7 +93,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filteredSummary := filtered.Data.(UsageData).Summary
+	filteredSummary := mustType[UsageData](t, filtered.Data).Summary
 	if filteredSummary.RequestCount != 1 || filteredSummary.Tokens.Total != 200 {
 		t.Fatalf("filtered=%+v", filteredSummary)
 	}
@@ -92,7 +101,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	heatmapDays := heatmap.Data.(map[string]any)["days"].([]HeatmapDay)
+	heatmapDays := mustType[[]HeatmapDay](t, mustType[map[string]any](t, heatmap.Data)["days"])
 	if len(heatmapDays) != 365 || heatmapDays[0].State != "missing" || heatmapDays[243].State != "value" || heatmapDays[243].TotalTokens != 200 || heatmapDays[245].State != "missing" {
 		t.Fatalf("heatmap sample=%+v zero=%+v len=%d", heatmapDays[243], heatmapDays[245], len(heatmapDays))
 	}
@@ -103,7 +112,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, d := range coveredHeatmap.Data.(map[string]any)["days"].([]HeatmapDay) {
+	for _, d := range mustType[[]HeatmapDay](t, mustType[map[string]any](t, coveredHeatmap.Data)["days"]) {
 		if d.Date == "2026-09-03" && d.State != "zero" {
 			t.Fatalf("verified idle day=%+v", d)
 		}
@@ -118,7 +127,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	for _, d := range prunedHeatmap.Data.(map[string]any)["days"].([]HeatmapDay) {
+	for _, d := range mustType[[]HeatmapDay](t, mustType[map[string]any](t, prunedHeatmap.Data)["days"]) {
 		if d.Date == "2025-09-23" && d.State != "zero" {
 			t.Fatalf("durable zero coverage lost=%+v", d)
 		}
@@ -126,12 +135,12 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `DELETE FROM insights_settings WHERE key='coverage'`); err != nil {
 		t.Fatal(err)
 	}
-	scale := heatmap.Data.(map[string]any)["scale"].(HeatmapScale)
+	scale := mustType[HeatmapScale](t, mustType[map[string]any](t, heatmap.Data)["scale"])
 	olderHeatmap, e := q.Heatmap(ctx, 7, 2025, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if e != nil {
 		t.Fatal(e)
 	}
-	olderScale := olderHeatmap.Data.(map[string]any)["scale"].(HeatmapScale)
+	olderScale := mustType[HeatmapScale](t, mustType[map[string]any](t, olderHeatmap.Data)["scale"])
 	if olderScale.MaxTokens != scale.MaxTokens || fmt.Sprint(olderScale.Thresholds) != fmt.Sprint(scale.Thresholds) {
 		t.Fatalf("year selection changed shared scale: current=%+v old=%+v", scale, olderScale)
 	}
@@ -154,7 +163,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boundarySummary := boundary.Data.(UsageData).Summary
+	boundarySummary := mustType[UsageData](t, boundary.Data).Summary
 	if boundarySummary.RequestCount != 1 || boundarySummary.Tokens.Total != 2 {
 		t.Fatalf("boundary=%+v", boundarySummary)
 	}
@@ -166,7 +175,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dailyData := daily.Data.(UsageData)
+	dailyData := mustType[UsageData](t, daily.Data)
 	if dailyData.Summary.RequestCount != 2 || dailyData.Summary.Tokens.Total != 16 || len(dailyData.Buckets) != 1 || len(dailyData.Models) != 1 || dailyData.Models[0].Model != "OpenAI:A" {
 		t.Fatalf("daily=%+v", dailyData)
 	}
@@ -177,7 +186,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	combinedData := combined.Data.(UsageData)
+	combinedData := mustType[UsageData](t, combined.Data)
 	if combinedData.Summary.RequestCount != 5 || combinedData.Summary.Tokens.Total != 230 {
 		t.Fatalf("combined=%+v", combinedData.Summary)
 	}
@@ -185,7 +194,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := logs.Data.(map[string]any)["items"].([]UsageLogItem)
+	items := mustType[[]UsageLogItem](t, mustType[map[string]any](t, logs.Data)["items"])
 	if len(items) != 2 || items[1].Model != "OpenAI:public-model" || items[1].APIKeyName != "visible-key" {
 		t.Fatalf("logs=%+v", items)
 	}
@@ -199,7 +208,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityItems := identityLogs.Data.(map[string]any)["items"].([]UsageLogItem)
+	identityItems := mustType[[]UsageLogItem](t, mustType[map[string]any](t, identityLogs.Data)["items"])
 	identityModels := map[string]bool{}
 	for _, item := range identityItems {
 		identityModels[item.Model] = true
@@ -214,7 +223,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items = logs.Data.(map[string]any)["items"].([]UsageLogItem)
+	items = mustType[[]UsageLogItem](t, mustType[map[string]any](t, logs.Data)["items"])
 	if items[0].Department == nil || *items[0].Department != "Team AB" {
 		t.Fatalf("department=%v", items[0].Department)
 	}
@@ -242,7 +251,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	departmentSummary := departments.Data.(map[string]any)["summary"].(DepartmentSummary)
+	departmentSummary := mustType[DepartmentSummary](t, mustType[map[string]any](t, departments.Data)["summary"])
 	if departmentSummary.MemberCount != 2 || departmentSummary.ActiveMemberCount != 1 || departmentSummary.Tokens.Total != 200 || departmentSummary.RequestCount != 1 {
 		t.Fatalf("department summary=%+v", departmentSummary)
 	}
@@ -250,8 +259,8 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dailyDepartmentSummary := dailyDepartments.Data.(map[string]any)["summary"].(DepartmentSummary)
-	dailyDepartmentPerformance := dailyDepartments.Data.(map[string]any)["performance"].(ModelPerformance)
+	dailyDepartmentSummary := mustType[DepartmentSummary](t, mustType[map[string]any](t, dailyDepartments.Data)["summary"])
+	dailyDepartmentPerformance := mustType[ModelPerformance](t, mustType[map[string]any](t, dailyDepartments.Data)["performance"])
 	if dailyDepartmentSummary.RequestCount != 2 || dailyDepartmentSummary.Tokens.Total != 16 || dailyDepartmentPerformance.AverageRPM == nil || *dailyDepartmentPerformance.AverageRPM*10080 != 4 {
 		t.Fatalf("daily department=%+v perf=%+v", dailyDepartmentSummary, dailyDepartmentPerformance)
 	}
@@ -262,7 +271,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	errorItems := errorsEnvelope.Data.(map[string]any)["items"].([]ErrorLogItem)
+	errorItems := mustType[[]ErrorLogItem](t, mustType[map[string]any](t, errorsEnvelope.Data)["items"])
 	if len(errorItems) != 1 || errorItems[0].Reason != "visible" || errorItems[0].Department == nil || *errorItems[0].Department != "Team AB" {
 		t.Fatalf("errors=%+v", errorItems)
 	}
@@ -277,7 +286,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotQuality := quality.Data.(map[string]any)["summary"].(Quality)
+	gotQuality := mustType[Quality](t, mustType[map[string]any](t, quality.Data)["summary"])
 	if gotQuality.Total == nil || *gotQuality.Total != 9 || gotQuality.SuccessRate == nil || *gotQuality.SuccessRate != float64(8)/9 {
 		t.Fatalf("quality=%+v", gotQuality)
 	}
@@ -285,15 +294,15 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filteredQualitySummary := filteredQuality.Data.(map[string]any)["summary"].(Quality)
-	if filteredQualitySummary.Total == nil || *filteredQualitySummary.Total != 1 || len(filteredQuality.Data.(map[string]any)["buckets"].([]GatewayQualityBucket)) != 7 {
+	filteredQualitySummary := mustType[Quality](t, mustType[map[string]any](t, filteredQuality.Data)["summary"])
+	if filteredQualitySummary.Total == nil || *filteredQualitySummary.Total != 1 || len(mustType[[]GatewayQualityBucket](t, mustType[map[string]any](t, filteredQuality.Data)["buckets"])) != 7 {
 		t.Fatalf("filtered quality=%+v", filteredQuality.Data)
 	}
 	preferences, err := q.GatewayModelPreferences(ctx, from, to, []string{"A/B"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	prefs := preferences.Data.(map[string]any)["departments"].([]DepartmentPreference)
+	prefs := mustType[[]DepartmentPreference](t, mustType[map[string]any](t, preferences.Data)["departments"])
 	if len(prefs) != 1 || prefs[0].Department != "A/B" || prefs[0].Total != 1 {
 		t.Fatalf("preferences=%+v", prefs)
 	}
@@ -301,7 +310,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filteredUsers.Data.(map[string]any)["summary"].(map[string]int64)["end_users"] != 2 {
+	if mustType[map[string]int64](t, mustType[map[string]any](t, filteredUsers.Data)["summary"])["end_users"] != 2 {
 		t.Fatalf("filtered users=%+v", filteredUsers.Data)
 	}
 	oldFrom := time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
@@ -319,7 +328,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	longSummary := longQuality.Data.(map[string]any)["summary"].(Quality)
+	longSummary := mustType[Quality](t, mustType[map[string]any](t, longQuality.Data)["summary"])
 	if longSummary.Total == nil || *longSummary.Total != 26 {
 		t.Fatalf("long quality=%+v", longSummary)
 	}
@@ -327,7 +336,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	longPrefItems := longPrefs.Data.(map[string]any)["departments"].([]DepartmentPreference)
+	longPrefItems := mustType[[]DepartmentPreference](t, mustType[map[string]any](t, longPrefs.Data)["departments"])
 	if len(longPrefItems) != 1 || longPrefItems[0].Total != 26 {
 		t.Fatalf("long prefs=%+v", longPrefItems)
 	}
@@ -335,7 +344,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	longFreq := longUsers.Data.(map[string]any)["frequency"].(map[string]int64)
+	longFreq := mustType[map[string]int64](t, mustType[map[string]any](t, longUsers.Data)["frequency"])
 	if longFreq["medium"] != 1 || longFreq["low"] != 1 || longFreq["unclassified"] != 0 {
 		t.Fatalf("long frequency=%+v", longFreq)
 	}
@@ -356,7 +365,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frequency := users.Data.(map[string]any)["frequency"].(map[string]int64)
+	frequency := mustType[map[string]int64](t, mustType[map[string]any](t, users.Data)["frequency"])
 	if frequency["low"] != 7 || frequency["medium"] != 1 || frequency["high"] != 1 || frequency["unclassified"] != 0 {
 		t.Fatalf("frequency=%v", frequency)
 	}
@@ -368,8 +377,12 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := retention.Data.(map[string]any)
-	if data["next_day"].(RetentionLayer).Count == nil || *data["next_day"].(RetentionLayer).Count != 2 || data["day_7"].(RetentionLayer).Count == nil || *data["day_7"].(RetentionLayer).Count != 2 || data["day_30"].(RetentionLayer).Count == nil || *data["day_30"].(RetentionLayer).Count != 1 || data["first_request"].(RetentionLayer).Status != "partial" {
+	data := mustType[map[string]any](t, retention.Data)
+	nextDay := mustType[RetentionLayer](t, data["next_day"])
+	day7 := mustType[RetentionLayer](t, data["day_7"])
+	day30 := mustType[RetentionLayer](t, data["day_30"])
+	firstRequest := mustType[RetentionLayer](t, data["first_request"])
+	if nextDay.Count == nil || *nextDay.Count != 2 || day7.Count == nil || *day7.Count != 2 || day30.Count == nil || *day30.Count != 1 || firstRequest.Status != "partial" {
 		t.Fatalf("retention=%v", data)
 	}
 	if _, err = db.ExecContext(ctx, `UPDATE user_attribute_definitions SET type='multi_select' WHERE id=11`); err != nil {
@@ -408,7 +421,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hourBuckets := hourly.Data.(map[string]any)["buckets"].([]GatewayQualityBucket)
+	hourBuckets := mustType[[]GatewayQualityBucket](t, mustType[map[string]any](t, hourly.Data)["buckets"])
 	if len(hourBuckets) != 26 || hourBuckets[len(hourBuckets)-1].Complete {
 		t.Fatalf("hour buckets extend into future or mark open bucket complete: %+v", hourBuckets)
 	}

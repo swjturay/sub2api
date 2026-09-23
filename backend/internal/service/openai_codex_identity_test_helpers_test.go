@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 func codexShadowTestRows(convergence bool) (parent, shadow, other *Account) {

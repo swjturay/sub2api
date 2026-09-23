@@ -57,7 +57,7 @@ func (q *Query) GatewayQualityFiltered(ctx context.Context, from, to time.Time, 
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	observed := map[int64]GatewayQualityBucket{}
 	loc := mustLocation(q.timezone)
 	for rows.Next() {
@@ -127,7 +127,7 @@ func (q *Query) GatewayModelPreferences(ctx context.Context, from, to time.Time,
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	byDept := map[string]*DepartmentPreference{}
 	for rows.Next() {
 		var dept, model string
@@ -200,7 +200,7 @@ func (q *Query) GatewayUsersFiltered(ctx context.Context, from, to time.Time, gr
 		var id int64
 		var at time.Time
 		if err := rows.Scan(&id, &at); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return Envelope{}, err
 		}
 		ids = append(ids, id)
@@ -246,7 +246,7 @@ func (q *Query) GatewayUsersFiltered(ctx context.Context, from, to time.Time, gr
 		for countRows.Next() {
 			var id, count int64
 			if err := countRows.Scan(&id, &count); err != nil {
-				countRows.Close()
+				_ = countRows.Close()
 				return Envelope{}, err
 			}
 			switch ClassifyFrequency(count) {
@@ -402,7 +402,7 @@ SELECT bucket,SUM(success),SUM(failed),SUM(model_sum),SUM(model_n),SUM(gateway_s
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	observed := map[int64]GatewayQualityBucket{}
 	var total, success, failed, modelN, gatewayN int64
 	var modelSum, gatewaySum float64
@@ -497,7 +497,7 @@ func (q *Query) GatewayModelPreferencesLongTerm(ctx context.Context, from, to, s
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	by := map[string]*DepartmentPreference{}
 	for rows.Next() {
 		var dept, model string
@@ -572,7 +572,7 @@ func (q *Query) GatewayUsersLongTerm(ctx context.Context, from, to, split time.T
 		var id int64
 		var at time.Time
 		if err = rows.Scan(&id, &at); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return Envelope{}, err
 		}
 		ids = append(ids, id)
@@ -618,7 +618,7 @@ func (q *Query) GatewayUsersLongTerm(ctx context.Context, from, to, split time.T
 		for countRows.Next() {
 			var id, n int64
 			if e = countRows.Scan(&id, &n); e != nil {
-				countRows.Close()
+				_ = countRows.Close()
 				return Envelope{}, e
 			}
 			switch ClassifyFrequency(n) {

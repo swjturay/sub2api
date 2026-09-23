@@ -179,7 +179,7 @@ func (q *Query) UsageLogs(ctx context.Context, userID int64, from, to time.Time,
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]UsageLogItem, 0, pageSize+1)
 	for rows.Next() {
 		var item UsageLogItem
@@ -238,7 +238,7 @@ func (q *Query) ErrorLogs(ctx context.Context, userID int64, from, to time.Time,
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]ErrorLogItem, 0, pageSize+1)
 	for rows.Next() {
 		var item ErrorLogItem
@@ -327,7 +327,7 @@ func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.T
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	buckets := []UsageBucket{}
 	for rows.Next() {
 		var b UsageBucket
@@ -347,7 +347,7 @@ func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.T
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer modelRows.Close()
+	defer func() { _ = modelRows.Close() }()
 	modelItems := []UsageModel{}
 	for modelRows.Next() {
 		var item UsageModel
@@ -392,7 +392,7 @@ func (q *Query) PersonalUsageDaily(ctx context.Context, userID int64, from, to t
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	buckets := []UsageBucket{}
 	for rows.Next() {
 		var b UsageBucket
@@ -412,7 +412,7 @@ func (q *Query) PersonalUsageDaily(ctx context.Context, userID int64, from, to t
 	if err != nil {
 		return Envelope{}, err
 	}
-	defer modelRows.Close()
+	defer func() { _ = modelRows.Close() }()
 	items := []UsageModel{}
 	for modelRows.Next() {
 		var item UsageModel
@@ -444,8 +444,14 @@ func (q *Query) PersonalUsageCombined(ctx context.Context, userID int64, from, t
 	if err != nil {
 		return Envelope{}, err
 	}
-	oldData := oldEnv.Data.(UsageData)
-	newData := newEnv.Data.(UsageData)
+	oldData, ok := oldEnv.Data.(UsageData)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical usage response")
+	}
+	newData, ok := newEnv.Data.(UsageData)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current usage response")
+	}
 	data := mergeUsageData(oldData, newData, from, to, q.now().In(mustLocation(q.timezone)))
 	return q.envelope(data, []CoverageInfo{{Dataset: "daily_user_model", Status: "partial", Detail: "historical closed days"}, {Dataset: "usage_detail", Status: "partial", Detail: "retained raw days"}}), nil
 }
@@ -560,7 +566,7 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var d time.Time
 			var n int64
@@ -579,7 +585,7 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var d time.Time
 			var n int64
@@ -600,13 +606,13 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 	for coverageRows.Next() {
 		var at time.Time
 		if err = coverageRows.Scan(&at); err != nil {
-			coverageRows.Close()
+			_ = coverageRows.Close()
 			return Envelope{}, err
 		}
 		coveredDaily[at.Format("2006-01-02")] = true
 	}
 	err = coverageRows.Err()
-	coverageRows.Close()
+	_ = coverageRows.Close()
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -806,7 +812,7 @@ func (q *Query) GatewayUsers(ctx context.Context, from, to time.Time) (Envelope,
 		if err != nil {
 			return Envelope{}, err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var id, count int64
 			if err := rows.Scan(&id, &count); err != nil {

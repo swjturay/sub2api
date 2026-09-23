@@ -45,32 +45,6 @@ func codexWSWireProfileConfig() *config.Config {
 	return cfg
 }
 
-// codexWSStagedDialer 每次拨号交出下一条预置连接，并记录每次握手头与握手响应头。
-type codexWSStagedDialer struct {
-	mu        sync.Mutex
-	conns     []openAIWSClientConn
-	handshake http.Header
-	headers   []http.Header
-}
-
-func (d *codexWSStagedDialer) Dial(_ context.Context, _ string, headers http.Header, _ string) (openAIWSClientConn, int, http.Header, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.headers = append(d.headers, cloneHeader(headers))
-	if len(d.conns) == 0 {
-		return nil, 0, nil, errors.New("no staged upstream connection left")
-	}
-	conn := d.conns[0]
-	d.conns = d.conns[1:]
-	return conn, 0, cloneHeader(d.handshake), nil
-}
-
-func (d *codexWSStagedDialer) Headers() []http.Header {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return append([]http.Header(nil), d.headers...)
-}
-
 func codexWSCompletedEvent(id string) []byte {
 	return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.5","usage":{"input_tokens":1,"output_tokens":1}}}`)
 }

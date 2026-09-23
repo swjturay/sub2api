@@ -31,7 +31,7 @@ func (s *ModelStore) Performance(ctx context.Context, ids []ModelIdentity, from,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make(map[string]ModelPerformance)
 	minutes := to.Sub(from).Minutes()
 	for rows.Next() {
@@ -77,7 +77,7 @@ func (s *ModelStore) Trend(ctx context.Context, id ModelIdentity, from, to time.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]ModelTrendPoint, 0)
 	now := time.Now()
 	for rows.Next() {

@@ -109,9 +109,9 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	data := envelope.Data.(map[string]any)
-	firstLayer := data["first_request"].(RetentionLayer)
-	day1Layer := data["next_day"].(RetentionLayer)
+	data := mustType[map[string]any](t, envelope.Data)
+	firstLayer := mustType[RetentionLayer](t, data["first_request"])
+	day1Layer := mustType[RetentionLayer](t, data["next_day"])
 	if firstLayer.Count == nil || *firstLayer.Count != 1 || firstLayer.Ratio == nil || firstLayer.Status != "partial" {
 		t.Fatalf("observed first layer=%+v", firstLayer)
 	}

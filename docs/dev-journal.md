@@ -30,9 +30,9 @@ Validation:
 
 ## Insights release lint closure (2026-09-23)
 
-- Closed the new Insights `errcheck` findings by making database row, transaction and test-fixture cleanup handling explicit.
-- Replaced unchecked combined-department response assertions with validated contract errors and removed two unused aggregation locals.
-- Preserved the four pre-existing Codex test-helper lint findings outside the Insights release scope.
+- Closed the full uncapped lint inventory by making database row, transaction and test-fixture cleanup handling explicit and validating response contracts at every type assertion.
+- Replaced unchecked combined-department response assertions with validated contract errors and removed unused aggregation locals.
+- Matched the shared Codex helper to its existing unit-test build tag and removed an unreferenced dialer stub. No production identity behavior, lint rules or actual test cases were removed. CI now reports the full issue inventory without truncation.
 
 ## CCE 0.2.7 Selective KLNO Intake
 

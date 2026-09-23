@@ -117,7 +117,12 @@ func (h *InsightsHandler) Today(c *gin.Context) {
 		response.InternalError(c, "failed to query today tokens")
 		return
 	}
-	summary := usage.Data.(insights.UsageData).Summary
+	usageData, ok := usage.Data.(insights.UsageData)
+	if !ok {
+		response.InternalError(c, "invalid today token response")
+		return
+	}
+	summary := usageData.Summary
 	usage.Data = map[string]any{"date": from.Format("2006-01-02"), "subscriptions": items, "tokens": summary.Tokens}
 	c.JSON(http.StatusOK, usage)
 }

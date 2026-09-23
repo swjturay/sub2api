@@ -101,8 +101,6 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 	modelMap := map[string]*UsageModel{}
 	deptTotals := map[string]int64{}
 	userTotals := map[int64]*TopUser{}
-	var ttftSum float64
-	var ttftN int64
 	for _, a := range aggs {
 		summary.RequestCount += a.requests
 		addTokens(&summary.Tokens, a.tokens)
@@ -130,8 +128,6 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 			userTotals[a.userID] = u
 		}
 		u.TotalTokens += a.tokens.Total
-		ttftSum += a.ttftSum
-		ttftN += a.ttftN
 	}
 	summary.ActiveMemberCount = int64(len(active))
 	days := calendarDays(from, to, q.now().In(mustLocation(q.timezone)))
@@ -265,7 +261,7 @@ func (q *Query) DepartmentsDaily(ctx context.Context, from, to time.Time, granul
 		var date time.Time
 		var i, w, r, o int64
 		if err := rows.Scan(&date, &a.userID, &a.username, &a.department, &a.model, &a.requests, &i, &w, &r, &o, &a.ttftSum, &a.ttftN, &a.tpotSum, &a.tpotN); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return Envelope{}, err
 		}
 		a.bucket = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
@@ -366,11 +362,51 @@ func (q *Query) DepartmentsCombined(ctx context.Context, from, to, split time.Ti
 	}
 	summary.OutputRatio = Ratio(summary.Tokens.Output, summary.Tokens.Total)
 	summary.CacheHitRatio = CacheHitRatio(summary.Tokens)
-	buckets := mergeDepartmentBuckets(a["buckets"].([]DepartmentBucket), b["buckets"].([]DepartmentBucket))
-	modelItems := mergeUsageModels(a["models"].([]UsageModel), b["models"].([]UsageModel), summary.RequestCount)
-	pareto := mergePareto(a["pareto"].(map[string]any), b["pareto"].(map[string]any), summary.Tokens.Total)
-	top := mergeTopUsers(a["top_users"].([]TopUser), b["top_users"].([]TopUser))
-	perf := mergePerformance(a["performance"].(ModelPerformance), b["performance"].(ModelPerformance), split.Sub(from).Minutes(), to.Sub(split).Minutes())
+	oldBuckets, ok := a["buckets"].([]DepartmentBucket)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department buckets")
+	}
+	newBuckets, ok := b["buckets"].([]DepartmentBucket)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department buckets")
+	}
+	oldModels, ok := a["models"].([]UsageModel)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department models")
+	}
+	newModels, ok := b["models"].([]UsageModel)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department models")
+	}
+	oldPareto, ok := a["pareto"].(map[string]any)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department pareto")
+	}
+	newPareto, ok := b["pareto"].(map[string]any)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department pareto")
+	}
+	oldTop, ok := a["top_users"].([]TopUser)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department top users")
+	}
+	newTop, ok := b["top_users"].([]TopUser)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department top users")
+	}
+	oldPerf, ok := a["performance"].(ModelPerformance)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid historical department performance")
+	}
+	newPerf, ok := b["performance"].(ModelPerformance)
+	if !ok {
+		return Envelope{}, fmt.Errorf("invalid current department performance")
+	}
+	buckets := mergeDepartmentBuckets(oldBuckets, newBuckets)
+	modelItems := mergeUsageModels(oldModels, newModels, summary.RequestCount)
+	pareto := mergePareto(oldPareto, newPareto, summary.Tokens.Total)
+	top := mergeTopUsers(oldTop, newTop)
+	perf := mergePerformance(oldPerf, newPerf, split.Sub(from).Minutes(), to.Sub(split).Minutes())
 	return q.envelope(map[string]any{"summary": summary, "buckets": buckets, "models": modelItems, "pareto": pareto, "top_users": top, "performance": perf}, []CoverageInfo{{Dataset: "daily_user_model", Status: "partial"}, {Dataset: "usage_detail", Status: "partial"}, {Dataset: "department_attribute", Status: "complete"}}), nil
 }
 func mergeDepartmentBuckets(a, b []DepartmentBucket) []DepartmentBucket {
@@ -420,7 +456,7 @@ func mergeUsageModels(a, b []UsageModel, total int64) []UsageModel {
 	return out
 }
 func mergePareto(a, b map[string]any, total int64) map[string]any {
-	mode := a["mode"].(string)
+	mode, _ := a["mode"].(string)
 	merge := func(key string) []ParetoItem {
 		left, _ := a[key].([]ParetoItem)
 		right, _ := b[key].([]ParetoItem)

@@ -298,7 +298,7 @@ func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
 	for rows.Next() {
 		var id int64
 		if err = rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return
 		}
 		ids = append(ids, id)
@@ -306,7 +306,7 @@ func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
 		n++
 	}
 	err = rows.Err()
-	rows.Close()
+	_ = rows.Close()
 	if err != nil {
 		return
 	}
