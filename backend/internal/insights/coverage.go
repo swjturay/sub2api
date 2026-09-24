@@ -12,18 +12,16 @@ const (
 
 type Coverage struct {
 	Status          CoverageStatus `json:"status"`
-	TrustedSince    *time.Time     `json:"trusted_since,omitempty"`
 	ObservedThrough *time.Time     `json:"observed_through,omitempty"`
 	LastGapAt       *time.Time     `json:"last_gap_at,omitempty"`
 	Reason          string         `json:"reason,omitempty"`
 }
 
 func (c Coverage) Activate(at time.Time) Coverage {
-	if c.Status == CoverageComplete && c.TrustedSince != nil {
+	if c.Status == CoverageComplete {
 		return c
 	}
 	c.Status = CoverageComplete
-	c.TrustedSince = timePtr(at)
 	c.ObservedThrough = timePtr(at)
 	c.Reason = ""
 	return c
@@ -45,10 +43,6 @@ func (c Coverage) MarkGap(at time.Time, reason string) Coverage {
 	c.ObservedThrough = timePtr(at)
 	c.Reason = bounded(reason, 128)
 	return c
-}
-
-func (c Coverage) TrustsFirstCall(userCreatedAt, callAt time.Time) bool {
-	return c.Status == CoverageComplete && c.TrustedSince != nil && !userCreatedAt.Before(*c.TrustedSince) && !callAt.Before(userCreatedAt)
 }
 
 type AggregationConfig struct {

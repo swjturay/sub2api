@@ -29,7 +29,10 @@ def deployment(name: str, container: str) -> dict:
                         {
                             "name": container,
                             "image": "old@example.invalid/image@sha256:" + "0" * 64,
-                            "env": [{"name": "UNCHANGED", "value": "true"}],
+                            "env": [
+                                {"name": "UNCHANGED", "value": "true"},
+                                {"name": "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM", "value": "2026-09-23"},
+                            ],
                             "volumeMounts": [
                                 {"name": "config", "mountPath": "/config"},
                                 {"name": "previous-assets", "mountPath": "/previous"},
@@ -67,11 +70,12 @@ class ReleasePatchTest(unittest.TestCase):
         )
         self.assertIn(
             {
-                "name": "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM",
+                "name": "INSIGHTS_STATISTICS_START_DATE",
                 "value": "2026-06-01",
             },
             container["env"],
         )
+        self.assertNotIn("INSIGHTS_TRUSTED_USAGE_HISTORY_FROM", {item["name"] for item in container["env"]})
         self.assertEqual(pod_spec["terminationGracePeriodSeconds"], 75)
         self.assertEqual(
             pod_spec["imagePullSecrets"], [{"name": "acr-pull"}, {"name": "default-secret"}]

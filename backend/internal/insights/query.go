@@ -21,17 +21,16 @@ var ErrInvalidFilter = errors.New("invalid insights filter")
 var ErrOutsideRetention = errors.New("insights range outside detail retention")
 
 type CoverageInfo struct {
-	Dataset string  `json:"dataset"`
-	Status  string  `json:"status"`
-	From    *string `json:"from,omitempty"`
-	To      *string `json:"to,omitempty"`
-	Detail  string  `json:"detail,omitempty"`
+	Dataset string `json:"dataset"`
+	Status  string `json:"status"`
+	Detail  string `json:"detail,omitempty"`
 }
 
 type Meta struct {
-	Timezone    string         `json:"timezone"`
-	GeneratedAt time.Time      `json:"generated_at"`
-	Coverage    []CoverageInfo `json:"coverage"`
+	Timezone            string         `json:"timezone"`
+	GeneratedAt         time.Time      `json:"generated_at"`
+	StatisticsStartDate string         `json:"statistics_start_date,omitempty"`
+	Coverage            []CoverageInfo `json:"coverage"`
 }
 
 type Envelope struct {
@@ -94,9 +93,10 @@ func EstimatedTPOT(durationMS, firstTokenMS, outputTokens int64) *float64 {
 }
 
 type Query struct {
-	db       *sql.DB
-	timezone string
-	now      func() time.Time
+	db              *sql.DB
+	timezone        string
+	statisticsStart *time.Time
+	now             func() time.Time
 }
 
 type Page struct {
@@ -284,11 +284,11 @@ func (q *Query) ErrorLogs(ctx context.Context, userID int64, from, to time.Time,
 	return q.envelope(map[string]any{"items": items, "page": page}, []CoverageInfo{errorCoverage, departmentCoverage}), nil
 }
 
-func NewQuery(db *sql.DB, timezone string) *Query {
+func NewQuery(db *sql.DB, timezone string, statisticsStart *time.Time) *Query {
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	return &Query{db: db, timezone: timezone, now: time.Now}
+	return &Query{db: db, timezone: timezone, statisticsStart: statisticsStart, now: time.Now}
 }
 
 func (q *Query) Envelope(data any, coverage []CoverageInfo) Envelope {
@@ -296,7 +296,11 @@ func (q *Query) Envelope(data any, coverage []CoverageInfo) Envelope {
 }
 
 func (q *Query) envelope(data any, coverage []CoverageInfo) Envelope {
-	return Envelope{Data: data, Meta: Meta{Timezone: q.timezone, GeneratedAt: q.now(), Coverage: coverage}}
+	start := ""
+	if q.statisticsStart != nil {
+		start = q.statisticsStart.In(mustLocation(q.timezone)).Format("2006-01-02")
+	}
+	return Envelope{Data: data, Meta: Meta{Timezone: q.timezone, GeneratedAt: q.now(), StatisticsStartDate: start, Coverage: coverage}}
 }
 
 type UsageSummary struct {
@@ -610,22 +614,17 @@ type HeatmapScale struct {
 }
 
 // Heatmap merges published daily aggregates before detailCutoff with retained raw
-// usage at and after it. A day is zero only when its selected source has complete
-// coverage for that date; otherwise absence remains missing.
+// usage at and after it. Every calendar day from the configured statistics start
+// is in scope; the absence of a usage row means zero usage.
 func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutoff time.Time) (Envelope, error) {
 	loc := mustLocation(q.timezone)
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, loc)
 	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, loc)
 	cutoff := time.Date(detailCutoff.In(loc).Year(), detailCutoff.In(loc).Month(), detailCutoff.In(loc).Day(), 0, 0, 0, 0, loc)
-	states, err := q.coverageStates(ctx)
-	if err != nil {
-		return Envelope{}, err
-	}
-	usageCoverage := states["usage"]
-	var usageStart *time.Time
-	if usageCoverage.TrustedSince != nil {
-		startDay := DayAt(usageCoverage.TrustedSince.In(loc), loc)
-		usageStart = &startDay
+	var statisticsStart *time.Time
+	if q.statisticsStart != nil {
+		startDay := DayAt(q.statisticsStart.In(loc), loc)
+		statisticsStart = &startDay
 	}
 	observed := map[string]int64{}
 	readDaily := func(from, to time.Time) error {
@@ -666,32 +665,12 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 		}
 		return rows.Err()
 	}
-	// A retention policy is not evidence that old source rows ever existed.
-	// Persisted per-day source coverage survives raw-detail pruning.
-	coveredDaily := map[string]bool{}
-	coverageRows, err := q.db.QueryContext(ctx, `SELECT stat_date FROM insights_rollup_coverage WHERE source='usage' AND complete=true AND stat_date >= $1::date AND stat_date < $2::date`, start, end)
-	if err != nil {
-		return Envelope{}, err
-	}
-	for coverageRows.Next() {
-		var at time.Time
-		if err = coverageRows.Scan(&at); err != nil {
-			_ = coverageRows.Close()
-			return Envelope{}, err
-		}
-		coveredDaily[at.Format("2006-01-02")] = true
-	}
-	err = coverageRows.Err()
-	_ = coverageRows.Close()
-	if err != nil {
-		return Envelope{}, err
-	}
 	dailyEnd := minTime(end, cutoff)
-	if err = readDaily(start, dailyEnd); err != nil {
+	if err := readDaily(start, dailyEnd); err != nil {
 		return Envelope{}, fmt.Errorf("query daily heatmap: %w", err)
 	}
 	rawStart := maxTime(start, cutoff)
-	if err = readRaw(rawStart, end); err != nil {
+	if err := readRaw(rawStart, end); err != nil {
 		return Envelope{}, fmt.Errorf("query raw heatmap: %w", err)
 	}
 
@@ -703,13 +682,13 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 	var maxTokens int64
 	var dailyMax, rawMax sql.NullInt64
 	if scaleStart.Before(cutoff) {
-		err = q.db.QueryRowContext(ctx, `SELECT MAX(total) FROM (SELECT stat_date,SUM(input_tokens+cache_creation_tokens+cache_read_tokens+output_tokens) total FROM insights_user_model_daily WHERE user_id=$1 AND stat_date >= $2::date AND stat_date < $3::date GROUP BY stat_date) x`, userID, scaleStart, minTime(scaleEnd, cutoff)).Scan(&dailyMax)
+		err := q.db.QueryRowContext(ctx, `SELECT MAX(total) FROM (SELECT stat_date,SUM(input_tokens+cache_creation_tokens+cache_read_tokens+output_tokens) total FROM insights_user_model_daily WHERE user_id=$1 AND stat_date >= $2::date AND stat_date < $3::date GROUP BY stat_date) x`, userID, scaleStart, minTime(scaleEnd, cutoff)).Scan(&dailyMax)
 		if err != nil {
 			return Envelope{}, err
 		}
 	}
 	if scaleEnd.After(cutoff) {
-		err = q.db.QueryRowContext(ctx, `SELECT MAX(total) FROM (SELECT (created_at AT TIME ZONE $4)::date,SUM(input_tokens+cache_creation_tokens+cache_read_tokens+output_tokens) total FROM usage_logs WHERE user_id=$1 AND created_at >= $2 AND created_at < $3 GROUP BY 1) x`, userID, maxTime(scaleStart, cutoff), scaleEnd, q.timezone).Scan(&rawMax)
+		err := q.db.QueryRowContext(ctx, `SELECT MAX(total) FROM (SELECT (created_at AT TIME ZONE $4)::date,SUM(input_tokens+cache_creation_tokens+cache_read_tokens+output_tokens) total FROM usage_logs WHERE user_id=$1 AND created_at >= $2 AND created_at < $3 GROUP BY 1) x`, userID, maxTime(scaleStart, cutoff), scaleEnd, q.timezone).Scan(&rawMax)
 		if err != nil {
 			return Envelope{}, err
 		}
@@ -729,40 +708,22 @@ func (q *Query) Heatmap(ctx context.Context, userID int64, year int, detailCutof
 
 	today := q.now().In(loc)
 	today = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, loc)
-	// Calendar dates before the certified service launch are outside the
-	// statistical scope. After launch, a missing row is zero only when the
-	// corresponding source interval is verified complete; explicit gaps remain missing.
+	// Calendar dates before the service launch are outside the statistical scope.
+	// From launch onward, a missing row is an explicit zero-use day.
 	days := make([]HeatmapDay, 0, 366)
 	for date := start; date.Before(end); date = date.AddDate(0, 0, 1) {
 		key := date.Format("2006-01-02")
 		tokens, observedDay := observed[key]
-		completeDay := coveredDaily[key]
-		if !date.Before(cutoff) {
-			completeDay = q.coverageWindowStatus(usageCoverage, date, date.AddDate(0, 0, 1)) == "complete"
-		}
 		d := HeatmapDay{
 			Date:  key,
-			State: classifyHeatmapDay(date, today, usageStart, observedDay, tokens, completeDay),
+			State: classifyHeatmapDay(date, today, statisticsStart, observedDay, tokens),
 		}
 		if observedDay && (d.State == "value" || d.State == "zero") {
 			d.TotalTokens = tokens
 		}
 		days = append(days, d)
 	}
-	coverageStart := start
-	if usageStart != nil && coverageStart.Before(*usageStart) {
-		coverageStart = *usageStart
-	}
-	dailyCoverage, err := q.rollupCoverageInfo(ctx, "usage", "daily_rollups", coverageStart, dailyEnd)
-	if err != nil {
-		return Envelope{}, err
-	}
-	rawCoverage := CoverageInfo{Dataset: "usage_detail", Status: "complete"}
-	effectiveRawStart := maxTime(rawStart, coverageStart)
-	if effectiveRawStart.Before(end) {
-		rawCoverage = coverageInfoFromState("usage_detail", usageCoverage, q.coverageWindowStatus(usageCoverage, effectiveRawStart, end))
-	}
-	coverage := []CoverageInfo{dailyCoverage, rawCoverage}
+	coverage := []CoverageInfo{{Dataset: "daily_rollups", Status: "complete"}, {Dataset: "usage_detail", Status: "complete"}}
 	return q.envelope(map[string]any{"year": year, "days": days, "scale": HeatmapScale{MaxTokens: maxTokens, Thresholds: thresholds}}, coverage), nil
 }
 
@@ -845,89 +806,28 @@ func (q *Query) coverageStates(ctx context.Context) (map[string]Coverage, error)
 	return states, nil
 }
 
-func coverageInfoFromState(dataset string, coverage Coverage, status string) CoverageInfo {
-	info := CoverageInfo{Dataset: dataset, Status: status}
-	if coverage.TrustedSince != nil {
-		value := coverage.TrustedSince.UTC().Format(time.RFC3339)
-		info.From = &value
-	}
-	if coverage.ObservedThrough != nil {
-		value := coverage.ObservedThrough.UTC().Format(time.RFC3339)
-		info.To = &value
-	}
-	if status != "complete" {
-		info.Detail = "the trusted collection interval does not fully cover the requested range"
-	}
-	return info
-}
-
-func classifyHeatmapDay(date, today time.Time, usageStart *time.Time, observed bool, tokens int64, sourceComplete bool) string {
+func classifyHeatmapDay(date, today time.Time, statisticsStart *time.Time, observed bool, tokens int64) string {
 	if date.After(today) {
 		return "future"
 	}
-	if usageStart != nil && date.Before(*usageStart) {
+	if statisticsStart != nil && date.Before(*statisticsStart) {
 		return "out_of_scope"
 	}
-	if observed {
-		if tokens > 0 {
-			return "value"
-		}
-		return "zero"
+	if observed && tokens > 0 {
+		return "value"
 	}
-	if sourceComplete {
-		return "zero"
-	}
-	return "missing"
+	return "zero"
 }
 
-func (q *Query) rawCoverageInfo(ctx context.Context, source, dataset string, from, to time.Time) (CoverageInfo, error) {
-	if !from.Before(to) {
-		return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
-	}
-	states, err := q.coverageStates(ctx)
-	if err != nil {
-		return CoverageInfo{}, err
-	}
-	coverage := states[source]
-	return coverageInfoFromState(dataset, coverage, q.coverageWindowStatus(coverage, from, to)), nil
+func (q *Query) rawCoverageInfo(_ context.Context, _ string, dataset string, _, _ time.Time) (CoverageInfo, error) {
+	return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
 }
 
-func (q *Query) rollupCoverageInfo(ctx context.Context, source, dataset string, from, to time.Time) (CoverageInfo, error) {
-	if !from.Before(to) {
-		return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
-	}
-	loc := mustLocation(q.timezone)
-	fromDate := from.In(loc).Format("2006-01-02")
-	toDate := to.In(loc).Format("2006-01-02")
-	var complete bool
-	err := q.db.QueryRowContext(ctx, `SELECT COALESCE(BOOL_AND(COALESCE(c.complete,false)),false) FROM generate_series($1::date,$2::date-1,interval '1 day') d LEFT JOIN insights_rollup_coverage c ON c.source=$3 AND c.stat_date=d::date`, fromDate, toDate, source).Scan(&complete)
-	if err != nil {
-		return CoverageInfo{}, err
-	}
-	info := CoverageInfo{Dataset: dataset, Status: boolCoverage(complete)}
-	if !complete {
-		info.Detail = "one or more requested calendar days lack verified source coverage"
-	}
-	return info, nil
+func (q *Query) rollupCoverageInfo(_ context.Context, _ string, dataset string, _, _ time.Time) (CoverageInfo, error) {
+	return CoverageInfo{Dataset: dataset, Status: "complete"}, nil
 }
 
-func (q *Query) coverageWindowStatus(coverage Coverage, from, to time.Time) string {
-	now := q.now()
-	if to.After(now) {
-		to = now
-	}
-	if !from.Before(to) {
-		return "partial"
-	}
-	if coverage.Status != CoverageComplete || coverage.TrustedSince == nil || coverage.ObservedThrough == nil {
-		return "partial"
-	}
-	if from.Before(*coverage.TrustedSince) || coverage.ObservedThrough.Add(30*time.Second).Before(to) {
-		return "partial"
-	}
-	if coverage.LastGapAt != nil && !coverage.LastGapAt.Before(from) && coverage.LastGapAt.Before(to) {
-		return "partial"
-	}
+func (q *Query) coverageWindowStatus(_ Coverage, _, _ time.Time) string {
 	return "complete"
 }
 

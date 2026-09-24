@@ -14,16 +14,16 @@ it("does not require department Pareto fields on personal analytics", async () =
   await expect(insightsApi.personalAnalytics(filters)).resolves.toMatchObject({ totalTokens: 10, requests: 1 });
 });
 
-it("explains a partial usage window with the trusted collection boundary", async () => {
+it("explains a partial usage window without exposing an internal boundary", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
     data: { summary: { active_days: 0, tokens: { total: 0, output: 0 }, daily_average_tokens: 0, request_count: 0, cache_hit_ratio: null }, buckets: [], models: [] },
-    meta: { ...meta, coverage: [{ dataset: "usage_detail", status: "partial", from: "2026-09-23T03:55:00Z" }] },
+    meta: { ...meta, coverage: [{ dataset: "usage_detail", status: "partial" }] },
   }), { status: 200 }));
 
   await expect(insightsApi.personalAnalytics(filters)).resolves.toMatchObject({
     coverage: {
       state: "partial",
-      message: expect.stringContaining("2026/09/23 11:55"),
+      message: "用量历史尚未完整采集",
     },
   });
 });

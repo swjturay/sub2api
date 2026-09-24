@@ -2631,21 +2631,17 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	}
 }
 
-func TestValidateInsightsTrustedUsageHistoryFrom(t *testing.T) {
+func TestValidateInsightsStatisticsStartDate(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	cfg.Insights.TrustedUsageHistoryFrom = "2026-06-01"
-	if err = cfg.Validate(); err == nil || !strings.Contains(err.Error(), "requires insights.trusted_collection") {
-		t.Fatalf("Validate() error = %v, want trusted collection requirement", err)
-	}
-	cfg.Insights.TrustedCollection = true
+	cfg.Insights.StatisticsStartDate = "2026-06-01"
 	if err = cfg.Validate(); err != nil {
-		t.Fatalf("Validate() rejected valid trusted usage history: %v", err)
+		t.Fatalf("Validate() rejected valid statistics start date: %v", err)
 	}
-	cfg.Insights.TrustedUsageHistoryFrom = "2026/06/03"
+	cfg.Insights.StatisticsStartDate = "2026/06/03"
 	if err = cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must use YYYY-MM-DD") {
 		t.Fatalf("Validate() error = %v, want date format error", err)
 	}

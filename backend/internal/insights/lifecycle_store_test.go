@@ -48,11 +48,10 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	ret := anchor.AddDate(0, 0, 31)
 	ctx := context.Background()
 	store := NewStore(db)
-	coverage := Coverage{Status: CoverageComplete, TrustedSince: &since}
 	if _, e = db.Exec(`WITH inserted AS (INSERT INTO users VALUES(1,$1,NULL),(2,$2,NULL),(3,$1,NULL)) INSERT INTO insights_call_facts VALUES(1,$3),(1,$4),(2,$3)`, since, since.AddDate(0, 0, -2), anchor, ret); e != nil {
 		t.Fatal(e)
 	}
-	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", coverage); e != nil {
+	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", &since); e != nil {
 		t.Fatal(e)
 	}
 	var first, d1, d7, d30 time.Time
@@ -63,16 +62,16 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if !first.Equal(anchor) || !d1.Equal(ret) || !d7.Equal(ret) || !d30.Equal(ret) || !trusted {
 		t.Fatalf("incorrect nested return: %v %v %v %v %v", first, d1, d7, d30, trusted)
 	}
-	var unknown sql.NullTime
+	var scopedFirst sql.NullTime
 	var observed time.Time
-	if e = db.QueryRow(`SELECT first_observed_call_at,first_call_at FROM insights_user_lifecycle WHERE user_id=2`).Scan(&observed, &unknown); e != nil || unknown.Valid || !observed.Equal(anchor) {
-		t.Fatalf("old account evidence/anchor wrong: observed=%v first=%v err=%v", observed, unknown, e)
+	if e = db.QueryRow(`SELECT first_observed_call_at,first_call_at FROM insights_user_lifecycle WHERE user_id=2`).Scan(&observed, &scopedFirst); e != nil || !scopedFirst.Valid || !scopedFirst.Time.Equal(anchor) || !observed.Equal(anchor) {
+		t.Fatalf("old account scoped anchor wrong: observed=%v first=%v err=%v", observed, scopedFirst, e)
 	}
 	earlier := since.AddDate(0, 0, 1)
 	if _, e = db.Exec(`INSERT INTO insights_call_facts VALUES(1,$1)`, earlier); e != nil {
 		t.Fatal(e)
 	}
-	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", coverage); e != nil {
+	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", &since); e != nil {
 		t.Fatal(e)
 	}
 	if e = db.QueryRow(`SELECT first_call_at,returned_day_1_at FROM insights_user_lifecycle WHERE user_id=1`).Scan(&first, &d1); e != nil || !first.Equal(earlier) || !d1.Equal(anchor) {
@@ -81,7 +80,7 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if _, e = db.Exec(`DELETE FROM insights_call_facts`); e != nil {
 		t.Fatal(e)
 	}
-	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", coverage); e != nil {
+	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", &since); e != nil {
 		t.Fatal(e)
 	}
 	if e = db.QueryRow(`SELECT first_call_at,returned_day_1_at,returned_day_7_at,returned_day_30_at FROM insights_user_lifecycle WHERE user_id=1`).Scan(&first, &d1, &d7, &d30); e != nil || !first.Equal(earlier) || !d1.Equal(anchor) || !d7.Equal(ret) || !d30.Equal(ret) {
@@ -90,8 +89,7 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if e = db.QueryRow(`SELECT first_observed_call_at FROM insights_user_lifecycle WHERE user_id=2`).Scan(&observed); e != nil || !observed.Equal(anchor) {
 		t.Fatalf("observed evidence lost after raw cleanup: %v %v", observed, e)
 	}
-	gap := Coverage{Status: CoveragePartial, TrustedSince: &since, LastGapAt: &ret}
-	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", gap); e != nil {
+	if e = store.RebuildLifecycle(ctx, "Asia/Shanghai", &since); e != nil {
 		t.Fatal(e)
 	}
 	if e = db.QueryRow(`SELECT returned_day_30_at FROM insights_user_lifecycle WHERE user_id=1`).Scan(&d30); e != nil || !d30.Equal(ret) {
@@ -103,7 +101,7 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if _, e = db.Exec(`UPDATE users SET deleted_at=NOW() WHERE id=1`); e != nil {
 		t.Fatal(e)
 	}
-	q := NewQuery(db, "Asia/Shanghai")
+	q := NewQuery(db, "Asia/Shanghai", &since)
 	q.now = func() time.Time { return ret.AddDate(0, 0, 1) }
 	envelope, e := q.GatewayRetention(ctx, ret.AddDate(0, 0, 1))
 	if e != nil {

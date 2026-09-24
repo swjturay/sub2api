@@ -32,15 +32,15 @@ func NewInsightsHandler(db *sql.DB, cfg *config.Config, subscriptionService *ser
 		loc = time.UTC
 		tz = "UTC"
 	}
-	var trustedUsageHistoryFrom *time.Time
-	if value := strings.TrimSpace(cfg.Insights.TrustedUsageHistoryFrom); value != "" {
+	var statisticsStart *time.Time
+	if value := strings.TrimSpace(cfg.Insights.StatisticsStartDate); value != "" {
 		if parsed, parseErr := time.ParseInLocation("2006-01-02", value, loc); parseErr == nil {
-			trustedUsageHistoryFrom = &parsed
+			statisticsStart = &parsed
 		}
 	}
 	insights.ConfigureRuntimeWithOptions(db, tz, 4096, insights.RuntimeOptions{
-		TrustedCollection:       cfg.Insights.TrustedCollection,
-		TrustedUsageHistoryFrom: trustedUsageHistoryFrom,
+		TrustedCollection: cfg.Insights.TrustedCollection,
+		StatisticsStart:   statisticsStart,
 	})
 	usageDays := cfg.DashboardAgg.Retention.UsageLogsDays
 	if usageDays <= 0 {
@@ -50,7 +50,7 @@ func NewInsightsHandler(db *sql.DB, cfg *config.Config, subscriptionService *ser
 	if errorDays <= 0 {
 		errorDays = 30
 	}
-	return &InsightsHandler{query: insights.NewQuery(db, tz), loc: loc, subscriptionService: subscriptionService, catalog: catalog, usageRetentionDays: usageDays, errorRetentionDays: errorDays}
+	return &InsightsHandler{query: insights.NewQuery(db, tz, statisticsStart), loc: loc, subscriptionService: subscriptionService, catalog: catalog, usageRetentionDays: usageDays, errorRetentionDays: errorDays}
 }
 
 func (h *InsightsHandler) Dimensions(c *gin.Context) {

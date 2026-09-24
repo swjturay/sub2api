@@ -53,8 +53,8 @@ The command performs one bounded release:
    repository and were built from the same source SHA.
 2. Updates the backend with native rolling deployment, a five-second endpoint
    propagation delay, and a 60-second application shutdown window. The production
-   usage ledger is treated as continuously available from 2026-06-01 in the
-   platform timezone, so later calendar dates without usage rows are zero-use days.
+   statistics start is fixed by `INSIGHTS_STATISTICS_START_DATE=2026-06-01` in
+   the platform timezone, so later calendar dates without usage rows are zero-use days.
 3. Updates Insights directly to the new image. It removes compatibility init
    containers, the `previous-assets` volume, and all old-version mounts.
 4. Runs one 30-second final observation across deployment state, pod restart

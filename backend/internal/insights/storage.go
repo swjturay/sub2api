@@ -13,9 +13,19 @@ type DB interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
-type Store struct{ db DB }
+type Store struct {
+	db              DB
+	statisticsStart *time.Time
+}
 
-func NewStore(db DB) *Store { return &Store{db: db} }
+func NewStore(db DB, statisticsStart ...time.Time) *Store {
+	store := &Store{db: db}
+	if len(statisticsStart) > 0 {
+		start := statisticsStart[0]
+		store.statisticsStart = &start
+	}
+	return store
+}
 
 func (s *Store) StoreCall(ctx context.Context, f CallFact) error {
 	if s == nil || s.db == nil {
@@ -106,11 +116,6 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 		_ = readTx.Rollback()
 		return err
 	}
-	var sourceCoverage Coverage
-	var raw []byte
-	if readTx.QueryRowContext(ctx, `SELECT value->'call_facts' FROM insights_settings WHERE key='coverage'`).Scan(&raw) == nil {
-		_ = json.Unmarshal(raw, &sourceCoverage)
-	}
 	var ids []int64
 	if oldest.Valid {
 		rows, e := readTx.QueryContext(ctx, `SELECT DISTINCT user_id FROM (SELECT user_id FROM insights_call_facts WHERE statistical_at<$1 ORDER BY statistical_at,call_id LIMIT 10000) f WHERE user_id IS NOT NULL`, cutoff)
@@ -137,7 +142,7 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	if err = readTx.Commit(); err != nil {
 		return err
 	}
-	if err = s.RebuildLifecycleUsers(ctx, timezone, sourceCoverage, ids); err != nil {
+	if err = s.RebuildLifecycleUsers(ctx, timezone, s.statisticsStart, ids); err != nil {
 		return err
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -158,7 +163,7 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 			if _, err = tx.ExecContext(ctx, callRollupSQL, from, to, timezone); err != nil {
 				return err
 			}
-			if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "call", from, to, timezone); err != nil {
+			if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "call", from, to); err != nil {
 				return err
 			}
 		}
@@ -181,80 +186,37 @@ func (s *Store) DeleteExpiredDetails(ctx context.Context, now time.Time, timezon
 	return tx.Commit()
 }
 
-// ExtendTrustedUsageHistory is an explicit operator assertion that the existing
-// billing usage ledger is complete from the supplied local calendar date. It
-// only extends a healthy usage interval and never crosses a recorded gap.
-func (s *Store) ExtendTrustedUsageHistory(ctx context.Context, coverage Coverage, since time.Time, timezone string) (Coverage, error) {
+// InitializeStatisticsCoverage marks every closed calendar day since the
+// configured system launch as complete. User-facing statistics intentionally
+// treat the persisted ledgers as authoritative and do not infer gaps.
+func (s *Store) InitializeStatisticsCoverage(ctx context.Context, since time.Time, timezone string) error {
 	if s == nil || s.db == nil {
-		return coverage, errors.New("insights store database is nil")
-	}
-	if coverage.Status != CoverageComplete || coverage.TrustedSince == nil {
-		return coverage, errors.New("live usage collection must be trusted before historical usage can be certified")
+		return errors.New("insights store database is nil")
 	}
 	loc, err := time.LoadLocation(timezone)
 	if err != nil {
-		return coverage, err
+		return err
 	}
 	since = DayAt(since.In(loc), loc)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return coverage, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT value FROM insights_settings WHERE key='coverage' FOR UPDATE`).Scan(&raw)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return coverage, err
-	}
-	stored := map[string]json.RawMessage{}
-	if len(raw) > 0 {
-		if err = json.Unmarshal(raw, &stored); err != nil {
-			return coverage, err
-		}
-	}
-	if storedUsage, ok := stored["usage"]; ok {
-		var current Coverage
-		if err = json.Unmarshal(storedUsage, &current); err != nil {
-			return coverage, err
-		}
-		coverage = current
-	}
-	if coverage.Status != CoverageComplete || coverage.TrustedSince == nil {
-		return coverage, errors.New("stored usage coverage is not currently trusted")
-	}
-	if !since.Before(*coverage.TrustedSince) {
-		return coverage, nil
-	}
-	if coverage.LastGapAt != nil && !coverage.LastGapAt.Before(since) {
-		return coverage, errors.New("historical usage start would cross a recorded collection gap")
-	}
-	coverage.TrustedSince = timePtr(since)
-	encoded, err := json.Marshal(coverage)
-	if err != nil {
-		return coverage, err
-	}
-	stored["usage"] = encoded
-	payload, err := json.Marshal(stored)
-	if err != nil {
-		return coverage, err
-	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_settings(key,value,updated_at) VALUES('coverage',$1::jsonb,NOW()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=NOW()`, payload); err != nil {
-		return coverage, err
-	}
 	today := DayAt(time.Now().In(loc), loc)
 	if since.Before(today) {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO insights_rollup_coverage(source,stat_date,complete,updated_at) SELECT 'usage',d::date,true,NOW() FROM generate_series($1::date,$2::date-1,interval '1 day') d ON CONFLICT(source,stat_date) DO UPDATE SET complete=true,updated_at=NOW()`, since, today); err != nil {
-			return coverage, err
+		if _, err = tx.ExecContext(ctx, `INSERT INTO insights_rollup_coverage(source,stat_date,complete,updated_at) SELECT sources.source,d::date,true,NOW() FROM unnest(ARRAY['usage'::text,'call'::text]) AS sources(source) CROSS JOIN generate_series($1::date,$2::date-1,interval '1 day') d ON CONFLICT(source,stat_date) DO UPDATE SET complete=true,updated_at=NOW()`, since, today); err != nil {
+			return err
 		}
 	}
 	if err = tx.Commit(); err != nil {
-		return coverage, err
+		return err
 	}
-	return coverage, nil
+	return nil
 }
 
 // SaveCoverage serializes fleet writers. A healthy replica must not overwrite
-// another replica's reported gap or move a new trusted boundary backwards.
+// another replica's reported gap.
 func (s *Store) SaveCoverage(ctx context.Context, coverage map[string]Coverage) error {
 	if s == nil || s.db == nil {
 		return errors.New("insights store database is nil")
@@ -297,19 +259,6 @@ func (s *Store) SaveCoverage(ctx context.Context, coverage map[string]Coverage) 
 }
 
 func mergeCoverage(previous, incoming Coverage) Coverage {
-	if previous.Status == CoverageComplete && incoming.Status == CoverageComplete && previous.TrustedSince != nil {
-		// A complete fleet interval keeps its persisted boundary. This protects an
-		// explicit historical certification from stale healthy replicas. A real
-		// collection gap first makes the persisted state partial, after which a
-		// later activation may establish a new boundary.
-		incoming.TrustedSince = previous.TrustedSince
-	} else if previous.TrustedSince != nil && (incoming.TrustedSince == nil || incoming.TrustedSince.Before(*previous.TrustedSince)) {
-		incoming.TrustedSince = previous.TrustedSince
-	}
-	if previous.LastGapAt != nil && (incoming.TrustedSince == nil || !incoming.TrustedSince.After(*previous.LastGapAt)) && incoming.Status == CoverageComplete {
-		incoming.Status = CoveragePartial
-		incoming.Reason = previous.Reason
-	}
 	if previous.LastGapAt != nil && (incoming.LastGapAt == nil || incoming.LastGapAt.Before(*previous.LastGapAt)) {
 		incoming.LastGapAt = previous.LastGapAt
 	}

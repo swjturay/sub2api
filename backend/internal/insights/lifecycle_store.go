@@ -2,28 +2,28 @@ package insights
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"github.com/lib/pq"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // RebuildLifecycle retains lifetime milestones even after call detail expires.
-// First-use anchors are trusted only for accounts covered since their creation;
-// existing pre-rollout accounts remain explicitly incomplete.
-func (s *Store) RebuildLifecycle(ctx context.Context, timezone string, coverage Coverage) error {
-	return s.rebuildLifecycle(ctx, timezone, coverage, nil)
+// First-use anchors are scoped to the fixed statistics start. Accounts that
+// predate the system launch use their first in-scope request as the anchor.
+func (s *Store) RebuildLifecycle(ctx context.Context, timezone string, statisticsStart *time.Time) error {
+	return s.rebuildLifecycle(ctx, timezone, statisticsStart, nil)
 }
 
 // RebuildLifecycleUsers bounds routine maintenance to a batch of users. A full
 // rebuild is reserved for controlled backfills and tests.
-func (s *Store) RebuildLifecycleUsers(ctx context.Context, timezone string, coverage Coverage, users []int64) error {
+func (s *Store) RebuildLifecycleUsers(ctx context.Context, timezone string, statisticsStart *time.Time, users []int64) error {
 	if len(users) == 0 {
 		return nil
 	}
-	return s.rebuildLifecycle(ctx, timezone, coverage, users)
+	return s.rebuildLifecycle(ctx, timezone, statisticsStart, users)
 }
-func (s *Store) rebuildLifecycle(ctx context.Context, timezone string, coverage Coverage, users []int64) error {
+func (s *Store) rebuildLifecycle(ctx context.Context, timezone string, statisticsStart *time.Time, users []int64) error {
 	if s == nil || s.db == nil {
 		return errors.New("insights store database is nil")
 	}
@@ -38,20 +38,13 @@ func (s *Store) rebuildLifecycle(ctx context.Context, timezone string, coverage 
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('sub2api_insights_lifecycle'))`); err != nil {
 		return err
 	}
-	var storedCoverage []byte
-	if tx.QueryRowContext(ctx, `SELECT value->'call_facts' FROM insights_settings WHERE key='coverage'`).Scan(&storedCoverage) == nil {
-		var persisted Coverage
-		if json.Unmarshal(storedCoverage, &persisted) == nil {
-			coverage = mergeCoverage(persisted, coverage)
-		}
-	}
 	var since any
-	if coverage.Status == CoverageComplete && coverage.TrustedSince != nil {
-		since = *coverage.TrustedSince
+	if statisticsStart != nil {
+		since = *statisticsStart
 	}
 	_, err = tx.ExecContext(ctx, `
 WITH raw_first AS (
- SELECT user_id,MIN(statistical_at) at FROM insights_call_facts WHERE user_id IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3)) GROUP BY user_id
+ SELECT user_id,MIN(statistical_at) at FROM insights_call_facts WHERE user_id IS NOT NULL AND ($2::timestamptz IS NULL OR statistical_at >= $2) AND ($3::bigint[] IS NULL OR user_id=ANY($3)) GROUP BY user_id
 ), observed_evidence AS (
  SELECT user_id,statistical_at at FROM insights_call_facts WHERE user_id IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
  UNION ALL SELECT user_id,created_at FROM usage_logs WHERE user_id IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
@@ -63,11 +56,11 @@ WITH raw_first AS (
  UNION ALL SELECT user_id,returned_day_30_at FROM insights_user_lifecycle WHERE returned_day_30_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
 ), observed AS (SELECT user_id,MIN(at) at FROM observed_evidence GROUP BY user_id), eligible AS (
  SELECT u.id,u.created_at,o.at observed_at,
-   COALESCE(l.first_call_coverage_complete,false) OR ($2::timestamptz IS NOT NULL AND u.created_at >= $2) first_complete,
-   CASE WHEN COALESCE(l.first_call_coverage_complete,false) OR ($2::timestamptz IS NOT NULL AND u.created_at >= $2)
-        THEN LEAST(l.first_call_at,f.at) END first_at,
+   COALESCE(l.first_call_coverage_complete,false) OR $2::timestamptz IS NOT NULL first_complete,
+   CASE WHEN COALESCE(l.first_call_coverage_complete,false) OR $2::timestamptz IS NOT NULL
+        THEN LEAST(CASE WHEN $2::timestamptz IS NULL OR l.first_call_at >= $2 THEN l.first_call_at END,f.at) END first_at,
    l.first_call_at previous_first,l.returned_day_1_at r1,l.returned_day_7_at r7,l.returned_day_30_at r30,
-   COALESCE(l.return_coverage_complete,false) OR ($2::timestamptz IS NOT NULL AND u.created_at >= $2) return_complete
+   COALESCE(l.return_coverage_complete,false) OR $2::timestamptz IS NOT NULL return_complete
  FROM users u LEFT JOIN insights_user_lifecycle l ON l.user_id=u.id LEFT JOIN raw_first f ON f.user_id=u.id LEFT JOIN observed o ON o.user_id=u.id
  WHERE u.deleted_at IS NULL AND ($3::bigint[] IS NULL OR u.id=ANY($3))
 ), events AS (

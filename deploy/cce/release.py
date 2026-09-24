@@ -34,7 +34,7 @@ IMAGE_RE = re.compile(
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SAFE_VALUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 ANNOTATION_PREFIX = "sub2api.2ray.wang/"
-PRODUCTION_INSIGHTS_USAGE_HISTORY_FROM = "2026-06-01"
+PRODUCTION_INSIGHTS_STATISTICS_START_DATE = "2026-06-01"
 
 
 class ReleaseError(RuntimeError):
@@ -108,6 +108,10 @@ def upsert_env(container: dict, name: str, value: str) -> None:
     env.append({"name": name, "value": value})
 
 
+def remove_env(container: dict, name: str) -> None:
+    container["env"] = [item for item in container.get("env", []) if item.get("name") != name]
+
+
 def release_annotations(manifest: dict, token: str) -> dict[str, str]:
     return {
         f"{ANNOTATION_PREFIX}gha-run": str(manifest.get("build_run_id", "")),
@@ -126,10 +130,11 @@ def build_backend_patch(deployment: dict, image: str, annotations: dict[str, str
     container["lifecycle"] = {"preStop": {"exec": {"command": ["/bin/sh", "-c", "sleep 5"]}}}
     upsert_env(container, "SERVER_SHUTDOWN_TIMEOUT_SECONDS", "60")
     upsert_env(container, "INSIGHTS_TRUSTED_COLLECTION", "true")
+    remove_env(container, "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM")
     upsert_env(
         container,
-        "INSIGHTS_TRUSTED_USAGE_HISTORY_FROM",
-        PRODUCTION_INSIGHTS_USAGE_HISTORY_FROM,
+        "INSIGHTS_STATISTICS_START_DATE",
+        PRODUCTION_INSIGHTS_STATISTICS_START_DATE,
     )
     pod_spec["terminationGracePeriodSeconds"] = max(75, int(pod_spec.get("terminationGracePeriodSeconds", 0)))
     dedupe_pull_secrets(pod_spec)

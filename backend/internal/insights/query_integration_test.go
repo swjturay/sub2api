@@ -67,6 +67,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	}
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := from.AddDate(0, 0, 7)
+	statisticsStart := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	if _, err = db.ExecContext(ctx, `INSERT INTO api_keys VALUES(1,'visible-key'); INSERT INTO accounts VALUES(1,'OpenAI')`); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +80,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(call_id,request_id,user_id,api_key_id,platform,model,outcome,statistical_at) VALUES('00000000-0000-0000-0000-000000000101','req-a',7,1,'OpenAI','public-model',1,$1),('00000000-0000-0000-0000-000000000102','req-b',7,1,'Other','free-model',1,$1)`, from.AddDate(0, 0, -1)); err != nil {
 		t.Fatal(err)
 	}
-	q := NewQuery(db, "UTC")
+	q := NewQuery(db, "UTC", &statisticsStart)
 	q.now = func() time.Time { return time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC) }
 	usage, err := q.PersonalUsage(ctx, 7, from, to, "day", nil)
 	if err != nil {
@@ -109,11 +110,11 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	heatmapDays := mustType[[]HeatmapDay](t, mustType[map[string]any](t, heatmap.Data)["days"])
-	if len(heatmapDays) != 365 || heatmapDays[0].State != "missing" || heatmapDays[243].State != "value" || heatmapDays[243].TotalTokens != 200 || heatmapDays[245].State != "missing" {
+	if len(heatmapDays) != 365 || heatmapDays[0].State != "out_of_scope" || heatmapDays[243].State != "value" || heatmapDays[243].TotalTokens != 200 || heatmapDays[245].State != "zero" {
 		t.Fatalf("heatmap sample=%+v zero=%+v len=%d", heatmapDays[243], heatmapDays[245], len(heatmapDays))
 	}
-	if _, err = db.ExecContext(ctx, `INSERT INTO insights_settings VALUES('coverage',jsonb_build_object('usage',jsonb_build_object('status','complete','trusted_since',$1::timestamptz,'observed_through',$2::timestamptz)))`, from, to); err != nil {
-		t.Fatal(err)
+	if heatmap.Meta.StatisticsStartDate != "2026-06-01" {
+		t.Fatalf("statistics start=%q", heatmap.Meta.StatisticsStartDate)
 	}
 	coveredUsage, err := q.PersonalUsage(ctx, 7, from, to, "day", nil)
 	if err != nil {
@@ -122,12 +123,12 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if len(coveredUsage.Meta.Coverage) != 1 || coveredUsage.Meta.Coverage[0].Status != "complete" {
 		t.Fatalf("covered usage metadata=%+v", coveredUsage.Meta.Coverage)
 	}
-	preTrustUsage, err := q.PersonalUsage(ctx, 7, from.Add(-time.Hour), to, "day", nil)
+	preLaunchUsage, err := q.PersonalUsage(ctx, 7, statisticsStart.Add(-time.Hour), to, "day", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(preTrustUsage.Meta.Coverage) != 1 || preTrustUsage.Meta.Coverage[0].Status != "partial" || preTrustUsage.Meta.Coverage[0].From == nil {
-		t.Fatalf("pre-trust usage metadata=%+v", preTrustUsage.Meta.Coverage)
+	if len(preLaunchUsage.Meta.Coverage) != 1 || preLaunchUsage.Meta.Coverage[0].Status != "complete" {
+		t.Fatalf("pre-launch usage metadata=%+v", preLaunchUsage.Meta.Coverage)
 	}
 	coveredHeatmap, e := q.Heatmap(ctx, 7, 2026, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
 	if e != nil {
@@ -137,14 +138,11 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		if d.Date == "2026-09-03" && d.State != "zero" {
 			t.Fatalf("verified idle day=%+v", d)
 		}
-		if d.Date == "2026-08-15" && d.State != "out_of_scope" {
-			t.Fatalf("retention policy invented coverage=%+v", d)
+		if d.Date == "2026-08-15" && d.State != "zero" {
+			t.Fatalf("post-launch idle day=%+v", d)
 		}
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_rollup_coverage VALUES('usage','2025-09-23',true)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, `UPDATE insights_settings SET value=jsonb_build_object('usage',jsonb_build_object('status','complete','trusted_since','2025-01-01T00:00:00Z','observed_through',$1::timestamptz)) WHERE key='coverage'`, to); err != nil {
 		t.Fatal(err)
 	}
 	prunedHeatmap, e := q.Heatmap(ctx, 7, 2025, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
@@ -152,8 +150,8 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, d := range mustType[[]HeatmapDay](t, mustType[map[string]any](t, prunedHeatmap.Data)["days"]) {
-		if d.Date == "2025-09-23" && d.State != "zero" {
-			t.Fatalf("durable zero coverage lost=%+v", d)
+		if d.Date == "2025-09-23" && d.State != "out_of_scope" {
+			t.Fatalf("pre-launch rollup escaped scope=%+v", d)
 		}
 	}
 	if _, err = db.ExecContext(ctx, `DELETE FROM insights_settings WHERE key='coverage'`); err != nil {
@@ -182,7 +180,8 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(call_id,request_id,user_id,api_key_id,platform,model,outcome,statistical_at) VALUES('00000000-0000-0000-0000-000000000103','req-before',8,1,'Boundary','boundary',1,$1),('00000000-0000-0000-0000-000000000104','req-after',8,1,'Boundary','boundary',1,$2)`, localStart.Add(-time.Minute), localStart.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	shanghaiQuery := NewQuery(db, "Asia/Shanghai")
+	shanghaiStart := time.Date(2026, 6, 1, 0, 0, 0, 0, shanghai)
+	shanghaiQuery := NewQuery(db, "Asia/Shanghai", &shanghaiStart)
 	boundary, err := shanghaiQuery.PersonalUsage(ctx, 8, localStart, localStart.AddDate(0, 0, 1), "day", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +299,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		t.Fatalf("errors=%+v", errorItems)
 	}
 
-	if _, err = db.ExecContext(ctx, `INSERT INTO insights_settings VALUES('coverage',jsonb_build_object('call_facts',jsonb_build_object('status','complete','trusted_since',$1::timestamptz-interval '1 day','observed_through',$2::timestamptz),'lifecycle','complete'))`, from, to); err != nil {
+	if _, err = db.ExecContext(ctx, `INSERT INTO insights_settings VALUES('coverage',jsonb_build_object('call_facts',jsonb_build_object('status','complete','observed_through',$1::timestamptz),'lifecycle','complete'))`, to); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_call_facts(user_id,outcome,model_duration_ms,gateway_pre_forward_ms,statistical_at) VALUES(1,1,900,100,$1),(1,2,NULL,NULL,$1),(7,1,700,70,$1)`, from); err != nil {
@@ -343,9 +342,6 @@ func TestQueryPostgresIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_rollup_coverage VALUES('call','2026-08-29',true),('call','2026-08-30',true),('call','2026-08-31',true)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, `UPDATE insights_settings SET value=jsonb_set(value,'{call_facts,trusted_since}',to_jsonb($1::timestamptz)) WHERE key='coverage'`, oldFrom); err != nil {
 		t.Fatal(err)
 	}
 	longQuality, err := q.GatewayQualityLongTerm(ctx, oldFrom, to, split, "day", []string{"A/B"})
@@ -437,7 +433,7 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	}
 	hourNow := from.Add(25*time.Hour + 20*time.Minute)
 	q.now = func() time.Time { return hourNow }
-	hourCoverage, _ := json.Marshal(map[string]Coverage{"call_facts": {Status: CoverageComplete, TrustedSince: &from, ObservedThrough: &hourNow}})
+	hourCoverage, _ := json.Marshal(map[string]Coverage{"call_facts": {Status: CoverageComplete, ObservedThrough: &hourNow}})
 	if _, err = db.ExecContext(ctx, `UPDATE insights_settings SET value=$1 WHERE key='coverage'`, string(hourCoverage)); err != nil {
 		t.Fatal(err)
 	}

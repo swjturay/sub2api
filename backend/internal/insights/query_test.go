@@ -79,15 +79,9 @@ func TestBucketEndHour(t *testing.T) {
 
 func TestCoverageWindowClampsNaturalDayEndToNow(t *testing.T) {
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
-	since := now.Add(-24 * time.Hour)
-	through := now
 	q := &Query{now: func() time.Time { return now }}
-	if got := q.coverageWindowStatus(Coverage{Status: CoverageComplete, TrustedSince: &since, ObservedThrough: &through}, since, time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)); got != "complete" {
+	if got := q.coverageWindowStatus(Coverage{}, now.Add(-24*time.Hour), time.Date(2026, 9, 23, 0, 0, 0, 0, time.UTC)); got != "complete" {
 		t.Fatalf("status=%s", got)
-	}
-	before := since.Add(-time.Second)
-	if got := q.coverageWindowStatus(Coverage{Status: CoverageComplete, TrustedSince: &since, ObservedThrough: &through}, before, now); got != "partial" {
-		t.Fatalf("pre-trust status=%s", got)
 	}
 }
 
@@ -95,23 +89,22 @@ func TestClassifyHeatmapDayUsesLaunchBoundary(t *testing.T) {
 	launch := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	today := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
 	cases := []struct {
-		name           string
-		date           time.Time
-		observed       bool
-		tokens         int64
-		sourceComplete bool
-		want           string
+		name     string
+		date     time.Time
+		observed bool
+		tokens   int64
+		want     string
 	}{
-		{name: "before launch", date: launch.AddDate(0, 0, -1), sourceComplete: true, want: "out_of_scope"},
-		{name: "idle launch day", date: launch, sourceComplete: true, want: "zero"},
-		{name: "post-launch gap", date: launch.AddDate(0, 0, 1), want: "missing"},
-		{name: "observed zero", date: launch.AddDate(0, 0, 2), observed: true, sourceComplete: true, want: "zero"},
-		{name: "observed use", date: launch.AddDate(0, 0, 3), observed: true, tokens: 42, sourceComplete: true, want: "value"},
-		{name: "future", date: today.AddDate(0, 0, 1), sourceComplete: true, want: "future"},
+		{name: "before launch", date: launch.AddDate(0, 0, -1), want: "out_of_scope"},
+		{name: "idle launch day", date: launch, want: "zero"},
+		{name: "post-launch idle day", date: launch.AddDate(0, 0, 1), want: "zero"},
+		{name: "observed zero", date: launch.AddDate(0, 0, 2), observed: true, want: "zero"},
+		{name: "observed use", date: launch.AddDate(0, 0, 3), observed: true, tokens: 42, want: "value"},
+		{name: "future", date: today.AddDate(0, 0, 1), want: "future"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := classifyHeatmapDay(tc.date, today, &launch, tc.observed, tc.tokens, tc.sourceComplete); got != tc.want {
+			if got := classifyHeatmapDay(tc.date, today, &launch, tc.observed, tc.tokens); got != tc.want {
 				t.Fatalf("classifyHeatmapDay()=%q want %q", got, tc.want)
 			}
 		})

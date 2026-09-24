@@ -64,7 +64,7 @@ func TestPostgresRepeatedRetentionPreservesDailyAndLifetime(t *testing.T) {
 	old := DayAt(now.AddDate(0, 0, -375), loc)
 	since := time.Date(2024, 1, 1, 0, 0, 0, 0, loc)
 	returned := now.AddDate(0, 0, -2)
-	cov := Coverage{Status: CoverageComplete, TrustedSince: &since, ObservedThrough: &now}
+	cov := Coverage{Status: CoverageComplete, ObservedThrough: &now}
 	raw, _ := json.Marshal(map[string]Coverage{"usage": cov, "call_facts": cov})
 	if _, err = db.Exec(`UPDATE insights_settings SET value=$1 WHERE key='coverage'`, string(raw)); err != nil {
 		t.Fatal(err)
@@ -91,16 +91,8 @@ func TestPostgresRepeatedRetentionPreservesDailyAndLifetime(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO insights_error_facts(call_id,user_id,platform,model,error_type,statistical_at) VALUES($1,1,'openai','m','upstream_error',$2)`, ids[2], now.AddDate(0, 0, -40)); err != nil {
 		t.Fatal(err)
 	}
-	st := NewStore(db)
+	st := NewStore(db, since)
 	if _, err = db.Exec(`SET TIME ZONE 'UTC'`); err != nil {
-		t.Fatal(err)
-	}
-	// Trust beginning four hours into a Shanghai day must not certify the
-	// complete day merely because the database session runs in UTC.
-	startsMidday := old.Add(4 * time.Hour)
-	through := old.AddDate(0, 0, 2)
-	limited, _ := json.Marshal(map[string]Coverage{"usage": {Status: CoverageComplete, TrustedSince: &startsMidday, ObservedThrough: &through}, "call_facts": cov})
-	if _, err = db.Exec(`UPDATE insights_settings SET value=$1 WHERE key='coverage'`, string(limited)); err != nil {
 		t.Fatal(err)
 	}
 	if err = st.RollupRange(ctx, old, old.AddDate(0, 0, 1), "Asia/Shanghai"); err != nil {
@@ -110,14 +102,8 @@ func TestPostgresRepeatedRetentionPreservesDailyAndLifetime(t *testing.T) {
 	if err = db.QueryRow(`SELECT complete FROM insights_rollup_coverage WHERE source='usage' AND stat_date=$1`, old.Format("2006-01-02")).Scan(&dayComplete); err != nil {
 		t.Fatal(err)
 	}
-	if dayComplete {
-		t.Fatal("UTC session certified an uncovered Shanghai morning")
-	}
-	if _, err = db.Exec(`UPDATE insights_settings SET value=$1 WHERE key='coverage'`, string(raw)); err != nil {
-		t.Fatal(err)
-	}
-	if err = st.RollupRange(ctx, old, old.AddDate(0, 0, 1), "Asia/Shanghai"); err != nil {
-		t.Fatal(err)
+	if !dayComplete {
+		t.Fatal("post-launch rollup day must be complete")
 	}
 	if err = st.FreezeSourceBefore(ctx, "usage", old.AddDate(0, 0, 1), "Asia/Shanghai"); err != nil {
 		t.Fatal(err)
@@ -187,7 +173,7 @@ func TestPostgresRepeatedRetentionPreservesDailyAndLifetime(t *testing.T) {
 	if err = json.Unmarshal(persisted, &fleet); err != nil {
 		t.Fatal(err)
 	}
-	if fleet.Status != CoveragePartial || fleet.LastGapAt == nil || !fleet.LastGapAt.Equal(now) {
-		t.Fatalf("healthy replica erased persisted gap: %+v", fleet)
+	if fleet.Status != CoverageComplete || fleet.LastGapAt == nil || !fleet.LastGapAt.Equal(now) {
+		t.Fatalf("coverage merge lost persisted gap diagnostics: %+v", fleet)
 	}
 }

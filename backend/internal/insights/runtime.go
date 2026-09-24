@@ -11,8 +11,8 @@ import (
 )
 
 type RuntimeOptions struct {
-	TrustedCollection       bool
-	TrustedUsageHistoryFrom *time.Time
+	TrustedCollection bool
+	StatisticsStart   *time.Time
 }
 
 type runtimeRecorder struct {
@@ -29,6 +29,7 @@ type runtimeRecorder struct {
 	mu                sync.Mutex
 	coverage          Coverage
 	usageCoverage     Coverage
+	statisticsStart   *time.Time
 	pendingUsage      int
 	dirtyUsers        map[int64]struct{}
 }
@@ -52,7 +53,11 @@ func ConfigureRuntimeWithOptions(db *sql.DB, timezone string, queueSize int, opt
 		queueSize = 1024
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &runtimeRecorder{db: db, store: NewStore(db), timezone: timezone, queue: make(chan CallFact, queueSize), gaps: make(chan string, 16), stop: make(chan struct{}), done: make(chan struct{}), maintenanceDone: make(chan struct{}), cancelMaintenance: cancel, coverage: Coverage{Status: CoverageUnknown}, usageCoverage: Coverage{Status: CoverageUnknown}, dirtyUsers: make(map[int64]struct{})}
+	store := NewStore(db)
+	if options.StatisticsStart != nil {
+		store = NewStore(db, *options.StatisticsStart)
+	}
+	r := &runtimeRecorder{db: db, store: store, timezone: timezone, queue: make(chan CallFact, queueSize), gaps: make(chan string, 16), stop: make(chan struct{}), done: make(chan struct{}), maintenanceDone: make(chan struct{}), cancelMaintenance: cancel, coverage: Coverage{Status: CoverageUnknown}, usageCoverage: Coverage{Status: CoverageUnknown}, statisticsStart: options.StatisticsStart, dirtyUsers: make(map[int64]struct{})}
 	defaultRuntime.Lock()
 	old := defaultRuntime.recorder
 	defaultRuntime.recorder = r
@@ -67,7 +72,7 @@ func ConfigureRuntimeWithOptions(db *sql.DB, timezone string, queueSize int, opt
 		var raw []byte
 		if err := db.QueryRowContext(loadCtx, `SELECT value->'call_facts' FROM insights_settings WHERE key='coverage'`).Scan(&raw); err == nil {
 			var previous Coverage
-			if json.Unmarshal(raw, &previous) == nil && previous.Status == CoverageComplete && previous.TrustedSince != nil {
+			if json.Unmarshal(raw, &previous) == nil && previous.Status == CoverageComplete {
 				r.coverage = previous
 			}
 		}
@@ -77,21 +82,19 @@ func ConfigureRuntimeWithOptions(db *sql.DB, timezone string, queueSize int, opt
 		var usageRaw []byte
 		if db.QueryRowContext(loadUsageCtx, `SELECT value->'usage' FROM insights_settings WHERE key='coverage'`).Scan(&usageRaw) == nil {
 			var previous Coverage
-			if json.Unmarshal(usageRaw, &previous) == nil && previous.Status == CoverageComplete && previous.TrustedSince != nil {
+			if json.Unmarshal(usageRaw, &previous) == nil && previous.Status == CoverageComplete {
 				r.usageCoverage = previous
 			}
 		}
 		doneUsage()
 		r.usageCoverage = r.usageCoverage.Activate(time.Now())
-		if options.TrustedUsageHistoryFrom != nil {
-			historyCtx, historyDone := context.WithTimeout(context.Background(), 5*time.Second)
-			extended, extendErr := r.store.ExtendTrustedUsageHistory(historyCtx, r.usageCoverage, *options.TrustedUsageHistoryFrom, timezone)
-			historyDone()
-			if extendErr != nil {
-				log.Printf("[Insights] trusted usage history: %v", extendErr)
-			} else {
-				r.usageCoverage = extended
-			}
+	}
+	if options.StatisticsStart != nil {
+		historyCtx, historyDone := context.WithTimeout(context.Background(), 5*time.Second)
+		initializeErr := r.store.InitializeStatisticsCoverage(historyCtx, *options.StatisticsStart, timezone)
+		historyDone()
+		if initializeErr != nil {
+			log.Printf("[Insights] statistics coverage: %v", initializeErr)
 		}
 	}
 	go r.run()
@@ -292,7 +295,6 @@ func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
 		_ = r.store.SaveAggregationConfig(ctx, cfg)
 	}
 	r.mu.Lock()
-	coverage := r.coverage
 	ids := make([]int64, 0, 500)
 	for id := range r.dirtyUsers {
 		if len(ids) >= 300 {
@@ -326,7 +328,7 @@ func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
 	if n < 200 {
 		state.UserCursor = 0
 	}
-	if err := r.store.RebuildLifecycleUsers(ctx, r.timezone, coverage, ids); err != nil {
+	if err := r.store.RebuildLifecycleUsers(ctx, r.timezone, r.statisticsStart, ids); err != nil {
 		log.Printf("[Insights] lifecycle batch: %v", err)
 		return
 	}

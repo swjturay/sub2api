@@ -1,5 +1,13 @@
 # Development Journal
 
+## Insights fixed statistics start (2026-09-24)
+
+- Removed the persisted and API-visible `trusted_since` boundary. User-facing statistics now use only the configured system launch date, exposed as `statistics_start_date`; all dates from launch through today are complete, and absent usage rows are zero-use days.
+- Added `INSIGHTS_STATISTICS_START_DATE` / `insights.statistics_start_date`, fixed production CCE to `2026-06-01`, and made the release patch remove the obsolete trusted-history environment variable during rollout.
+- Scoped first-request and retention anchors to the launch window, including accounts created before launch, and removed the heatmap's data-gap state. Internal collection health remains available for operations but cannot move the statistical range.
+
+Validation: targeted and package-level backend tests, backend production build, Insights TypeScript/Lint/58 tests/production build, CCE release tests, Compose configuration, and whitespace checks passed. PostgreSQL integration tests compiled but were skipped because the local Docker daemon was unavailable; production data was not modified during validation.
+
 ## Personal Insights production launch boundary (2026-09-24)
 
 - Confirmed **2026-06-01** as the Sub2API production launch date in the platform timezone. The CCE release command now sets both trusted Insights collection and `INSIGHTS_TRUSTED_USAGE_HISTORY_FROM=2026-06-01` on the backend Deployment.

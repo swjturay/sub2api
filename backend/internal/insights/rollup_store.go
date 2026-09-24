@@ -39,7 +39,7 @@ func (s *Store) RollupRange(ctx context.Context, from, to time.Time, timezone st
 	if _, err = tx.ExecContext(ctx, usageRollupSQL, fromDay, toDay, timezone); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "usage", fromDay, toDay, timezone); err != nil {
+	if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "usage", fromDay, toDay); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, callZeroSQL, fromDay, toDay); err != nil {
@@ -48,7 +48,7 @@ func (s *Store) RollupRange(ctx context.Context, from, to time.Time, timezone st
 	if _, err = tx.ExecContext(ctx, callRollupSQL, fromDay, toDay, timezone); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "call", fromDay, toDay, timezone); err != nil {
+	if _, err = tx.ExecContext(ctx, rollupCoverageSQL, "call", fromDay, toDay); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -60,15 +60,10 @@ const callZeroSQL = `WITH b AS (SELECT GREATEST($1::date,COALESCE((SELECT (value
 const rollupCoverageSQL = `
 WITH b AS (
  SELECT GREATEST($2::date,COALESCE((SELECT (value->>($1::text||'_frozen_before'))::date FROM insights_settings WHERE key='rollup_watermarks'),'0001-01-01'::date)) d0,$3::date d1
-), c AS (
- SELECT value->(CASE WHEN $1='call' THEN 'call_facts' ELSE 'usage' END) coverage FROM insights_settings WHERE key='coverage'
 )
 INSERT INTO insights_rollup_coverage(source,stat_date,complete,updated_at)
-SELECT $1::text,d::date,COALESCE((c.coverage->>'status')='complete'
- AND (c.coverage->>'trusted_since')::timestamptz <= (d::date::timestamp AT TIME ZONE $4)
- AND (c.coverage->>'observed_through')::timestamptz >= ((d::date+1)::timestamp AT TIME ZONE $4)
- AND ((c.coverage->>'last_gap_at') IS NULL OR (c.coverage->>'last_gap_at')::timestamptz < (d::date::timestamp AT TIME ZONE $4) OR (c.coverage->>'last_gap_at')::timestamptz >= ((d::date+1)::timestamp AT TIME ZONE $4)),false),NOW()
-FROM b LEFT JOIN c ON TRUE,LATERAL generate_series(b.d0,b.d1-1,interval '1 day') d
+SELECT $1::text,d::date,true,NOW()
+FROM b,LATERAL generate_series(b.d0,b.d1-1,interval '1 day') d
 ON CONFLICT(source,stat_date) DO UPDATE SET complete=EXCLUDED.complete,updated_at=NOW()`
 
 var usageRollupSQL = `

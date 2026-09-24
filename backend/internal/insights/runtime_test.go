@@ -24,12 +24,11 @@ func TestUnknownCoverageBecomesPartialOnFirstObservation(t *testing.T) {
 	}
 	require.Equal(t, CoveragePartial, c.Status)
 	require.Equal(t, at, *c.ObservedThrough)
-	require.False(t, c.TrustsFirstCall(at, at.Add(time.Hour)))
 }
 
 func TestGapDowngradeSurvivesFullNotificationQueue(t *testing.T) {
 	at := time.Now()
-	r := &runtimeRecorder{gaps: make(chan string, 1), coverage: Coverage{Status: CoverageComplete, TrustedSince: &at, ObservedThrough: &at}, usageCoverage: Coverage{Status: CoverageComplete, TrustedSince: &at, ObservedThrough: &at}}
+	r := &runtimeRecorder{gaps: make(chan string, 1), coverage: Coverage{Status: CoverageComplete, ObservedThrough: &at}, usageCoverage: Coverage{Status: CoverageComplete, ObservedThrough: &at}}
 	r.gaps <- "previous gap"
 	defaultRuntime.Lock()
 	old := defaultRuntime.recorder
@@ -43,7 +42,7 @@ func TestGapDowngradeSurvivesFullNotificationQueue(t *testing.T) {
 
 func TestUsageGapAndPendingTasksAreIndependentOfCallCoverage(t *testing.T) {
 	at := time.Now()
-	r := &runtimeRecorder{gaps: make(chan string, 1), coverage: Coverage{Status: CoverageComplete, TrustedSince: &at, ObservedThrough: &at}, usageCoverage: Coverage{Status: CoverageComplete, TrustedSince: &at, ObservedThrough: &at}}
+	r := &runtimeRecorder{gaps: make(chan string, 1), coverage: Coverage{Status: CoverageComplete, ObservedThrough: &at}, usageCoverage: Coverage{Status: CoverageComplete, ObservedThrough: &at}}
 	defaultRuntime.Lock()
 	old := defaultRuntime.recorder
 	defaultRuntime.recorder = r

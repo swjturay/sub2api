@@ -4,7 +4,7 @@ export type ChartMode = "line" | "bar";
 export type Capability = "supported" | "unsupported" | "unknown";
 export interface User { id:number; username?:string; email?:string; role?:string; is_admin?:boolean }
 export interface ApiEnvelope<T> { code:number; message?:string; data:T }
-export interface Coverage { state:CoverageState; message?:string; from?:string; to?:string }
+export interface Coverage { state:CoverageState; message?:string }
 export interface TokenBreakdown { input:number|null; cacheWrite:number|null; cacheRead:number|null; output:number|null; total:number|null }
 export interface MetricValue { value:number|null; unit?:string; sampleCount?:number; coverage?:Coverage }
 export interface TimePoint { bucket:string; totalTokens:number|null; outputTokens:number|null; cacheHitRate:number|null; requests:number; successRate?:number|null; users?:number; incomplete?:boolean }
@@ -14,8 +14,8 @@ export interface DepartmentOption { id:string; name:string; issue?:string }
 export interface FilterState { from:string; to:string; granularity:Granularity; models:string[]; departments:string[] }
 export interface SubscriptionUsage { id:string; name:string; used:number; limit:number|null; currency:string; remaining:number|null; resetsAt:string|null; status:"active"|"unlimited"|"exceeded" }
 export interface PersonalOverview { subscriptions:SubscriptionUsage[]; todayTokens:TokenBreakdown; totalAmount:number; timezone:string; coverage:Coverage }
-export interface HeatmapDay { date:string; tokens:number|null; state:"value"|"zero"|"missing"|"out_of_scope"|"future" }
-export interface PersonalHeatmap { days:HeatmapDay[]; thresholds:number[]; coverage:Coverage }
+export interface HeatmapDay { date:string; tokens:number|null; state:"value"|"zero"|"out_of_scope"|"future" }
+export interface PersonalHeatmap { days:HeatmapDay[]; thresholds:number[]; statisticsStartDate?:string; coverage:Coverage }
 export interface PersonalAnalytics { activeDays:number; totalTokens:number|null; averageDailyTokens:number; requests:number; outputTokens:number|null; cacheHitRate:number|null; series:TimePoint[]; models:ModelSlice[]; coverage:Coverage }
 export interface UsageLog { id:string; recordedAt:string; department:string; model:string; apiKeyName:string; inputTokens:number; outputTokens:number; cacheReadTokens:number; cacheWriteTokens:number; durationMs:number|null; ttftMs:number|null; metadata:Record<string,unknown> }
 export interface ErrorLog { id:string; recordedAt:string; model:string; type:string; reason:string; metadata:Record<string,unknown> }
