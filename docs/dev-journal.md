@@ -1,5 +1,16 @@
 # Development Journal
 
+## CCE 0.2.8 deploy branch intake (2026-09-24)
+
+Base: `8996837eb845015c1f14f7632b414ac63ea7de19` (`cce-0.2.7`). Upstream: `v0.2.8`. Target: `cce-deploy`.
+
+- Integrated the complete upstream 0.2.8 release while preserving the CCE CPR boundary. CPR remains an AI-traffic passthrough, while Sub2API continues to own quota enforcement, scheduling, model availability, and rate limiting; CPR quota state is read only through the CPR Admin API.
+- Kept `CodexBackendClientFactory` and `PrivacyClientFactory` as separate transports. Codex/WHAM usage, quota reset, and spendable-credit traffic uses the Codex backend identity; privacy, account, subscription, and referral traffic uses the browser-oriented privacy identity without silent fallback between them.
+- Combined the upstream Codex metadata serializer with CCE raw-preserving behavior: HTTP headers are ASCII escaped, while opaque WebSocket and request-body metadata preserves the original JSON text. Preserved the CCE shared-AI OpenCode providers and added the upstream GPT-6 variants and Claude Opus 5.5 catalog entries.
+- Made `cce-deploy` the sole CCE deployment source. Manual release dispatch rejects other refs, and release commits must be reachable from the remote deployment branch. Also made the upstream release-matrix tooling deterministic under UTF-8 and portable to Windows test environments.
+
+Validation: full backend unit suite and build; frontend lint, typecheck, 423-test critical suite, targeted regressions, and production build; release Python compilation and 10 tests; workflow YAML parsing, `actionlint`, release shell syntax, and whitespace checks passed. The Compose simple-mode runtime test could not run because the local Docker Desktop daemon was unavailable.
+
 ## Insights fixed statistics start (2026-09-24)
 
 - Removed the persisted and API-visible `trusted_since` boundary. User-facing statistics now use only the configured system launch date, exposed as `statistics_start_date`; all dates from launch through today are complete, and absent usage rows are zero-use days.

@@ -11,9 +11,14 @@ in parallel and pushes only immutable linux/amd64 images to Alibaba ACR.
 
 Use either of these release entry points:
 
-- Push a tag named `cce-v<version>` to build that exact commit automatically.
-- Run `CCE ACR release archive` manually with an exact source ref, full commit
-  SHA, and version.
+- Push a tag named `cce-v<version>` from a commit on `cce-deploy` to build that
+  exact commit automatically.
+- Run `CCE ACR release archive` manually with `source_ref=cce-deploy`, the
+  branch-head full commit SHA, and version.
+
+`cce-deploy` is the sole deployment source branch. The workflow rejects manual
+release refs other than `cce-deploy` and rejects tags whose commits are not
+reachable from that branch.
 
 The workflow uploads `cce-release-manifest.json` plus its SHA-256 checksum as a
 small Actions artifact. Image tar archives and GHCR copies are not produced.

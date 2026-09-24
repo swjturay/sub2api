@@ -321,7 +321,7 @@ func TestCodexFingerprintConvergence_WSEntriesKeepIdentityAcrossTurns(t *testing
 							embedded := gjson.Parse(frameMetadata.Get(openAIWSTurnMetadataHeader).String())
 							requireMetadataSerializationPreserved(t, embedded.Raw)
 							if !bodyOnly {
-								requireMetadataSerializationPreserved(t, headers.Get(openAIWSTurnMetadataHeader))
+								requireMetadataSerializationHeaderPreserved(t, headers.Get(openAIWSTurnMetadataHeader))
 							}
 							require.Equal(t, window, embedded.Get("window_id").String())
 							require.Equal(t, int64(turn), embedded.Get("window_number").Int())

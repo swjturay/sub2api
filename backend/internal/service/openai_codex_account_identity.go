@@ -291,6 +291,6 @@ func applyCodexAccountIdentityHeaders(headers http.Header, account *Account, api
 		}
 	}
 	if raw := headers.Get(openAIWSTurnMetadataHeader); strings.TrimSpace(raw) != "" {
-		headers.Set(openAIWSTurnMetadataHeader, scopeCodexAccountTurnMetadata(raw, account, apiKeyID))
+		headers.Set(openAIWSTurnMetadataHeader, escapeCodexTurnMetadataNonASCII(scopeCodexAccountTurnMetadata(raw, account, apiKeyID)))
 	}
 }

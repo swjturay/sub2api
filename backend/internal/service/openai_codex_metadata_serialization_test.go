@@ -26,6 +26,17 @@ func requireMetadataSerializationPreserved(t *testing.T, raw string) {
 	require.Less(t, strings.Index(raw, `"window_id"`), strings.Index(raw, `"context_window_id"`), raw)
 }
 
+func requireMetadataSerializationHeaderPreserved(t *testing.T, raw string) {
+	t.Helper()
+	escapedUnknown := escapeCodexTurnMetadataNonASCII(metadataSerializationUnknown)
+	require.True(t, strings.HasPrefix(raw, `{ `+escapedUnknown+`, `), raw)
+	require.Less(t, strings.Index(raw, `"installation_id"`), strings.Index(raw, `"session_id"`), raw)
+	require.Less(t, strings.Index(raw, `"window_id"`), strings.Index(raw, `"context_window_id"`), raw)
+	for _, b := range []byte(raw) {
+		require.True(t, b >= 0x20 && b < 0x7f, "non-printable ASCII header byte: 0x%02x", b)
+	}
+}
+
 func TestCodexMetadataSerializationNamespace(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
@@ -40,7 +51,7 @@ func TestCodexMetadataSerializationNamespace(t *testing.T) {
 			h := make(http.Header)
 			h.Set(openAIWSTurnMetadataHeader, raw)
 			applyCodexAccountIdentityHeaders(h, account, 77)
-			require.Equal(t, want, h.Get(openAIWSTurnMetadataHeader))
+			require.Equal(t, escapeCodexTurnMetadataNonASCII(want), h.Get(openAIWSTurnMetadataHeader))
 			cm := map[string]any{openAIWSTurnMetadataHeader: raw}
 			require.True(t, applyCodexAccountIdentityEmbeddedMetadata(cm, account, 77))
 			require.Equal(t, want, cm[openAIWSTurnMetadataHeader])
@@ -67,7 +78,7 @@ func TestCodexMetadataSerializationFingerprint(t *testing.T) {
 				h := make(http.Header)
 				h.Set(openAIWSTurnMetadataHeader, raw)
 				applyCodexFingerprintHeaders(h, ids)
-				require.Equal(t, want, h.Get(openAIWSTurnMetadataHeader))
+				require.Equal(t, escapeCodexTurnMetadataNonASCII(want), h.Get(openAIWSTurnMetadataHeader))
 				body := map[string]any{"client_metadata": map[string]any{openAIWSTurnMetadataHeader: raw}}
 				applyCodexFingerprintClientMetadata(body, ids)
 				clientMetadata, ok := body["client_metadata"].(map[string]any)
@@ -138,7 +149,7 @@ func TestCodexMetadataSerializationHTTP(t *testing.T) {
 					svc, up := wireProfileTestService()
 					_, _ = svc.Forward(context.Background(), c, account, body)
 					require.NotNil(t, up.lastReq)
-					requireMetadataSerializationPreserved(t, up.lastReq.Header.Get(openAIWSTurnMetadataHeader))
+					requireMetadataSerializationHeaderPreserved(t, up.lastReq.Header.Get(openAIWSTurnMetadataHeader))
 					requireMetadataSerializationPreserved(t, gjson.GetBytes(up.lastBody, "client_metadata."+openAIWSTurnMetadataHeader).String())
 					// 整体编码器同样不转义 HTML：内嵌 metadata 的 <>& 必须以原字节出站
 					// （json.Marshal 会写成 \u003c\u003e\u0026，gjson 反转义后看不出来）。

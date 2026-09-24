@@ -476,7 +476,7 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any, ids *c
 	if strings.TrimSpace(raw) == "" {
 		return
 	}
-	h.Set(openAIWSTurnMetadataHeader, rewriteCodexFingerprintTurnMetadata(raw, fields, ids))
+	h.Set(openAIWSTurnMetadataHeader, escapeCodexTurnMetadataNonASCII(rewriteCodexFingerprintTurnMetadata(raw, fields, ids)))
 }
 
 func rewriteCodexFingerprintTurnMetadata(raw string, fields map[string]any, ids *codexFingerprintIDs) string {

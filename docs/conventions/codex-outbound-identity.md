@@ -17,6 +17,23 @@ direct Codex-protocol account or inject direct OAuth identity headers into it.
 Model discovery identifies the gateway as sub2api; API-key header overrides
 retain precedence. The internal CPR hop does not determine public egress.
 
+CPR quota snapshots come only from the CPR Admin API. Sub2API still owns quota,
+scheduling, model, and rate-limit policy, but must not query OpenAI directly on
+behalf of a CPR account or silently fall back to a direct OAuth path.
+
+## Codex Management-Plane Clients
+
+Keep the Codex backend and ChatGPT browser transports separate. WHAM usage,
+rate-limit reset credits, spendable credits, and quota-adjacent exit probing use
+`CodexBackendClientFactory`: normal HTTP transport through the account proxy,
+canonical Codex identity, and no browser impersonation.
+
+Privacy settings, ChatGPT account/subscription discovery, and referrals use
+`PrivacyClientFactory` or a business client built from it. Those calls retain
+the browser-shaped transport needed by ChatGPT Web endpoints. Never silently
+fall back from one factory to the other; a missing dependency is a configuration
+error so transport identity cannot drift unnoticed.
+
 ## CPR Outbound Display
 
 Only display CPR observations on OpenAI CPR accounts. Persist a sanitized proxy

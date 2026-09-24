@@ -86,8 +86,8 @@ func (c *stubQuotaTokenCache) AcquireRefreshLock(_ context.Context, _ string, _ 
 
 func (c *stubQuotaTokenCache) ReleaseRefreshLock(_ context.Context, _ string) error { return nil }
 
-// newQuotaRedirectingFactory 返回 PrivacyClientFactory，将请求重定向到 httptest.Server。
-func newQuotaRedirectingFactory(srv *httptest.Server) PrivacyClientFactory {
+// newQuotaRedirectingFactory 返回 CodexBackendClientFactory，将请求重定向到 httptest.Server。
+func newQuotaRedirectingFactory(srv *httptest.Server) CodexBackendClientFactory {
 	targetURL, _ := url.Parse(srv.URL)
 	return func(_ string) (*req.Client, error) {
 		c := req.C().WrapRoundTripFunc(func(rt req.RoundTripper) req.RoundTripFunc {
@@ -208,7 +208,7 @@ func TestResetCreditTargetedSendsStableCreditAndRedeemIDs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	result, err := svc.ResetCreditTargeted(context.Background(), account.ID, "credit-123", "redeem-456")
 	require.NoError(t, err)
 	require.Equal(t, "ok", result.Code)
@@ -261,7 +261,7 @@ func TestResetCreditAgentIdentityUsesAssertionAndRecoversInvalidTaskOnce(t *test
 	t.Cleanup(func() { openAIAgentIdentityAuthAPIBaseURL = oldBase })
 
 	invalidator := &agentIdentityWSInvalidationRecorder{}
-	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv), nil)
 	svc.agentIdentityWS = invalidator
 
 	result, err := svc.ResetCredit(context.Background(), account.ID)
@@ -323,7 +323,7 @@ func TestResetCreditAgentIdentityReusesConcurrentlyRecoveredTask(t *testing.T) {
 	openAIAgentIdentityAuthAPIBaseURL = srv.URL
 	t.Cleanup(func() { openAIAgentIdentityAuthAPIBaseURL = oldBase })
 
-	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv), nil)
 	result, err := svc.ResetCredit(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.Equal(t, "ok", result.Code)
@@ -376,7 +376,7 @@ func TestPrepareUpstreamCallShadowResolve(t *testing.T) {
 	// privacyClientFactory 可以是任意合法工厂；prepareUpstreamCall 在返回前不调用它
 	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, func(_ string) (*req.Client, error) {
 		return req.C(), nil
-	})
+	}, nil)
 
 	call, err := svc.prepareUpstreamCall(ctx, 200, false)
 	require.NoError(t, err, "shadow resolve should succeed; got error: %v", err)
@@ -414,7 +414,7 @@ func TestQueryUsageAgentIdentityUsesAssertionWithoutOAuthToken(t *testing.T) {
 		_, _ = w.Write([]byte(`{"plan_type":"pro","rate_limit":{"allowed":true}}`))
 	}))
 	defer srv.Close()
-	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv), nil)
 	usage, err := svc.QueryUsage(context.Background(), account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
@@ -468,7 +468,7 @@ func TestQueryUsageAgentIdentityRecoversInvalidTaskOnce(t *testing.T) {
 	t.Cleanup(func() { openAIAgentIdentityAuthAPIBaseURL = oldBase })
 
 	invalidator := &agentIdentityWSInvalidationRecorder{}
-	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, nil, newQuotaRedirectingFactory(srv), nil)
 	svc.agentIdentityWS = invalidator
 	usage, err := svc.QueryUsage(context.Background(), account.ID)
 	require.NoError(t, err)
@@ -569,7 +569,7 @@ func TestQueryUsageIncludesResetCreditExpirations_EndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	usage, err := svc.QueryUsage(ctx, 100)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
@@ -632,7 +632,7 @@ func TestQueryUsageResetCreditDetails401NonFatal(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	usage, err := svc.QueryUsage(ctx, 100)
 	require.NoError(t, err)
 	require.NotNil(t, usage)
@@ -707,7 +707,10 @@ func TestCachePostResetSnapshot(t *testing.T) {
 	repo := &stubQuotaAccountRepo{}
 	svc := &OpenAIQuotaService{accountRepo: repo}
 	credits := &OpenAIRateLimitResetCredits{AvailableCount: 0}
+	balance := "1200.50"
 	usage := &OpenAIQuotaUsage{
+		Credits:               &OpenAICredits{HasCredits: true, Balance: &balance},
+		FetchedAt:             123,
 		RateLimitResetCredits: credits,
 		RateLimit: &OpenAIRateLimit{
 			PrimaryWindow: &OpenAIRateLimitWindow{
@@ -722,6 +725,7 @@ func TestCachePostResetSnapshot(t *testing.T) {
 	require.NoError(t, svc.CachePostResetSnapshot(context.Background(), 100, usage))
 	require.Equal(t, 1, repo.extraUpdateCalls)
 	require.Equal(t, credits, repo.extraUpdates[100][openaiQuotaResetCreditsKey])
+	require.Equal(t, openAICreditsSnapshot{Credits: usage.Credits, FetchedAt: 123}, repo.extraUpdates[100][openaiQuotaCreditsKey])
 	require.Equal(t, 0.0, repo.extraUpdates[100]["codex_5h_used_percent"])
 	require.Equal(t, 0.0, repo.extraUpdates[100]["codex_7d_used_percent"])
 }
@@ -777,7 +781,7 @@ func TestQueryUsageShadowResolve_EndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	usage, err := svc.QueryUsage(ctx, 200)
 	require.NoError(t, err)
 	require.NotNil(t, usage)

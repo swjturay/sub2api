@@ -48,7 +48,7 @@ var codexWireTimezoneInFlight = gocache.New(5*time.Minute, time.Minute)
 // 整段在后台跑：闸门判定要读账号（还可能解析影子行），命中后还有一次最长 10 秒的外部查询，
 // 挂在额度查询的同步路径上会把管理端的账号详情和用量刷新一起拖住。额度结果不依赖它。
 func (s *OpenAIQuotaService) refreshCodexWireTimezone(ctx context.Context, accountID int64) {
-	if s == nil || s.accountRepo == nil || s.privacyClientFactory == nil {
+	if s == nil || s.accountRepo == nil || s.codexBackendClientFactory == nil {
 		return
 	}
 	if err := codexWireTimezoneInFlight.Add(
@@ -115,7 +115,7 @@ type codexWireExit struct {
 
 // lookupCodexWireTimezone 经账号代理查一次出口 IP、归属时区与大致地理位置。
 func (s *OpenAIQuotaService) lookupCodexWireTimezone(ctx context.Context, proxyURL string) (codexWireExit, error) {
-	client, err := s.privacyClientFactory(proxyURL)
+	client, err := s.codexBackendClientFactory(proxyURL)
 	if err != nil {
 		return codexWireExit{}, err
 	}

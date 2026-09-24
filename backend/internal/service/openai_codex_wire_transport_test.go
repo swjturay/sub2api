@@ -112,7 +112,7 @@ func TestRefreshCodexWireTimezoneResolvesShadowRow(t *testing.T) {
 	proxyURLs := make(chan string, 4)
 	svc := &OpenAIQuotaService{
 		accountRepo: repo,
-		privacyClientFactory: func(proxyURL string) (*req.Client, error) {
+		codexBackendClientFactory: func(proxyURL string) (*req.Client, error) {
 			proxyURLs <- proxyURL
 			return wireTimezoneStubClient(`{"ip":"24.120.102.167","timezone":"America/Los_Angeles"}`), nil
 		},

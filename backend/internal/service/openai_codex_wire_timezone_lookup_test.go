@@ -53,7 +53,7 @@ func wireTimezoneRoutingStubClient(t *testing.T, answers map[string]wireTimezone
 
 func wireTimezoneLookupService(t *testing.T, answers map[string]wireTimezoneStubReply, seen *[]string) *OpenAIQuotaService {
 	t.Helper()
-	return &OpenAIQuotaService{privacyClientFactory: func(string) (*req.Client, error) {
+	return &OpenAIQuotaService{codexBackendClientFactory: func(string) (*req.Client, error) {
 		return wireTimezoneRoutingStubClient(t, answers, seen), nil
 	}}
 }

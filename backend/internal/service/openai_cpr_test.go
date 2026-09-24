@@ -1079,13 +1079,16 @@ func TestCPRSharesOAuthUpstreamSemantics(t *testing.T) {
 
 	// 调度成本因子：同一份 ChatGPT 订阅，参考倍率与 oauth 相同。
 	now := time.Now()
-	cprRate, cprOK := openAISchedulingRate(cpr, now, 0.35)
-	oauthRate, oauthOK := openAISchedulingRate(oauth, now, 0.35)
+	oauthRateMultiplier := 0.35
+	cprRate, cprOK := openAISchedulingRate(cpr, now, &oauthRateMultiplier)
+	oauthRate, oauthOK := openAISchedulingRate(oauth, now, &oauthRateMultiplier)
 	require.True(t, cprOK)
 	require.Equal(t, oauthOK, cprOK)
 	require.Equal(t, oauthRate, cprRate)
-	_, apikeyOK := openAISchedulingRate(apikey, now, 0.35)
-	require.False(t, apikeyOK, "apikey 没有 billing probe 时无倍率，对照分支可区分")
+	apikeyRate, apikeyOK := openAISchedulingRate(apikey, now, &oauthRateMultiplier)
+	require.True(t, apikeyOK, "apikey 没有 billing probe 时按上游 0.2.8 语义回退到账户倍率")
+	require.Equal(t, apikey.BillingRateMultiplier(), apikeyRate)
+	require.NotEqual(t, cprRate, apikeyRate, "夹具必须能区分 ChatGPT 订阅参考倍率和 API key 账户倍率")
 
 	// x-codex-beta-features 会话级补注：真实 Codex 每个请求都带；只在压缩回合
 	// 才带是本函数要消除的形态。cpr 与 oauth 同，apikey 不补。
@@ -1303,19 +1306,20 @@ func TestCPRJoinsOpenAIUpstreamCostPool(t *testing.T) {
 	apikey := upstreamCostTestAccount(1, UpstreamBillingProbeStatusOK, 2.0, now.Add(-time.Minute), 30*time.Minute)
 	cpr := newCPRTestAccount()
 
-	factors := openAIUpstreamCostFactors([]*Account{apikey, cpr}, now, 0.35)
+	oauthRateMultiplier := 0.35
+	factors := openAIUpstreamCostFactors([]*Account{apikey, cpr}, now, &oauthRateMultiplier)
 	require.NotEqual(t, openAIUpstreamCostNeutralFactor, factors[apikey.ID], "cpr 进池后样本≥2，apikey 的因子不再中性")
 	require.NotEqual(t, openAIUpstreamCostNeutralFactor, factors[cpr.ID])
 	require.Greater(t, factors[cpr.ID], factors[apikey.ID], "0.35 的 cpr 比 2.0 的 apikey 便宜")
 
-	order := newOpenAILegacyUpstreamRateOrder([]*Account{apikey, cpr}, now, 0.35)
+	order := newOpenAILegacyUpstreamRateOrder([]*Account{apikey, cpr}, now, &oauthRateMultiplier)
 	require.True(t, order.enabled, "两档不同倍率才启用低倍率优先")
 	require.Negative(t, order.compare(cpr, apikey))
 
 	// 对照：cpr 被闸门排除（= 改回旧谓词）时只剩 1 个样本，全部中性、排序禁用。
-	only := openAIUpstreamCostFactors([]*Account{apikey}, now, 0.35)
+	only := openAIUpstreamCostFactors([]*Account{apikey}, now, &oauthRateMultiplier)
 	require.Equal(t, openAIUpstreamCostNeutralFactor, only[apikey.ID])
-	require.False(t, newOpenAILegacyUpstreamRateOrder([]*Account{apikey}, now, 0.35).enabled)
+	require.False(t, newOpenAILegacyUpstreamRateOrder([]*Account{apikey}, now, &oauthRateMultiplier).enabled)
 }
 
 // TestCPRImages429CarriesSameAccountRetryWindow：images 路径的 429 闸门与 /responses

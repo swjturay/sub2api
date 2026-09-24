@@ -12,6 +12,15 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+// Turn metadata is also used as an HTTP header, including when carried in WS JSON.
+func marshalCodexTurnMetadata(metadata map[string]any) ([]byte, error) {
+	text, err := marshalCodexTurnMetadataValue(metadata)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text), nil
+}
+
 // rewriteCodexTurnMetadataJSON replaces only selected top-level identity values.
 // The header and the opaque client_metadata string must retain the caller's key
 // order, whitespace, Unicode escapes and unknown values. Never marshal the object.
@@ -72,6 +81,31 @@ func rewriteCodexTurnMetadataJSON(raw string, rebuildInvalid bool, updates func(
 	return next
 }
 
+// escapeCodexTurnMetadataNonASCII keeps the caller's JSON layout and existing
+// escape spelling while making the final value safe for use as an HTTP header.
+func escapeCodexTurnMetadataNonASCII(raw string) string {
+	for i, b := range []byte(raw) {
+		if b < 0x80 {
+			continue
+		}
+		out := make([]byte, 0, len(raw)+16)
+		out = append(out, raw[:i]...)
+		for _, r := range raw[i:] {
+			switch {
+			case r < 0x80:
+				out = append(out, byte(r))
+			case r <= 0xffff:
+				out = fmt.Appendf(out, `\u%04x`, r)
+			default:
+				high, low := utf16.EncodeRune(r)
+				out = fmt.Appendf(out, `\u%04x\u%04x`, high, low)
+			}
+		}
+		return string(out)
+	}
+	return raw
+}
+
 // New scalar values follow Codex's ASCII JSON spelling, without HTML escaping.
 // Existing metadata text is deliberately not normalized through this encoder.
 func marshalCodexTurnMetadataValue(value any) (string, error) {
@@ -79,17 +113,5 @@ func marshalCodexTurnMetadataValue(value any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out := make([]byte, 0, len(raw))
-	for _, r := range string(raw) {
-		switch {
-		case r < 0x80:
-			out = append(out, byte(r))
-		case r <= 0xffff:
-			out = fmt.Appendf(out, `\u%04x`, r)
-		default:
-			high, low := utf16.EncodeRune(r)
-			out = fmt.Appendf(out, `\u%04x\u%04x`, high, low)
-		}
-	}
-	return string(out), nil
+	return escapeCodexTurnMetadataNonASCII(string(raw)), nil
 }

@@ -359,9 +359,15 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 		return s.getPassiveUsageForAccount(ctx, account)
 	}
 
-	// CPR 中继与 OAuth 共用 getOpenAIUsage：它们的展示口径（codex_5h_* / codex_7d_*）
-	// 完全相同，只是数据源一个是 /wham/usage、一个是 CPR 的 admin API。
-	if account.Platform == PlatformOpenAI && (account.Type == AccountTypeOAuth || account.IsCPR()) {
+	if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth {
+		// Usage can come from a stored snapshot even when a probe fails. Neither
+		// that nor a working access token proves a rejected refresh token recovered.
+		return s.getOpenAIUsage(ctx, account, forceProbe)
+	}
+
+	// CPR 与 OAuth 使用相同展示口径，但额度来自 CPR Admin API。一次成功的
+	// 管理面探测可以清理 CPR 自身的可恢复错误，不代表任何本地 OAuth 凭据恢复。
+	if account.Platform == PlatformOpenAI && account.IsCPR() {
 		usage, err := s.getOpenAIUsage(ctx, account, forceProbe)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)

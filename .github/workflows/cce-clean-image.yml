@@ -4,9 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Source branch, tag, or commit to build
+        description: CCE source branch to build
         required: true
         type: string
+        default: cce-deploy
       source_sha:
         description: Full source commit SHA
         required: true
@@ -49,6 +50,10 @@ jobs:
             source_ref="$REQUESTED_REF"
             source_sha="$REQUESTED_SHA"
             version="$REQUESTED_VERSION"
+            [[ "$source_ref" == cce-deploy ]] || {
+              echo 'manual CCE releases must use source_ref=cce-deploy' >&2
+              exit 1
+            }
           fi
           [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || {
             echo 'source_sha must be a full lowercase 40-character commit SHA' >&2
@@ -76,7 +81,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.inputs.outputs.source_sha }}
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Verify source ref resolves to the requested commit
         shell: bash
@@ -86,8 +91,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git fetch --no-tags --depth=1 origin "$SOURCE_REF"
+          git fetch --no-tags origin "$SOURCE_REF"
           test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$SOURCE_SHA"
+          git fetch --no-tags origin \
+            '+refs/heads/cce-deploy:refs/remotes/origin/cce-deploy'
+          git merge-base --is-ancestor "$SOURCE_SHA" refs/remotes/origin/cce-deploy || {
+            echo 'CCE release source must be reachable from cce-deploy' >&2
+            exit 1
+          }
 
   verify-ci:
     needs: validate-source
