@@ -8,6 +8,7 @@ Base: `8996837eb845015c1f14f7632b414ac63ea7de19` (`cce-0.2.7`). Upstream: `v0.2.
 - Kept `CodexBackendClientFactory` and `PrivacyClientFactory` as separate transports. Codex/WHAM usage, quota reset, and spendable-credit traffic uses the Codex backend identity; privacy, account, subscription, and referral traffic uses the browser-oriented privacy identity without silent fallback between them.
 - Combined the upstream Codex metadata serializer with CCE raw-preserving behavior: HTTP headers are ASCII escaped, while opaque WebSocket and request-body metadata preserves the original JSON text. Preserved the CCE shared-AI OpenCode providers and added the upstream GPT-6 variants and Claude Opus 5.5 catalog entries.
 - Made `cce-deploy` the sole CCE deployment source. Manual release dispatch rejects other refs, and release commits must be reachable from the remote deployment branch. Also made the upstream release-matrix tooling deterministic under UTF-8 and portable to Windows test environments.
+- Removed the unused whole-object Codex metadata marshal wrapper reported by the production CI lint gate; active header and opaque-body serialization paths remain unchanged.
 
 Validation: full backend unit suite and build; frontend lint, typecheck, 423-test critical suite, targeted regressions, and production build; release Python compilation and 10 tests; workflow YAML parsing, `actionlint`, release shell syntax, and whitespace checks passed. The Compose simple-mode runtime test could not run because the local Docker Desktop daemon was unavailable.
 

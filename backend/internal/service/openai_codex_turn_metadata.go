@@ -12,15 +12,6 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// Turn metadata is also used as an HTTP header, including when carried in WS JSON.
-func marshalCodexTurnMetadata(metadata map[string]any) ([]byte, error) {
-	text, err := marshalCodexTurnMetadataValue(metadata)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(text), nil
-}
-
 // rewriteCodexTurnMetadataJSON replaces only selected top-level identity values.
 // The header and the opaque client_metadata string must retain the caller's key
 // order, whitespace, Unicode escapes and unknown values. Never marshal the object.
