@@ -76,13 +76,14 @@ func TestModelStorePostgresIntegration(t *testing.T) {
 	if anthropic.RPMSamples != 1 || anthropic.AverageTPM == nil || *anthropic.AverageTPM != 1 {
 		t.Fatalf("historical fallback=%+v", anthropic)
 	}
-	bridgeID := ModelIdentity{Platform: "antigravity", Name: "alpha:latest"}
-	bridge, err := store.Performance(ctx, []ModelIdentity{bridgeID}, now, now.Add(time.Hour))
+	antigravityID := ModelIdentity{Platform: "antigravity", Name: "alpha:latest"}
+	antigravity, err := store.Performance(ctx, []ModelIdentity{antigravityID}, now, now.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := bridge[NormalizeModelKey(bridgeID)]; ok {
-		t.Fatalf("bridge platform must remain unknown: %+v", bridge)
+	antigravityPerformance := antigravity[NormalizeModelKey(antigravityID)]
+	if antigravityPerformance.RPMSamples != 1 || antigravityPerformance.AverageTPM == nil || *antigravityPerformance.AverageTPM != 70.0/60.0 {
+		t.Fatalf("antigravity historical fallback=%+v", antigravityPerformance)
 	}
 	trend, err := store.Trend(ctx, id, now, now.Add(time.Hour), "hour")
 	if err != nil || len(trend) != 1 || trend[0].Performance.RPMSamples != 4 {
