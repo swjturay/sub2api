@@ -85,16 +85,17 @@ func (h *InsightsHandler) Dimensions(c *gin.Context) {
 }
 
 type todaySubscription struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	Window          string     `json:"window,omitempty"`
-	UsedAmount      float64    `json:"used_amount"`
-	LimitAmount     *float64   `json:"limit_amount"`
-	RemainingAmount *float64   `json:"remaining_amount"`
-	ResetAt         *time.Time `json:"reset_at"`
-	Unlimited       bool       `json:"unlimited"`
-	OverLimit       bool       `json:"over_limit"`
-	Currency        string     `json:"currency"`
+	ID              int64                             `json:"id"`
+	Name            string                            `json:"name"`
+	Window          string                            `json:"window,omitempty"`
+	UsedAmount      float64                           `json:"used_amount"`
+	LimitAmount     *float64                          `json:"limit_amount"`
+	RemainingAmount *float64                          `json:"remaining_amount"`
+	ResetAt         *time.Time                        `json:"reset_at"`
+	Unlimited       bool                              `json:"unlimited"`
+	OverLimit       bool                              `json:"over_limit"`
+	Currency        string                            `json:"currency"`
+	RecentUsage     []insights.SubscriptionUsagePoint `json:"recent_usage"`
 }
 
 func (h *InsightsHandler) Today(c *gin.Context) {
@@ -120,6 +121,18 @@ func (h *InsightsHandler) Today(c *gin.Context) {
 		return
 	}
 	items := mapTodaySubscriptions(subs, progresses)
+	subscriptionIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		subscriptionIDs = append(subscriptionIDs, item.ID)
+	}
+	recentUsage, err := h.query.SubscriptionRecentUsage(c.Request.Context(), subject.UserID, subscriptionIDs)
+	if err != nil {
+		response.InternalError(c, "failed to query recent subscription usage")
+		return
+	}
+	for i := range items {
+		items[i].RecentUsage = recentUsage[items[i].ID]
+	}
 	now := time.Now().In(h.loc)
 	from := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
 	todayUsage, coverage, err := h.query.PersonalToday(c.Request.Context(), subject.UserID, from, from.AddDate(0, 0, 1))

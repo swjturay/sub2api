@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { CalendarDays, ChevronDown, ChevronUp, Clock3, WalletCards, Zap } from "lucide-react";
-import { insightsApi } from "../lib/api";
+import { useMemo, useState, type CSSProperties } from "react";
+import { Activity, CalendarDays, ChevronDown, ChevronUp, Clock3, WalletCards, Zap } from "lucide-react";
+import { insightsApi, resolveCatalogModel, resolvePersonalAnalyticsModels } from "../lib/api";
 import { useRemote } from "../lib/useRemote";
 import { useBootstrap } from "../features/BootstrapContext";
 import { AnalyticsFilters } from "../features/Filters";
@@ -14,7 +14,7 @@ import { ModelDonut } from "../components/charts/ModelDonut";
 import { Chart } from "../components/charts/Chart";
 import { Button } from "../components/ui/Button";
 import { HelpTip } from "../components/ui/HelpTip";
-import { buildHeatmapOption, heatmapSelectionDate } from "../features/chartOptions";
+import { buildHeatmapOption, heatmapLegendItems, heatmapSelectionDate } from "../features/chartOptions";
 
 export function PersonalPage({ auto }: { auto: boolean }) {
   const { models, timezone, generatedAt } = useBootstrap();
@@ -27,7 +27,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
       departments: [],
     })),
     [year, setYear] = useState(platformToday.year),
-    [mode, setMode] = useState<ChartMode>("line"),
+    [mode, setMode] = useState<ChartMode>("bar"),
     [metric, setMetric] = useState<"totalTokens" | "outputTokens" | "cacheHitRate">("totalTokens"),
     [tab, setTab] = useState<"usage" | "errors">("usage"),
     [pageSize, setPageSize] = useState(20),
@@ -35,6 +35,10 @@ export function PersonalPage({ auto }: { auto: boolean }) {
   const overview = useRemote((signal) => insightsApi.personalOverview(signal), [], auto);
   const heatmap = useRemote((signal) => insightsApi.personalHeatmap(year, signal), [year], auto);
   const analytics = useRemote((signal) => insightsApi.personalAnalytics(filters, signal), [filters], auto);
+  const analyticsData = useMemo(
+    () => analytics.data ? resolvePersonalAnalyticsModels(analytics.data, models) : undefined,
+    [analytics.data, models],
+  );
   const logs = useRemote(
     (signal) => insightsApi.logs(tab, filters, cursors.at(-1), pageSize, signal),
     [tab, filters, cursors, pageSize],
@@ -108,7 +112,8 @@ export function PersonalPage({ auto }: { auto: boolean }) {
           <>
             <div className="mt-4"><CoverageBanner coverage={heatmap.data.coverage} /></div>
             <Chart label="年度Token热力图" height={210} onEvents={{ click: selectDay }} option={buildHeatmapOption(heatmap.data.days, heatmap.data.thresholds, year)} />
-            <div className="mt-2 flex flex-wrap justify-end gap-x-4 gap-y-2 text-xs muted" aria-label="热力图数据状态">
+            <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs muted" aria-label="热力图图例">
+              {heatmapLegendItems(heatmap.data.thresholds).map((item) => <LegendSwatch key={item.label} className="" label={item.label} style={{ backgroundColor: item.color }} />)}
               <LegendSwatch className="border border-[var(--border)] bg-[var(--surface-subtle)]" label="零用量" />
               {heatmap.data.days.some((day) => day.state === "out_of_scope") && <LegendSwatch className="bg-[color-mix(in_srgb,var(--border)_55%,transparent)]" label="统计范围外" help={`早于 ${heatmap.data.statisticsStartDate || "系统上线日"}，不参与用量统计。`} />}
               <LegendSwatch className="border border-dashed border-[var(--border-strong)]" label="未来" />
@@ -126,22 +131,22 @@ export function PersonalPage({ auto }: { auto: boolean }) {
           <AnalyticsFilters value={filters} onChange={updateFilters} models={models} />
         </div>
         {analytics.error && <div className="mt-4"><ErrorBanner message={analytics.error} retry={analytics.refresh} stale={!!analytics.data} /></div>}
-        {analytics.loading && !analytics.data ? <Loading /> : analytics.data && (
+        {analytics.loading && !analyticsData ? <Loading /> : analyticsData && (
           <>
-            <div className="mt-4"><CoverageBanner coverage={analytics.data.coverage} /></div>
-            <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-6">
-              <MetricCard label="活跃天数" value={analytics.data.activeDays} />
-              <MetricCard label="总Token" value={analytics.data.totalTokens} />
-              <MetricCard label="日均Token" value={analytics.data.averageDailyTokens} formula="总Token ÷ 所选自然日数" />
-              <MetricCard label="请求次数" value={analytics.data.requests} formula="所选范围内的用量记录条数" />
-              <MetricCard label="输出Token" value={analytics.data.outputTokens} />
-              <MetricCard label="缓存命中率" value={analytics.data.cacheHitRate === null ? null : analytics.data.cacheHitRate * 100} unit="%" formula="Σ缓存读 ÷ (Σ输入 + Σ缓存写 + Σ缓存读)" />
+            <div className="mt-4"><CoverageBanner coverage={analyticsData.coverage} /></div>
+            <div className="personal-history-metrics mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-6">
+              <MetricCard label="总Token" value={analyticsData.totalTokens} />
+              <MetricCard label="输出Token" value={analyticsData.outputTokens} />
+              <MetricCard label="日均Token" value={analyticsData.averageDailyTokens} formula="总Token ÷ 所选自然日数" />
+              <MetricCard label="缓存命中率" value={analyticsData.cacheHitRate === null ? null : analyticsData.cacheHitRate * 100} unit="%" formula="Σ缓存读 ÷ (Σ输入 + Σ缓存写 + Σ缓存读)" />
+              <MetricCard label="请求次数" value={analyticsData.requests} formula="所选范围内的用量记录条数" />
+              <MetricCard label="活跃天数" value={analyticsData.activeDays} />
             </div>
           </>
         )}
       </section>
 
-      {analytics.data && (
+      {analyticsData && (
         <div className="grid items-stretch gap-6 xl:grid-cols-12">
           <section className="panel xl:col-span-8">
             <div className="flex min-h-12 flex-wrap items-center justify-between gap-3">
@@ -158,14 +163,14 @@ export function PersonalPage({ auto }: { auto: boolean }) {
                 { value: "bar", label: "柱状分布" },
               ]} />
             </div>
-            <TimeSeriesChart data={analytics.data.series} metric={metric} mode={mode} percent={metric === "cacheHitRate"} label="个人历史时间趋势" height={350} />
+            <TimeSeriesChart data={analyticsData.series} metric={metric} mode={mode} percent={metric === "cacheHitRate"} label="个人历史时间趋势" height={350} />
           </section>
           <section className="panel xl:col-span-4">
             <h2 className="m-0 flex items-center gap-1.5 text-base font-semibold">
               模型调用分布
               <HelpTip label="模型调用分布说明">按请求次数从高到低排序。</HelpTip>
             </h2>
-            <div className="mt-2">{analytics.data.models.length ? <ModelDonut models={analytics.data.models} compact /> : <Empty />}</div>
+            <div className="mt-2">{analyticsData.models.length ? <ModelDonut models={analyticsData.models} compact /> : <Empty />}</div>
           </section>
         </div>
       )}
@@ -192,7 +197,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
         {logs.error && <div className="mt-4"><ErrorBanner message={logs.error} retry={logs.refresh} stale={!!logs.data} /></div>}
         {logs.data && <div className="mt-4"><CoverageBanner coverage={logs.data.coverage} /></div>}
         {logs.loading && !logs.data ? <Loading /> : logs.data?.items.length ? (
-          <div className="mt-3 min-w-0 max-w-full overflow-x-auto rounded-[10px] border border-[var(--border)]">
+          <div className="mt-3 max-h-[520px] min-w-0 max-w-full overflow-auto rounded-[10px] border border-[var(--border)]">
             <table className={tab === "usage" ? "usage-log-table w-full min-w-[1240px] table-fixed text-sm" : "error-log-table w-full min-w-[1040px] table-fixed text-sm"}>
               {tab === "usage" ? (
                 <colgroup>
@@ -203,14 +208,14 @@ export function PersonalPage({ auto }: { auto: boolean }) {
                   <col className="w-[180px]" /><col className="w-[240px]" /><col className="w-[180px]" /><col /><col className="w-[90px]" />
                 </colgroup>
               )}
-              <thead className="bg-[var(--surface-subtle)] text-left muted">
+              <thead className="sticky top-0 z-10 bg-[var(--surface-subtle)] text-left muted">
                 <tr>{tab === "usage" ? (
                   <><th className="pl-4">统计时间</th><th>部门</th><th>模型</th><th>API Key</th><th className="log-token-column">Token 明细</th><th className="log-performance-column">性能</th></>
                 ) : (
                   <><th className="pl-4">时间</th><th>模型</th><th>错误类型</th><th>简要原因</th></>
                 )}<th className="pr-4 text-right">元数据</th></tr>
               </thead>
-              <tbody>{logs.data.items.map((row: UsageLog | ErrorLog) => <LogRow key={row.id} row={row} kind={tab} timezone={timezone} />)}</tbody>
+              <tbody>{logs.data.items.map((row: UsageLog | ErrorLog) => <LogRow key={row.id} row={row} kind={tab} timezone={timezone} models={models} />)}</tbody>
             </table>
           </div>
         ) : <Empty title="没有日志" detail={logs.data?.coverage.state === "uncollected" ? "该时间范围的日志尚未采集。" : "当前筛选范围没有可展示的日志。"} />}
@@ -229,7 +234,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
 
 function TodayTokens({ tokens, totalAmount }: { tokens: TokenBreakdown; totalAmount: number }) {
   const items: Array<[string, number | null]> = [
-    ["普通输入", tokens.input],
+    ["输入", tokens.input],
     ["输出", tokens.output],
     ["缓存读取", tokens.cacheRead],
   ];
@@ -238,11 +243,11 @@ function TodayTokens({ tokens, totalAmount }: { tokens: TokenBreakdown; totalAmo
     <div className="today-live-card relative overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--primary-soft)] xl:col-span-4">
       <div className="grid grid-cols-2">
         <div className="p-5">
-          <div className="text-xs font-semibold text-[var(--primary)]">总Token</div>
+          <div className="text-xs font-semibold text-[var(--primary)]">Token用量</div>
           <div className="mt-2 text-3xl font-semibold tabular-nums" title={tokens.total === null ? "无有效样本" : String(tokens.total)}>{formatMetric(tokens.total)}</div>
         </div>
         <div className="border-l border-[color-mix(in_srgb,var(--primary)_18%,transparent)] p-5">
-          <div className="text-xs font-semibold text-[var(--primary)]">总金额</div>
+          <div className="text-xs font-semibold text-[var(--primary)]">额度用量</div>
           <div className="mt-2 whitespace-nowrap text-3xl font-semibold tabular-nums" title={`${totalAmount} USD`}>${money(totalAmount)}</div>
           <div className="mt-1 text-xs muted">USD</div>
         </div>
@@ -259,8 +264,20 @@ function SubscriptionCard({ subscription, timezone }: { subscription: Subscripti
   const status = subscription.status === "unlimited" ? "不限额" : subscription.status === "exceeded" ? "已超限" : "有效";
   return (
     <article className="rounded-[10px] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-sm)]">
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="m-0 truncate text-sm font-semibold" title={subscription.name}>{subscription.name}</h3><p className="mb-0 mt-1 text-xs muted">当前订阅额度</p></div><span className="rounded-full bg-[var(--surface-subtle)] px-2 py-1 text-xs font-semibold text-[var(--primary)]">{status}</span></div>
-      <div className="mt-4 flex items-end gap-1.5"><strong className="text-2xl font-semibold tabular-nums">{money(subscription.used)}</strong><span className="pb-1 text-xs muted">{subscription.currency} 已用</span></div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="m-0 max-w-full truncate text-sm font-semibold" title={subscription.name}>{subscription.name}</h3>
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs muted">
+            <Clock3 aria-hidden="true" className="h-3.5 w-3.5" />
+            {subscription.resetsAt ? dateTime(subscription.resetsAt, timezone) + " 重置" : "未提供重置时间"}
+          </span>
+        </div>
+        <span className="shrink-0 rounded-full bg-[var(--surface-subtle)] px-2 py-1 text-xs font-semibold text-[var(--primary)]">{status}</span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-end gap-x-3 gap-y-2">
+        <div className="flex items-end gap-1.5"><strong className="text-2xl font-semibold tabular-nums">{money(subscription.used)}</strong><span className="pb-1 text-xs muted">{subscription.currency} 已用</span></div>
+        <RecentUsagePulse subscription={subscription} />
+      </div>
       {progress === null ? (
         <div className="mt-3 flex h-2 items-center rounded-full bg-[var(--surface-subtle)]"><div className="h-0.5 w-full bg-[var(--primary)] opacity-35" /></div>
       ) : (
@@ -270,34 +287,66 @@ function SubscriptionCard({ subscription, timezone }: { subscription: Subscripti
         <div><dt className="muted">额度</dt><dd className="m-0 mt-1 font-semibold tabular-nums">{subscription.limit === null ? "不限" : money(subscription.limit) + " " + subscription.currency}</dd></div>
         <div><dt className="muted">剩余</dt><dd className="m-0 mt-1 font-semibold tabular-nums">{subscription.limit === null ? "不限" : subscription.remaining === null ? "—" : money(subscription.remaining) + " " + subscription.currency}</dd></div>
       </dl>
-      <div className="mt-3 flex items-center gap-1.5 border-t border-[var(--border)] pt-3 text-xs muted"><Clock3 aria-hidden="true" className="h-3.5 w-3.5" />{subscription.resetsAt ? dateTime(subscription.resetsAt, timezone) + " 重置" : "未提供重置时间"}{subscription.status === "exceeded" && " · 已超额"}</div>
     </article>
   );
 }
 
-function LegendSwatch({ className, label, help }: { className: string; label: string; help?: string }) {
-  return <span className="inline-flex items-center gap-1.5"><span className={"h-3 w-3 rounded-sm " + className} aria-hidden="true" />{label}{help && <HelpTip label={`${label}说明`}>{help}</HelpTip>}</span>;
+function RecentUsagePulse({ subscription }: { subscription: SubscriptionUsage }) {
+  const groups = Array.from({ length: 15 }, (_, groupIndex) => subscription.recentUsage
+    .slice(groupIndex * 4, groupIndex * 4 + 4)
+    .reduce((total, point) => total + point.amount, 0));
+  const maximum = Math.max(0, ...groups);
+  const active = maximum > 0;
+  const description = `${subscription.name}近一小时${active ? "有使用动态" : "暂无使用"}${subscription.recentUsagePreview ? "，当前为本地预览" : ""}`;
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 pb-0.5"
+      role="img"
+      aria-label={description}
+      title={description}
+    >
+      <Activity aria-hidden="true" className="h-3.5 w-3.5 text-[var(--primary)]" />
+      <span className="flex h-5 w-28 items-end gap-[3px]" aria-hidden="true">
+        {groups.map((value, index) => (
+          <span
+            key={index}
+            className="min-w-0 flex-1 rounded-sm bg-[var(--primary)] opacity-70 motion-safe:animate-pulse"
+            style={{ height: `${active ? Math.max(3, Math.round(4 + (value / maximum) * 14)) : 3}px`, animationDelay: `${index * 70}ms` }}
+          />
+        ))}
+      </span>
+    </span>
+  );
 }
 
-function LogRow({ row, kind, timezone }: { row: UsageLog | ErrorLog; kind: "usage" | "errors"; timezone: string }) {
+function LegendSwatch({ className, label, help, style }: { className: string; label: string; help?: string; style?: CSSProperties }) {
+  return <span className="inline-flex items-center gap-1.5"><span className={"h-3 w-3 rounded-sm " + className} style={style} aria-hidden="true" />{label}{help && <HelpTip label={`${label}说明`}>{help}</HelpTip>}</span>;
+}
+
+function LogRow({ row, kind, timezone, models }: { row: UsageLog | ErrorLog; kind: "usage" | "errors"; timezone: string; models: Array<{ id: string; name: string; platform: string }> }) {
   const [open, setOpen] = useState(false);
   const toggle = <button className="log-detail-button inline-flex items-center gap-1 text-[var(--primary)]" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{open ? <ChevronUp aria-hidden="true" className="h-3.5 w-3.5" /> : <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />}{open ? "收起" : "展开"}</button>;
   if (kind === "usage") {
     const usage = row as UsageLog;
+    const displayModel = resolveCatalogModel(usage.model, models)?.id || usage.model;
     return <>
       <tr className="border-t border-[var(--border)] align-top">
-        <td className="py-3 pl-4 whitespace-nowrap">{dateTime(usage.recordedAt, timezone)}</td><td>{usage.department || "未分配"}</td><td className="[overflow-wrap:anywhere]">{usage.model}</td><td className="[overflow-wrap:anywhere]">{usage.apiKeyName}</td>
-        <td className="log-token-column"><div className="grid grid-cols-2 gap-x-5 gap-y-1.5 text-xs"><LogValue label="输入" value={usage.inputTokens} /><LogValue label="输出" value={usage.outputTokens} /><LogValue label="缓存写" value={usage.cacheWriteTokens} /><LogValue label="缓存读" value={usage.cacheReadTokens} /></div></td>
-        <td className="log-performance-column"><div className="grid gap-1.5 text-xs"><LogValue label="耗时" value={usage.durationMs} unit="ms" /><LogValue label="TTFT" value={usage.ttftMs} unit="ms" /></div></td><td className="pr-4 text-right">{toggle}</td>
+        <td className="py-2 pl-4 whitespace-nowrap">{dateTime(usage.recordedAt, timezone)}</td><TruncatedLogCell value={usage.department || "未分配"} /><TruncatedLogCell value={displayModel} /><TruncatedLogCell value={usage.apiKeyName} />
+        <td className="log-token-column"><div className="grid grid-cols-2 gap-x-5 gap-y-0.5 text-xs"><LogValue label="输入" value={usage.inputTokens} /><LogValue label="输出" value={usage.outputTokens} /><LogValue label="缓存写" value={usage.cacheWriteTokens} /><LogValue label="缓存读" value={usage.cacheReadTokens} /></div></td>
+        <td className="log-performance-column"><div className="grid gap-0.5 text-xs"><LogValue label="耗时" value={usage.durationMs} unit="ms" /><LogValue label="TTFT" value={usage.ttftMs} unit="ms" /></div></td><td className="pr-4 text-right">{toggle}</td>
       </tr>
       {open && <tr><td colSpan={7} className="border-t border-[var(--border)] bg-[var(--surface-subtle)] px-4 py-3"><pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(usage.metadata, null, 2)}</pre></td></tr>}
     </>;
   }
   const error = row as ErrorLog;
   return <>
-    <tr className="border-t border-[var(--border)] align-top"><td className="py-3 pl-4 whitespace-nowrap">{dateTime(error.recordedAt, timezone)}</td><td>{error.model}</td><td>{error.type}</td><td className="max-w-xl whitespace-normal leading-5">{error.reason}</td><td className="pr-4 text-right">{toggle}</td></tr>
+    <tr className="border-t border-[var(--border)] align-top"><td className="py-2 pl-4 whitespace-nowrap">{dateTime(error.recordedAt, timezone)}</td><td>{error.model}</td><td>{error.type}</td><td className="max-w-xl whitespace-normal leading-5">{error.reason}</td><td className="pr-4 text-right">{toggle}</td></tr>
     {open && <tr><td colSpan={5} className="border-t border-[var(--border)] bg-[var(--surface-subtle)] px-4 py-3"><pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify(error.metadata, null, 2)}</pre></td></tr>}
   </>;
+}
+
+function TruncatedLogCell({ value }: { value: string }) {
+  return <td className="overflow-hidden"><span className="block truncate whitespace-nowrap" title={value}>{value}</span></td>;
 }
 
 function LogValue({ label, value, unit = "" }: { label: string; value: number | null; unit?: string }) {

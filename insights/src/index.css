@@ -161,6 +161,8 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .today-live-card { min-width: 0; }
 .today-live-card .tabular-nums { letter-spacing: -0.025em; }
 .personal-page .panel { contain: inline-size; }
+.personal-history-metrics .metric-card:nth-child(-n+4) { background: color-mix(in srgb, var(--primary-soft) 22%, var(--surface)); }
+.personal-history-metrics .metric-card:nth-child(5) { border-left-color: var(--border-strong); }
 .overview-summary-cell { padding: 15px; }
 
 .coverage-note { display: inline-flex; width: fit-content; max-width: 100%; min-height: 28px; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-subtle); padding: 3px 7px; color: var(--muted); font-size: 11px; line-height: 1.25; }

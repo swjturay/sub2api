@@ -142,3 +142,16 @@ pnpm run lint:check
 pnpm run build
 make test-frontend-critical
 ~~~
+
+## Personal insights live subscription preview (2026-09-24)
+
+- Added subscription-scoped usage aggregation for the latest 60 one-minute buckets. The personal Today response now includes exact request counts and actual cost per subscription minute without changing the existing quota totals.
+- Added an abstract recent-hour activity pulse beside each subscription's used amount. It conveys relative activity without exposing minute-level values, while a clearly labelled Vite-only preview fixture supports testing against an older backend.
+- Reworked the annual calendar heatmap into one state-aware series. Zero-use hover no longer highlights out-of-scope cells, and the usage-depth and data-state keys now share one legend row.
+- Added per-bucket model usage to personal analytics and made the stacked model bar chart the default trend view. The local preview derives a deterministic stack from aggregate model totals when connected to an older backend.
+- Applied the requested personal-page copy and card cleanup: `Token用量`, `额度用量`, removed the redundant quota note, and moved reset time beside the subscription name.
+- Grouped total, output, daily-average and cache Token metrics before request/activity metrics. Long department, model and API-key log values now stay on one line, truncate visually and expose the full value on hover.
+- Simplified the Today token breakdown label from `普通输入` to `输入`. Kept the API-compatible 20-row log pagination, tightened row spacing, and capped the table viewport with a sticky header so the log section no longer dominates the page.
+- Fixed `unknown:gemini-3.8-flash-high`: usage SQL had incorrectly excluded `antigravity` even though the model catalog uses it as the production identity. Composite remains excluded until a concrete call-fact provider is available; the frontend also reconciles old-backend `unknown` identities against a unique catalog match during mixed-version previews.
+
+Validation: Insights ESLint, TypeScript, 17 files / 63 tests and production build passed; backend `internal/insights` and `internal/handler` unit suites passed. A 1569x1270 local browser check confirmed both recent-hour pulses, the combined heatmap legend, stable zero-use hover, the default stacked model bars and no horizontal overflow. Preview-only recent and model-bucket data are used only because the connected production backend does not yet expose the new response fields.

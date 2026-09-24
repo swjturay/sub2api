@@ -26,3 +26,5 @@ data: failed or incomplete endpoints remain visible as error or coverage states.
 
 
 For an isolated backend on a different port, set `INSIGHTS_API_PROXY_TARGET` before starting Vite. Native login must be served through that same Vite origin; browsing only a static frontend on a separate origin does not share the original login session. `VITE_INSIGHTS_REFRESH_INTERVAL_SECONDS` sets the optional refresh interval (default 60 seconds).
+
+When previewing against an older backend, set `VITE_INSIGHTS_PREVIEW_FIXTURES=true`. This adds deterministic development-only data for the subscription recent-hour pulse and derives model stacks from the returned aggregate model totals when bucket-level model data is unavailable. Usage identities reported with an `unknown` provider are also reconciled when the model name has one unique catalog identity, which keeps mixed-version previews aligned with the catalog. Production builds never use the synthetic preview series.

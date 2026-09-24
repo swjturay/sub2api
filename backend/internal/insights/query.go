@@ -60,12 +60,13 @@ func Ratio(numerator, denominator int64) *float64 {
 
 func CacheHitRatio(t Tokens) *float64 { return Ratio(t.CacheRead, t.Input+t.CacheWrite+t.CacheRead) }
 
-// usageProviderSQL resolves the provider that actually handled a usage row.
-// Composite and Antigravity are routing surfaces, not concrete providers.
+// usageProviderSQL resolves the model identity used by Insights. Antigravity is
+// a catalog provider in this product, while composite still needs a concrete
+// call-fact provider before it can identify a model.
 func usageProviderSQL(factExpression, accountExpression string) string {
 	return fmt.Sprintf(`COALESCE(
- CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','antigravity','composite') THEN BTRIM(%s) END,
- CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','antigravity','composite') THEN BTRIM(%s) END,
+ CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','composite') THEN BTRIM(%s) END,
+ CASE WHEN LOWER(BTRIM(COALESCE(%s,''))) NOT IN ('','composite') THEN BTRIM(%s) END,
  'unknown')`, factExpression, factExpression, accountExpression, accountExpression)
 }
 
@@ -315,6 +316,7 @@ type UsageBucket struct {
 	Start    time.Time    `json:"start"`
 	Complete bool         `json:"complete"`
 	Metrics  UsageSummary `json:"metrics"`
+	Models   []UsageModel `json:"models"`
 }
 type UsageModel struct {
 	Model        string   `json:"model"`
@@ -333,6 +335,12 @@ type PersonalTodayUsage struct {
 	ActualCost float64 `json:"actual_cost"`
 }
 
+type SubscriptionUsagePoint struct {
+	At       time.Time `json:"at"`
+	Amount   float64   `json:"amount"`
+	Requests int64     `json:"requests"`
+}
+
 func (q *Query) PersonalToday(ctx context.Context, userID int64, from, to time.Time) (PersonalTodayUsage, CoverageInfo, error) {
 	var input, write, read, output int64
 	var actualCost float64
@@ -345,6 +353,52 @@ func (q *Query) PersonalToday(ctx context.Context, userID int64, from, to time.T
 		return PersonalTodayUsage{}, CoverageInfo{}, err
 	}
 	return PersonalTodayUsage{Tokens: NewTokens(input, write, read, output), ActualCost: actualCost}, coverage, nil
+}
+
+func (q *Query) SubscriptionRecentUsage(ctx context.Context, userID int64, subscriptionIDs []int64) (map[int64][]SubscriptionUsagePoint, error) {
+	result := make(map[int64][]SubscriptionUsagePoint, len(subscriptionIDs))
+	if len(subscriptionIDs) == 0 {
+		return result, nil
+	}
+	to := q.now().UTC().Truncate(time.Minute).Add(time.Minute)
+	from := to.Add(-60 * time.Minute)
+	positions := make(map[int64]map[int64]int, len(subscriptionIDs))
+	for _, subscriptionID := range subscriptionIDs {
+		points := make([]SubscriptionUsagePoint, 60)
+		index := make(map[int64]int, 60)
+		for i := range points {
+			at := from.Add(time.Duration(i) * time.Minute)
+			points[i].At = at
+			index[at.Unix()] = i
+		}
+		result[subscriptionID] = points
+		positions[subscriptionID] = index
+	}
+	rows, err := q.db.QueryContext(ctx, `SELECT subscription_id,date_trunc('minute',created_at),COALESCE(SUM(actual_cost),0)::float8,COUNT(*) FROM usage_logs WHERE user_id=$1 AND subscription_id=ANY($2::bigint[]) AND created_at >= $3 AND created_at < $4 GROUP BY 1,2 ORDER BY 1,2`, userID, pq.Array(subscriptionIDs), from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query recent subscription usage: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var subscriptionID, requests int64
+		var at time.Time
+		var amount float64
+		if err := rows.Scan(&subscriptionID, &at, &amount, &requests); err != nil {
+			return nil, err
+		}
+		position, ok := positions[subscriptionID][at.UTC().Unix()]
+		if !ok {
+			continue
+		}
+		points := result[subscriptionID]
+		points[position].Amount = amount
+		points[position].Requests = requests
+		result[subscriptionID] = points
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.Time, granularity string, models []string) (Envelope, error) {
@@ -387,6 +441,33 @@ func (q *Query) PersonalUsage(ctx context.Context, userID int64, from, to time.T
 		buckets = append(buckets, b)
 	}
 	if err := rows.Err(); err != nil {
+		return Envelope{}, err
+	}
+	bucketIndexes := make(map[int64]int, len(buckets))
+	for i := range buckets {
+		bucketIndexes[buckets[i].Start.UnixNano()] = i
+	}
+	bucketModelRows, err := q.db.QueryContext(ctx, `SELECT date_trunc($6,ul.created_at AT TIME ZONE $4),`+usageProviderSQL("f.platform", "a.platform")+` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model),COUNT(*),COALESCE(SUM(ul.input_tokens),0),COALESCE(SUM(ul.cache_creation_tokens),0),COALESCE(SUM(ul.cache_read_tokens),0),COALESCE(SUM(ul.output_tokens),0) FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND `+filter+` GROUP BY 1,2 ORDER BY 1,3 DESC,2`, userID, from, to, q.timezone, nullableTextArray(models), granularity)
+	if err != nil {
+		return Envelope{}, err
+	}
+	defer func() { _ = bucketModelRows.Close() }()
+	for bucketModelRows.Next() {
+		var start time.Time
+		var item UsageModel
+		var input, write, read, output int64
+		if err := bucketModelRows.Scan(&start, &item.Model, &item.RequestCount, &input, &write, &read, &output); err != nil {
+			return Envelope{}, err
+		}
+		index, ok := bucketIndexes[start.UnixNano()]
+		if !ok {
+			continue
+		}
+		item.Tokens = NewTokens(input, write, read, output)
+		item.Ratio = Ratio(item.RequestCount, buckets[index].Metrics.RequestCount)
+		buckets[index].Models = append(buckets[index].Models, item)
+	}
+	if err := bucketModelRows.Err(); err != nil {
 		return Envelope{}, err
 	}
 	modelRows, err := q.db.QueryContext(ctx, `SELECT `+usageProviderSQL("f.platform", "a.platform")+` || ':' || COALESCE(NULLIF(ul.requested_model,''),ul.model),COUNT(*),COALESCE(SUM(ul.input_tokens),0),COALESCE(SUM(ul.cache_creation_tokens),0),COALESCE(SUM(ul.cache_read_tokens),0),COALESCE(SUM(ul.output_tokens),0) FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) AS platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true WHERE ul.user_id=$1 AND ul.created_at >= $2 AND ul.created_at < $3 AND `+summaryFilter+` GROUP BY 1 ORDER BY 2 DESC,1`, userID, from, to, nullableTextArray(models))
@@ -459,6 +540,33 @@ func (q *Query) PersonalUsageDaily(ctx context.Context, userID int64, from, to t
 		buckets = append(buckets, b)
 	}
 	if err := rows.Err(); err != nil {
+		return Envelope{}, err
+	}
+	bucketIndexes := make(map[int64]int, len(buckets))
+	for i := range buckets {
+		bucketIndexes[buckets[i].Start.UnixNano()] = i
+	}
+	bucketModelRows, err := q.db.QueryContext(ctx, `SELECT date_trunc($5,stat_date::timestamp),platform || ':' || model,COALESCE(SUM(usage_count),0),COALESCE(SUM(input_tokens),0),COALESCE(SUM(cache_creation_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(output_tokens),0) FROM insights_user_model_daily WHERE user_id=$1 AND stat_date >= $2::date AND stat_date < $3::date AND `+filter+` GROUP BY 1,2 ORDER BY 1,3 DESC,2`, userID, from, to, nullableTextArray(models), granularity)
+	if err != nil {
+		return Envelope{}, err
+	}
+	defer func() { _ = bucketModelRows.Close() }()
+	for bucketModelRows.Next() {
+		var start time.Time
+		var item UsageModel
+		var input, write, read, output int64
+		if err := bucketModelRows.Scan(&start, &item.Model, &item.RequestCount, &input, &write, &read, &output); err != nil {
+			return Envelope{}, err
+		}
+		index, ok := bucketIndexes[start.UnixNano()]
+		if !ok {
+			continue
+		}
+		item.Tokens = NewTokens(input, write, read, output)
+		item.Ratio = Ratio(item.RequestCount, buckets[index].Metrics.RequestCount)
+		buckets[index].Models = append(buckets[index].Models, item)
+	}
+	if err := bucketModelRows.Err(); err != nil {
 		return Envelope{}, err
 	}
 	modelRows, err := q.db.QueryContext(ctx, `SELECT platform || ':' || model,COALESCE(SUM(usage_count),0),COALESCE(SUM(input_tokens),0),COALESCE(SUM(cache_creation_tokens),0),COALESCE(SUM(cache_read_tokens),0),COALESCE(SUM(output_tokens),0) FROM insights_user_model_daily WHERE user_id=$1 AND stat_date >= $2::date AND stat_date < $3::date AND `+filter+` GROUP BY 1 ORDER BY 2 DESC,1`, userID, from, to, nullableTextArray(models))
@@ -542,6 +650,7 @@ func mergeUsageData(a, b UsageData, from, to, now time.Time) UsageData {
 			dst := bucketMap[key]
 			if dst == nil {
 				copy := item
+				copy.Models = mergeUsageModels(nil, item.Models, item.Metrics.RequestCount)
 				dst = &copy
 				bucketMap[key] = dst
 			} else {
@@ -550,6 +659,7 @@ func mergeUsageData(a, b UsageData, from, to, now time.Time) UsageData {
 				addTokens(&dst.Metrics.Tokens, item.Metrics.Tokens)
 				dst.Metrics.CacheHitRatio = CacheHitRatio(dst.Metrics.Tokens)
 				dst.Complete = dst.Complete && item.Complete
+				dst.Models = mergeUsageModels(dst.Models, item.Models, dst.Metrics.RequestCount)
 			}
 		}
 	}

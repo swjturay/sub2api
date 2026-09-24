@@ -8,32 +8,39 @@ function escapeHtml(value: unknown) {
 }
 
 export function heatmapSelectionDate(p: unknown, days: HeatmapDay[]): string | null {
-  const date=(p as {data?:[string,number]}).data?.[0];
+  const raw=(p as {data?:[string,number]|{value?:[string,number]}}).data;
+  const date=(Array.isArray(raw)?raw:raw?.value)?.[0];
   const day=date ? days.find((d)=>d.date===date) : undefined;
   return day && (day.state==="value" || day.state==="zero") ? day.date : null;
 }
-export function buildHeatmapOption(days: HeatmapDay[], thresholds:number[], year:number): EChartsOption {
-  const colors = chartColors();
+function heatmapPieces(thresholds:number[]) {
   const levels = [...new Set(thresholds.filter((v)=>Number.isFinite(v) && v>0))].sort((a,b)=>a-b).slice(0,4);
-  const pieces = levels.map((max,i)=>{
+  return levels.map((max,i)=>{
     const previous=i===0?0:levels[i-1];
     const first=previous+1;
     const colorIndex=Math.max(0,Math.ceil((i+1)*heatPalette.length/levels.length)-1);
     return {gt:previous,lte:max,color:heatPalette[colorIndex],label:first===max?compactNumber(max):`${compactNumber(first)}–${compactNumber(max)}`};
   });
-  const named = (state:HeatmapDay["state"]) => days.filter(d=>d.state===state).map(d=>[d.date,d.tokens ?? 0,state]);
+}
+export function heatmapLegendItems(thresholds:number[]) {
+  return heatmapPieces(thresholds).map(({label,color})=>({label,color}));
+}
+export function buildHeatmapOption(days: HeatmapDay[], thresholds:number[], year:number): EChartsOption {
+  const colors = chartColors();
+  const pieces = heatmapPieces(thresholds);
+  const stateColors = {zero:colors.surfaceSubtle,out_of_scope:"rgba(148,163,184,.12)",future:"rgba(148,163,184,.08)"};
+  const data = days.map((day)=>({
+    value:[day.date,day.state==="value"?day.tokens ?? 0:day.state==="zero"?0:day.state==="out_of_scope"?-1:-2,day.state],
+    itemStyle:{borderColor:day.state==="future"?colors.border:colors.surface,borderWidth:day.state==="future"?1:3,borderType:day.state==="future"?"dashed" as const:"solid" as const}
+  }));
   return {
-    tooltip:{ ...tooltipTheme(), formatter:(p:unknown)=>{ const d=(p as {data:[string,number,string]}).data; const labels:Record<string,string>={zero:"0 Token",out_of_scope:"统计范围外",future:"未来日期"}; return `<b>${escapeHtml(d[0])}</b><br/>${d[2]==="value"?`${d[1].toLocaleString("zh-CN")} Token`:labels[d[2]]}`; }},
-    visualMap:{ type:"piecewise", seriesIndex:0, dimension:1, pieces, orient:"horizontal", left:"center", bottom:0, itemWidth:14, itemHeight:10, itemGap:10, textStyle:{color:colors.muted,fontSize:12} },
-    calendar:{ range:String(year), cellSize:["auto",17], top:32, left:42, right:16, bottom:42, yearLabel:{show:false}, dayLabel:{firstDay:1,color:colors.muted,fontSize:10}, monthLabel:{nameMap:"ZH",color:colors.muted,fontSize:10}, splitLine:{show:false}, itemStyle:{color:colors.surfaceSubtle,borderColor:colors.surface,borderWidth:3}},
-    series:[
-      {name:"非零",type:"heatmap",coordinateSystem:"calendar",data:named("value")},
-      {name:"零",type:"heatmap",coordinateSystem:"calendar",data:named("zero"),itemStyle:{color:colors.surfaceSubtle,borderColor:colors.surface,borderWidth:3}},
-      {name:"统计范围外",type:"heatmap",coordinateSystem:"calendar",data:named("out_of_scope"),itemStyle:{color:"rgba(148,163,184,.12)",borderColor:colors.surface,borderWidth:3}},
-      {name:"未来",type:"heatmap",coordinateSystem:"calendar",data:named("future"),itemStyle:{color:"rgba(148,163,184,.08)",borderColor:colors.border,borderWidth:1}},
-    ]
+    tooltip:{ ...tooltipTheme(), formatter:(p:unknown)=>{ const raw=(p as {data:{value:[string,number,string]}|[string,number,string]}).data; const d=Array.isArray(raw)?raw:raw.value; const labels:Record<string,string>={zero:"0 Token",out_of_scope:"统计范围外",future:"未来日期"}; return `<b>${escapeHtml(d[0])}</b><br/>${d[2]==="value"?`${d[1].toLocaleString("zh-CN")} Token`:labels[d[2]]}`; }},
+    visualMap:[{ show:false, hoverLink:false, type:"piecewise", seriesIndex:0, dimension:1, pieces:[{value:-2,color:stateColors.future},{value:-1,color:stateColors.out_of_scope},{value:0,color:stateColors.zero},...pieces] }],
+    calendar:{ range:String(year), cellSize:["auto",17], top:32, left:42, right:16, bottom:18, yearLabel:{show:false}, dayLabel:{firstDay:1,color:colors.muted,fontSize:10}, monthLabel:{nameMap:"ZH",color:colors.muted,fontSize:10}, splitLine:{show:false}, itemStyle:{color:colors.surfaceSubtle,borderColor:colors.surface,borderWidth:3}},
+    series:[{name:"每日Token",type:"heatmap",coordinateSystem:"calendar",data,emphasis:{disabled:true}}]
   };
 }
+
 export function buildFunnelOption(funnel:GatewayAnalytics["funnel"]):EChartsOption {
  const colors=chartColors(),maximum=Math.max(1,...funnel.flatMap(x=>x.count===null?[]:[x.count]));
  type Datum={name:string;value:number|null;share:number|null;status?:string};

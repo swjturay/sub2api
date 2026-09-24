@@ -7,12 +7,13 @@ export interface ApiEnvelope<T> { code:number; message?:string; data:T }
 export interface Coverage { state:CoverageState; message?:string }
 export interface TokenBreakdown { input:number|null; cacheWrite:number|null; cacheRead:number|null; output:number|null; total:number|null }
 export interface MetricValue { value:number|null; unit?:string; sampleCount?:number; coverage?:Coverage }
-export interface TimePoint { bucket:string; totalTokens:number|null; outputTokens:number|null; cacheHitRate:number|null; requests:number; successRate?:number|null; users?:number; incomplete?:boolean }
 export interface ModelSlice { modelId:string; name:string; platform:string; requests:number; totalTokens:number|null; outputTokens:number|null }
+export interface TimePoint { bucket:string; totalTokens:number|null; outputTokens:number|null; cacheHitRate:number|null; requests:number; successRate?:number|null; users?:number; incomplete?:boolean; models?:ModelSlice[] }
 export interface ModelOption { id:string; name:string; platform:string }
 export interface DepartmentOption { id:string; name:string; issue?:string }
 export interface FilterState { from:string; to:string; granularity:Granularity; models:string[]; departments:string[] }
-export interface SubscriptionUsage { id:string; name:string; used:number; limit:number|null; currency:string; remaining:number|null; resetsAt:string|null; status:"active"|"unlimited"|"exceeded" }
+export interface SubscriptionUsagePoint { at:string; amount:number; requests:number }
+export interface SubscriptionUsage { id:string; name:string; used:number; limit:number|null; currency:string; remaining:number|null; resetsAt:string|null; status:"active"|"unlimited"|"exceeded"; recentUsage:SubscriptionUsagePoint[]; recentUsagePreview:boolean }
 export interface PersonalOverview { subscriptions:SubscriptionUsage[]; todayTokens:TokenBreakdown; totalAmount:number; timezone:string; coverage:Coverage }
 export interface HeatmapDay { date:string; tokens:number|null; state:"value"|"zero"|"out_of_scope"|"future" }
 export interface PersonalHeatmap { days:HeatmapDay[]; thresholds:number[]; statisticsStartDate?:string; coverage:Coverage }

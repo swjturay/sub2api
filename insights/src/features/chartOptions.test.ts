@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from "vitest";
-import { buildComparisonTrendOption, buildFunnelOption, buildHeatmapOption, heatmapSelectionDate, buildPreferenceOption } from "./chartOptions";
+import { buildComparisonTrendOption, buildFunnelOption, buildHeatmapOption, heatmapLegendItems, heatmapSelectionDate, buildPreferenceOption } from "./chartOptions";
 import type { ModelComparison } from "../lib/types";
 describe("chart contract options",()=>{
- it("keeps heatmap zero, out-of-scope days and future separate",()=>{const o=buildHeatmapOption([{date:"2026-01-01",tokens:1,state:"value"},{date:"2026-01-02",tokens:0,state:"zero"},{date:"2026-01-04",tokens:null,state:"out_of_scope"},{date:"2026-12-31",tokens:null,state:"future"}],[10,100,1000,10000],2026) as any;expect(o.series).toHaveLength(4);expect(o.visualMap.pieces).toHaveLength(4);expect(o.visualMap.dimension).toBe(1);expect(o.series.map((s:any)=>s.name)).toEqual(["非零","零","统计范围外","未来"]);expect(o.tooltip.formatter({data:["2026-01-04",0,"out_of_scope"]})).toContain("统计范围外")});
+ it("keeps heatmap zero, out-of-scope days and future separate in one non-linked series",()=>{const o=buildHeatmapOption([{date:"2026-01-01",tokens:1,state:"value"},{date:"2026-01-02",tokens:0,state:"zero"},{date:"2026-01-04",tokens:null,state:"out_of_scope"},{date:"2026-12-31",tokens:null,state:"future"}],[10,100,1000,10000],2026) as any;expect(o.series).toHaveLength(1);expect(o.visualMap).toHaveLength(1);expect(o.visualMap[0].pieces).toHaveLength(7);expect(o.visualMap[0]).toMatchObject({seriesIndex:0,hoverLink:false});expect(o.series[0].emphasis.disabled).toBe(true);expect(o.series[0].data.map((d:any)=>d.value[1])).toEqual([1,0,-1,-2]);expect(o.tooltip.formatter({data:{value:["2026-01-04",-1,"out_of_scope"]}})).toContain("统计范围外")});
+ it("builds the visible heatmap legend from the same thresholds",()=>{expect(heatmapLegendItems([10,100,1000,10000])).toEqual([{label:"1–10",color:"#e0e7ff"},{label:"11–100",color:"#a5b4fc"},{label:"101–1000",color:"#818cf8"},{label:"1001–1万",color:"#4f46e5"}])});
  it("preserves funnel layer order and truthful widths",()=>{const o=buildFunnelOption([{key:"a",label:"总",count:100,share:1},{key:"b",label:"次日",count:1,share:.01},{key:"c",label:"未知",count:null,share:null}]) as any;expect(o.series[0].sort).toBe("none");expect(o.series[0].minSize).toBe("0%");expect(o.series[0].data.map((x:any)=>x.name)).toEqual(["总","次日","未知"]);expect(o.series[0].data[2].value).toBeNull()});
  it("keeps exact tooltip counts and tiny positive funnel shares",()=>{const o=buildFunnelOption([{key:"a",label:"总",count:100000,share:.000001}]) as any;const html=o.tooltip.formatter({data:o.series[0].data[0]});expect(html).toContain("100,000 人");expect(html).toContain("0.0001%");expect(html).not.toContain("0.0%")});
  it("keeps missing preference ratios as gaps and small values nonzero",()=>{const o=buildPreferenceOption([{department:"研发",total:3,models:[{model:"a",count:0,share:null},{model:"b",count:1,share:.0001}]}]) as any;expect(o.series[0].data).toEqual([null]);expect(o.series[1].data[0].value).toBe(.01)});
@@ -22,11 +23,11 @@ it("selects only observed heatmap dates",()=>{
 
 it("does not put zero in nonzero heat bins or overlap shared boundaries",()=>{
  const o=buildHeatmapOption([], [10,100,1000,10000],2026) as any;
- expect(o.visualMap.pieces[0]).toMatchObject({gt:0,lte:10});
- expect(o.visualMap.pieces[1]).toMatchObject({gt:10,lte:100});
+ expect(o.visualMap[0].pieces[3]).toMatchObject({gt:0,lte:10});
+ expect(o.visualMap[0].pieces[4]).toMatchObject({gt:10,lte:100});
  const tiny=buildHeatmapOption([], [1,1,1,1],2026) as any;
- expect(tiny.visualMap.pieces).toHaveLength(1);
- expect(tiny.visualMap.pieces[0]).toMatchObject({gt:0,lte:1});
+ expect(tiny.visualMap[0].pieces).toHaveLength(4);
+ expect(tiny.visualMap[0].pieces[3]).toMatchObject({gt:0,lte:1});
 });
 
 it("exposes pending and unknown retention without claiming zero loss",()=>{

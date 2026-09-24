@@ -76,6 +76,7 @@ export const adaptTimePoint = (x: any): T.TimePoint => ({
   successRate: x.quality?.success_rate ?? x.success_rate ?? null,
   users: x.total_users,
   incomplete: x.complete === false,
+  models: Array.isArray(x.models) ? x.models.map(adaptModelSlice) : undefined,
 });
 export const adaptModelSlice = (x: any): T.ModelSlice => ({
   modelId:
@@ -89,6 +90,69 @@ export const adaptModelSlice = (x: any): T.ModelSlice => ({
   totalTokens: x.tokens?.total ?? null,
   outputTokens: x.tokens?.output ?? null,
 });
+
+export function resolveCatalogModel(modelId: string, catalog: T.ModelOption[]) {
+  const separator = modelId.indexOf(":");
+  if (separator < 0 || modelId.slice(0, separator).toLowerCase() !== "unknown") return undefined;
+  const modelName = modelId.slice(separator + 1).trim().toLowerCase();
+  if (!modelName) return undefined;
+  const matches = catalog.filter((option) => option.id.slice(option.id.indexOf(":") + 1).toLowerCase() === modelName);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+export function resolvePersonalAnalyticsModels(data: T.PersonalAnalytics, catalog: T.ModelOption[]): T.PersonalAnalytics {
+  const resolveSlice = (slice: T.ModelSlice) => {
+    const match = resolveCatalogModel(slice.modelId, catalog);
+    return match ? { ...slice, modelId: match.id, name: match.name, platform: match.platform } : slice;
+  };
+  return {
+    ...data,
+    models: data.models.map(resolveSlice),
+    series: data.series.map((point) => ({
+      ...point,
+      models: point.models?.map(resolveSlice),
+    })),
+  };
+}
+
+function previewModelSeries(series: T.TimePoint[], models: T.ModelSlice[]) {
+  if (!import.meta.env.DEV || import.meta.env.VITE_INSIGHTS_PREVIEW_FIXTURES !== "true" || series.some((point) => point.models?.length) || !models.length) return series;
+  const allocate = (total: number | null, metric: "totalTokens" | "outputTokens") => {
+    if (total === null) return models.map(() => null);
+    const weights = models.map((model) => Math.max(0, model[metric] ?? model.requests));
+    const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+    if (weightTotal <= 0) return models.map(() => 0);
+    let assigned = 0;
+    return weights.map((weight, index) => {
+      if (index === weights.length - 1) return Math.max(0, total - assigned);
+      const value = Math.round(total * weight / weightTotal);
+      assigned += value;
+      return value;
+    });
+  };
+  return series.map((point) => {
+    const totalTokens = allocate(point.totalTokens, "totalTokens");
+    const outputTokens = allocate(point.outputTokens, "outputTokens");
+    return {
+      ...point,
+      models: models.map((model, index) => ({ ...model, totalTokens: totalTokens[index], outputTokens: outputTokens[index] })),
+    };
+  });
+}
+
+function previewSubscriptionUsage(id: unknown, generatedAt: string): T.SubscriptionUsagePoint[] {
+  const end = new Date(generatedAt);
+  end.setUTCSeconds(0, 0);
+  const seed = String(id).split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+  return Array.from({ length: 60 }, (_, index) => {
+    const at = new Date(end.getTime() - (59 - index) * 60_000);
+    const wave = Math.sin((index + seed) / 5) + Math.sin((index + seed * 2) / 11);
+    const active = (index * 7 + seed) % 13 < 8;
+    const requests = active ? 1 + ((index * 3 + seed) % 9) : 0;
+    const amount = requests === 0 ? 0 : Number((requests * (0.0018 + (wave + 2) * 0.0011)).toFixed(6));
+    return { at: at.toISOString(), amount, requests };
+  });
+}
 const mv = (
   value: number | null | undefined,
   sampleCount?: number,
@@ -159,21 +223,31 @@ export const insightsApi = {
   },
   personalOverview: async (signal?: AbortSignal) => {
     const r = await apiFetch<Wire<any>>("/insights/me/today", {}, signal);
+    const previewEnabled = import.meta.env.DEV && import.meta.env.VITE_INSIGHTS_PREVIEW_FIXTURES === "true";
     return {
-      subscriptions: (r.data.subscriptions || []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        used: s.used_amount,
-        limit: s.limit_amount,
-        currency: s.currency || "",
-        remaining: s.remaining_amount,
-        resetsAt: s.reset_at,
-        status: s.unlimited
-          ? "unlimited"
-          : s.over_limit
-            ? "exceeded"
-            : "active",
-      })),
+      subscriptions: (r.data.subscriptions || []).map((s: any) => {
+        const hasRecentUsage = Array.isArray(s.recent_usage);
+        return {
+          id: String(s.id),
+          name: s.name,
+          used: s.used_amount,
+          limit: s.limit_amount,
+          currency: s.currency || "",
+          remaining: s.remaining_amount,
+          resetsAt: s.reset_at,
+          status: s.unlimited
+            ? "unlimited"
+            : s.over_limit
+              ? "exceeded"
+              : "active",
+          recentUsage: hasRecentUsage
+            ? s.recent_usage.map((point: any) => ({ at: point.at, amount: Number(point.amount ?? 0), requests: Number(point.requests ?? 0) }))
+            : previewEnabled
+              ? previewSubscriptionUsage(s.id, r.meta.generated_at)
+              : [],
+          recentUsagePreview: !hasRecentUsage && previewEnabled,
+        };
+      }),
       todayTokens: adaptTokens(r.data.tokens),
       totalAmount: Number(r.data.actual_cost ?? 0),
       timezone: r.meta.timezone,
@@ -207,7 +281,9 @@ export const insightsApi = {
         {},
         signal,
       ),
-      s = r.data.summary;
+      s = r.data.summary,
+      models = r.data.models.map(adaptModelSlice),
+      series = previewModelSeries(r.data.buckets.map(adaptTimePoint), models);
     return {
       activeDays: s.active_days,
       totalTokens: s.tokens.total,
@@ -215,8 +291,8 @@ export const insightsApi = {
       requests: s.request_count,
       outputTokens: s.tokens.output,
       cacheHitRate: s.cache_hit_ratio,
-      series: r.data.buckets.map(adaptTimePoint),
-      models: r.data.models.map(adaptModelSlice),
+      series,
+      models,
       coverage: cov(r.meta),
     } as T.PersonalAnalytics;
   },

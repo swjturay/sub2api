@@ -2,6 +2,7 @@ package insights
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -19,6 +20,16 @@ func TestTokenFormulas(t *testing.T) {
 	}
 	if CacheHitRatio(Tokens{}) != nil {
 		t.Fatal("zero denominator must be nil")
+	}
+}
+
+func TestUsageProviderSQLKeepsAntigravityModelIdentity(t *testing.T) {
+	expression := strings.ToLower(usageProviderSQL("fact.platform", "account.platform"))
+	if strings.Contains(expression, "antigravity") {
+		t.Fatalf("antigravity must remain a usable model provider: %s", expression)
+	}
+	if !strings.Contains(expression, "composite") {
+		t.Fatalf("composite must still be treated as a routing surface: %s", expression)
 	}
 }
 
@@ -108,5 +119,28 @@ func TestClassifyHeatmapDayUsesLaunchBoundary(t *testing.T) {
 				t.Fatalf("classifyHeatmapDay()=%q want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMergeUsageDataCombinesBucketModels(t *testing.T) {
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	a := UsageData{
+		Summary: UsageSummary{RequestCount: 1, Tokens: NewTokens(10, 0, 0, 0)},
+		Buckets: []UsageBucket{{Start: start, Complete: true, Metrics: UsageSummary{RequestCount: 1, Tokens: NewTokens(10, 0, 0, 0)}, Models: []UsageModel{{Model: "p:a", RequestCount: 1, Tokens: NewTokens(10, 0, 0, 0)}}}},
+	}
+	b := UsageData{
+		Summary: UsageSummary{RequestCount: 2, Tokens: NewTokens(20, 0, 0, 0)},
+		Buckets: []UsageBucket{{Start: start, Complete: true, Metrics: UsageSummary{RequestCount: 2, Tokens: NewTokens(20, 0, 0, 0)}, Models: []UsageModel{{Model: "p:a", RequestCount: 1, Tokens: NewTokens(5, 0, 0, 0)}, {Model: "p:b", RequestCount: 1, Tokens: NewTokens(15, 0, 0, 0)}}}},
+	}
+	got := mergeUsageData(a, b, start, start.AddDate(0, 0, 1), start.AddDate(0, 0, 1))
+	if got.Summary.Tokens.Total != 30 || len(got.Buckets) != 1 || got.Buckets[0].Metrics.Tokens.Total != 30 || len(got.Buckets[0].Models) != 2 {
+		t.Fatalf("merged usage=%+v", got)
+	}
+	byModel := map[string]UsageModel{}
+	for _, model := range got.Buckets[0].Models {
+		byModel[model.Model] = model
+	}
+	if byModel["p:a"].Tokens.Total != 15 || byModel["p:a"].RequestCount != 2 || byModel["p:b"].Tokens.Total != 15 {
+		t.Fatalf("merged bucket models=%+v", got.Buckets[0].Models)
 	}
 }
