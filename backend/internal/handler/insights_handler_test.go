@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -100,6 +101,36 @@ func TestInsightsReturns422ForExpiredDetail(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/logs?from=2020-01-01&to=2020-01-02", nil))
 	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestInsightsCostMonthValidationRejectsFutureAndMalformedValues(t *testing.T) {
+	h := NewInsightsHandler(nil, &config.Config{Timezone: "Asia/Tokyo"}, nil, nil)
+	if _, ok := h.parseCostMonth("2026-05"); ok {
+		t.Fatal("month before cost-data launch accepted")
+	}
+	if _, ok := h.parseCostMonth("not-a-month"); ok {
+		t.Fatal("malformed month accepted")
+	}
+	if _, ok := h.parseCostMonth("2999-01"); ok {
+		t.Fatal("future month accepted")
+	}
+}
+
+func TestInsightsCostSaveRejectsInvalidPayloadBeforeQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewInsightsHandler(nil, &config.Config{Timezone: "Asia/Tokyo"}, nil, nil)
+	r := gin.New()
+	r.PUT("/costs/:account_id/:month", func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
+		h.SaveCostMonth(c)
+	})
+	request := httptest.NewRequest(http.MethodPut, "/costs/12/2026-09", bytes.NewBufferString(`{"contributor_user_id":8,"payment_method":"monthly","actual_cost":"1.234"}`))
+	request.Header.Set("content-type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, request)
+	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
 }

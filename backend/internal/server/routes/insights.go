@@ -28,4 +28,7 @@ func RegisterInsightsRoutes(v1 *gin.RouterGroup, h *handler.Handlers, jwtAuth mi
 	admin.GET("/gateway/model-preferences", h.Insights.GatewayModelPreferences)
 	admin.GET("/gateway/users", h.Insights.GatewayUsers)
 	admin.GET("/gateway/retention", h.Insights.GatewayRetention)
+	admin.GET("/costs", h.Insights.CostData)
+	admin.PUT("/costs/accounts/:account_id/months/:month", h.Insights.SaveCostMonth)
+	admin.POST("/costs/accounts/:account_id/stop", h.Insights.StopCostAccount)
 }

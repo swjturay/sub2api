@@ -74,4 +74,22 @@ describe("Insights API adapters", () => {
       { id: "openai:gpt-6", name: "GPT-6", platform: "openai" },
     ])).toMatchObject({ id: "antigravity:gemini-3.8-flash-high", platform: "antigravity" });
   });
+  it("keeps missing cost spend nullable while preserving confirmed zero", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: {
+        month: "2026-09", in_progress: true,
+        summary: { contributor_count: 1, account_count: 2, platform_cost: "10.00", actual_cost: "0.00", savings: "4.00", completed_accounts: 1, total_accounts: 2 },
+        trend: [], contribution_departments: [], usage_departments: [], flows: [],
+        accounts: { total: 2, page: 1, page_size: 20, pages: 1, items: [
+          { id: 1, name: "missing", platform: "openai", type: "oauth", status: "active", registered: true, inherited: false, request_count: 0, tokens: {}, platform_cost: "6.00", actual_cost: null, savings: null },
+          { id: 2, name: "zero", platform: "openai", type: "oauth", status: "active", registered: true, inherited: false, request_count: 0, tokens: {}, platform_cost: "4.00", actual_cost: "0.00", savings: "4.00" },
+        ] },
+        dimensions: { contributors: [], departments: [], platforms: [], statuses: [], payment_methods: [] },
+      },
+      meta: { timezone: "Asia/Tokyo", generated_at: "2026-09-24T10:00:00+09:00", coverage: [] },
+    }), { status: 200 }));
+    await expect(insightsApi.costs({ month: "2026-09", department: "", platform: "", q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 })).resolves.toMatchObject({
+      accounts: { items: [{ actualCost: null, savings: null }, { actualCost: 0, savings: 4 }] },
+    });
+  });
 });

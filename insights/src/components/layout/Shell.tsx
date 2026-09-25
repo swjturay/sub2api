@@ -1,4 +1,4 @@
-import { BarChart3, Building2, ChevronDown, ExternalLink, LogOut, Moon, Network, RefreshCw, Sun, UserRound } from "lucide-react";
+import { BarChart3, Building2, ChevronDown, CircleDollarSign, ExternalLink, LogOut, Moon, Network, RefreshCw, Sun, UserRound } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import type { User } from "../../lib/types";
@@ -16,6 +16,7 @@ const links = [
   { to: "/models", label: "模型广场", icon: BarChart3, admin: false },
   { to: "/departments", label: "部门数据", icon: Building2, admin: true },
   { to: "/gateway", label: "网关数据", icon: Network, admin: true },
+  { to: "/costs", label: "成本数据", icon: CircleDollarSign, admin: true },
 ];
 
 function ModuleTabs({ admin }: { admin: boolean }) {

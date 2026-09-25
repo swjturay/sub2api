@@ -1,5 +1,15 @@
 # Development Journal
 
+## Insights cost data dashboard (2026-09-24)
+
+- Added the administrator-only `成本数据` module for internal shared-account cost management. Monthly account events inherit contributor and payment method until an administrator stops the contribution; exact-month actual USD spend remains nullable so missing input is distinct from confirmed `0.00`.
+- Reused the existing account statistical cost formula and rolls linked Spark child usage into the logical root account. The dashboard exposes monthly completeness, a 12-month cost/savings trend, contribution and usage department summaries, and a contribution-to-usage department cost-flow matrix. All historical department attribution follows each user's current department.
+- Added direct monthly editing for existing Sub2API users, payment methods `订阅` / `即用即付` / `其他`, last-editor metadata, unconfigured-account discovery, bounded pagination, and account/contributor/payment/status/completeness filters. Credentials and user-side billed amounts are not queried or returned.
+- Added migration, validation, aggregation and adapter regressions, including missing-versus-zero spend, negative savings, deleted-account status, and a PostgreSQL fixture for parent/child account rollup. Browser checks covered 1440x900 and 1024x768, edit inheritance and confirmed-zero preview, chart rendering, and document-level overflow.
+- Follow-up UI review aligned the monthly cost filters with the shared compact analytics controls, replaced the two top-level Radix Select menus with stable non-modal popovers, and renamed the user-facing calculated amount to `预估价格` with an explicit standard-price-times-usage tooltip. The loaded-page browser probe confirmed zero change in scroll position, toolbar position, main-content width, and horizontal offset while opening the platform menu.
+
+Validation: full backend `go test -tags=unit ./...`, backend production build, Insights ESLint, TypeScript, 18 files / 66 tests and production build passed. The PostgreSQL integration fixture compiled but was skipped because `INSIGHTS_TEST_DATABASE_URL` was unset and the local Docker Desktop daemon was unavailable. No production deployment or production data change was performed.
+
 ## CCE 0.2.8 deploy branch intake (2026-09-24)
 
 Base: `8996837eb845015c1f14f7632b414ac63ea7de19` (`cce-0.2.7`). Upstream: `v0.2.8`. Target: `cce-deploy`.

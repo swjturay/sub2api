@@ -502,4 +502,72 @@ coverage: cov(users.meta),
       preferenceCoverage: cov(prefs.meta),
     } as T.GatewayAnalytics;
   },
+  costs: async (filters: T.CostFilters, signal?: AbortSignal): Promise<T.CostDashboard> => {
+    const r = await apiFetch<Wire<any>>(`/admin/insights/costs${q({
+      month: filters.month,
+      department: filters.department,
+      platform: filters.platform,
+      q: filters.q,
+      contributor: filters.contributor,
+      payment_method: filters.paymentMethod,
+      status: filters.status,
+      completeness: filters.completeness,
+      registration: filters.registration,
+      page: filters.page,
+      page_size: filters.pageSize,
+    })}`, {}, signal);
+    const contributor = (value: any): T.CostContributor | undefined => value ? ({
+      id: value.id,
+      name: value.name,
+      email: value.email,
+      status: value.status,
+      departmentId: value.department_id,
+      department: value.department,
+      deleted: value.deleted,
+    }) : undefined;
+    const money = (value: unknown) => Number(value ?? 0);
+    const s = r.data.summary;
+    return {
+      month: r.data.month,
+      inProgress: Boolean(r.data.in_progress),
+      summary: {
+        contributorCount: s.contributor_count,
+        accountCount: s.account_count,
+        platformCost: money(s.platform_cost),
+        actualCost: money(s.actual_cost),
+        savings: money(s.savings),
+        completedAccounts: s.completed_accounts,
+        totalAccounts: s.total_accounts,
+      },
+      trend: (r.data.trend || []).map((x: any) => ({ month: x.month, platformCost: money(x.platform_cost), actualCost: money(x.actual_cost), savings: money(x.savings), completedAccounts: x.completed_accounts, totalAccounts: x.total_accounts })),
+      contributionDepartments: (r.data.contribution_departments || []).map((x: any) => ({ id: x.id, name: x.name, contributorCount: x.contributor_count, accountCount: x.account_count, requestCount: x.request_count, tokens: x.tokens, platformCost: money(x.platform_cost), actualCost: money(x.actual_cost), savings: money(x.savings), completedAccounts: x.completed_accounts, totalAccounts: x.total_accounts })),
+      usageDepartments: (r.data.usage_departments || []).map((x: any) => ({ id: x.id, name: x.name, requestCount: x.request_count, tokens: x.tokens, platformCost: money(x.platform_cost) })),
+      flows: (r.data.flows || []).map((x: any) => ({ contributionDepartmentId: x.contribution_department_id, contributionDepartment: x.contribution_department, usageDepartmentId: x.usage_department_id, usageDepartment: x.usage_department, platformCost: money(x.platform_cost) })),
+      accounts: {
+        items: (r.data.accounts?.items || []).map((x: any) => ({
+          id: x.id, name: x.name, platform: x.platform, type: x.type, status: x.status, expiresAt: x.expires_at, deletedAt: x.deleted_at,
+          registered: Boolean(x.registered), inherited: Boolean(x.inherited), configurationMonth: x.configuration_month,
+          contributor: contributor(x.contributor), paymentMethod: x.payment_method || undefined, requestCount: x.request_count,
+          tokens: adaptTokens(x.tokens), platformCost: money(x.platform_cost), actualCost: x.actual_cost === null ? null : money(x.actual_cost),
+          savings: x.savings === null ? null : money(x.savings), notes: x.notes || "", updatedBy: contributor(x.updated_by), updatedAt: x.updated_at,
+        })),
+        total: r.data.accounts?.total || 0,
+        page: r.data.accounts?.page || 1,
+        pageSize: r.data.accounts?.page_size || filters.pageSize,
+        pages: r.data.accounts?.pages || 1,
+      },
+      dimensions: {
+        contributors: (r.data.dimensions?.contributors || []).map(contributor).filter(Boolean) as T.CostContributor[],
+        departments: (r.data.dimensions?.departments || []).map((x: any) => ({ id: x.value, name: x.label })),
+        platforms: r.data.dimensions?.platforms || [],
+        statuses: r.data.dimensions?.statuses || [],
+        paymentMethods: (r.data.dimensions?.payment_methods || []).map((x: any) => ({ id: x.value, name: x.label })),
+      },
+      coverage: cov(r.meta),
+    };
+  },
+  saveCostMonth: (accountId: number, month: string, input: { contributor_user_id: number; payment_method: T.CostPaymentMethod; actual_cost: string | null; notes: string }) =>
+    apiFetch<{ saved: boolean }>(`/admin/insights/costs/accounts/${accountId}/months/${month}`, { method: "PUT", body: JSON.stringify(input) }),
+  stopCostAccount: (accountId: number, afterMonth: string) =>
+    apiFetch<{ stopped_after: string }>(`/admin/insights/costs/accounts/${accountId}/stop`, { method: "POST", body: JSON.stringify({ after_month: afterMonth }) }),
 };
