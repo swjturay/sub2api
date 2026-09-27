@@ -731,6 +731,7 @@ func (s *BillingCacheService) IncrementUserPlatformQuotaUsage(userID int64, plat
 // CheckBillingEligibility 检查用户是否有资格发起请求
 // 余额模式：检查缓存余额 > 0
 // 订阅模式：检查缓存用量未超过限额（Group限额从参数传入）
+// 两种计费模式均受同一用户的平台配额约束。
 // platform 为请求的目标平台（如 "anthropic"），传空串 "" 时跳过 user × platform quota 检查。
 func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user *User, apiKey *APIKey, group *Group, subscription *UserSubscription, platform string) error {
 	// 简易模式默认跳过所有计费检查. An explicit key-window opt-in keeps
@@ -759,11 +760,9 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 		}
 	}
 
-	// user × platform quota 仅在 standard（余额）模式生效；订阅模式豁免
-	if !isSubscriptionMode {
-		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
-			return err
-		}
+	// 用户平台配额跨余额和订阅共享；订阅额度通过后仍需检查平台额度。
+	if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
+		return err
 	}
 
 	// Check API Key rate limits (applies to both billing modes)
@@ -1101,7 +1100,7 @@ func circuitStateString(state billingCircuitBreakerState) string {
 	}
 }
 
-// checkUserPlatformQuotaEligibility 在 standard 模式下检查 user × platform 日/周/月 quota。
+// checkUserPlatformQuotaEligibility 检查余额和订阅共用的 user × platform 日/周/月 quota。
 // 返回 nil = 允许；返回 ErrUserPlatform{Daily/Weekly/Monthly}QuotaExhausted = 拒绝（带 window_resets_at metadata）。
 // checkUserPlatformQuotaEligibility 检查用户在指定平台的 USD 配额。
 //

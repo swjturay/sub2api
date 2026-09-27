@@ -836,7 +836,7 @@ export default {
         windowMonthly: '月',
         cellNotConfigured: '未配置',
         cellColumnTooltip: '仅展示已设限额的平台',
-        subscriptionWarning: '此用户有活跃订阅，平台限额仅在余额（标准）模式下生效，订阅模式请求不受此限额约束。',
+        subscriptionWarning: '此用户有活跃订阅。余额和订阅请求共享用户平台限额；订阅请求还需满足订阅本身的额度限制。',
         invalidNumber: '以下字段填写不是合法数字，请修正后再保存：{fields}',
       }
     },

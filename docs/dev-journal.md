@@ -1,5 +1,16 @@
 # Development Journal
 
+## Subscription requests share user platform quotas (2026-09-27)
+
+Base: `b359b2b30883b839968f55b8f7180b05c383b493`. Branch: `cce-deploy`.
+
+- Removed the subscription exemption from user platform quota admission and from both committed and legacy usage accounting. Subscription requests still consume their subscription allowance and do not deduct the user's balance; the same `ActualCost` also counts toward the user's daily, weekly and monthly platform quotas.
+- Reused the existing quota records, Redis counters, flusher/direct persistence and administrator controls. Quotas are shared across a user's keys, groups and billing modes; Composite requests use their resolved provider. No migration, new switch or model-level quota was introduced. Existing usage is preserved; historical subscription usage is not backfilled.
+- Updated the Chinese and English administrator subscription notice. Existing zero limits now block subscription requests too; unconfigured limits, free usage and simple-mode exemptions retain their existing semantics. Post-request accounting and its in-flight overshoot/failure behavior are unchanged.
+- Added regressions for subscription/platform limit enforcement, daily window reset, Composite DeepSeek accounting, cross-key/group/mode sharing, provider/user isolation, actual-cost accounting without balance deduction, billing replay deduplication, both persistence modes and the legacy fallback.
+
+Validation: full backend `make test-unit`, targeted quota regressions with `go test -race -tags=unit`, `golangci-lint run ./...` (0 issues), backend `make build`, frontend `make test-frontend` (lint, typecheck, 30 files / 423 tests) and frontend production build including all locale compilation checks passed. Local backend validation used Go 1.27.1 and golangci-lint 2.13.0; frontend dependencies used the frozen lockfile with pnpm 9.15.9. `git diff --check` passed; the local base and remote `origin/cce-deploy` both remained at the revision above. PostgreSQL/Docker integration tests and live production validation were not run. No production deployment or production data change was performed.
+
 ## Insights cost data dashboard (2026-09-24)
 
 - Added the administrator-only `成本数据` module for internal shared-account cost management. Monthly account events inherit contributor and payment method until an administrator stops the contribution; exact-month actual USD spend remains nullable so missing input is distinct from confirmed `0.00`.

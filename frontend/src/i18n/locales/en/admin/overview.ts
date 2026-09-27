@@ -839,7 +839,7 @@ export default {
         windowMonthly: 'monthly',
         cellNotConfigured: 'Not configured',
         cellColumnTooltip: 'Only platforms with a limit are shown',
-        subscriptionWarning: 'This user has an active subscription. Platform quotas only apply to balance (standard) mode requests; subscription mode requests are not subject to these limits.',
+        subscriptionWarning: 'This user has an active subscription. Balance and subscription requests share user platform quotas; subscription requests must also stay within their subscription limits.',
         invalidNumber: 'The following fields contain invalid numbers. Please fix them before saving: {fields}',
       }
     },
