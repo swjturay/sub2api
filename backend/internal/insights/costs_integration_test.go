@@ -201,6 +201,26 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if item := account(readMonth(month), 100); item.Contributor.ID != 2 {
 		t.Fatal("failed save leaked an account contributor update")
 	}
+	// A legacy backend still writes only the monthly table during mixed-version rollout.
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE insights_cost_account_months SET contributor_user_id=1,updated_at=NOW() WHERE account_id=100 AND month='2026-08-01'`); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	var transactionalOwner int64
+	if err := tx.QueryRowContext(ctx, `SELECT contributor_user_id FROM insights_cost_account_contributors WHERE account_id=100`).Scan(&transactionalOwner); err != nil || transactionalOwner != 1 {
+		_ = tx.Rollback()
+		t.Fatalf("legacy writer was not synchronized: owner=%d err=%v", transactionalOwner, err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if item := account(readMonth(month), 100); item.Contributor.ID != 2 {
+		t.Fatal("rollback failed to restore the shared contributor")
+	}
 	// Stopping and later re-registering never clears ownership or bypasses a stop.
 	if err := q.StopCostAccountAfter(ctx, 100, month, 9); err != nil {
 		t.Fatal(err)
@@ -219,6 +239,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if _, err := db.ExecContext(ctx, `INSERT INTO accounts VALUES(400,'legacy','openai','oauth','active',NULL,NULL,NULL);
 INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,updated_at) VALUES
 (400,'2026-07-01',true,1,'subscription',3,'2026-09-25'),(400,'2026-09-01',true,2,'subscription',7,'2026-09-20'),(400,'2026-10-01',false,NULL,NULL,NULL,'2026-09-26')`); err != nil {
+		t.Fatal(err)
+	}
+	// Recreate a pre-migration legacy account, without an account-level record.
+	if _, err := db.ExecContext(ctx, `DELETE FROM insights_cost_account_contributors WHERE account_id=400`); err != nil {
 		t.Fatal(err)
 	}
 	applyMigration("242_insights_cost_account_contributors.sql")

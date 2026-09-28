@@ -29,6 +29,8 @@ func TestMigration242BackfillsAccountContributorsWithoutChangingMonthlySpend(t *
 	require.Contains(t, sql, "WHERE registered = TRUE AND contributor_user_id IS NOT NULL")
 	require.Contains(t, sql, "ORDER BY account_id, updated_at DESC, month DESC")
 	require.Contains(t, sql, "ON CONFLICT (account_id) DO NOTHING")
+	require.Contains(t, sql, "AFTER INSERT OR UPDATE OF registered, contributor_user_id")
+	require.Contains(t, sql, "FOR EACH ROW WHEN (NEW.registered = TRUE)")
 	require.NotContains(t, sql, "UPDATE insights_cost_account_months")
 	require.NotContains(t, sql, "DELETE FROM")
 }

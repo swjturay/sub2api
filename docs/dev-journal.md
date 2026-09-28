@@ -1,5 +1,11 @@
 # Development Journal
 
+## Mixed-version cost contributor writes (2026-09-28)
+
+- Before deploying migration 242, added a monthly-write trigger that synchronizes account-wide ownership in the same database statement. Both the old backend and the new backend now update the same account record during a gradual rollout or application rollback. Stop events do not erase ownership.
+- Kept the application write as a single monthly upsert so both backend generations take locks in the same order. Added integration checks for a legacy writer, transaction rollback, and replaying the initial backfill without overwriting current ownership.
+- Migration 242 has not yet been applied to production. Release deployment is gated on the exact final commit's PostgreSQL, application, frontend and security CI.
+
 ## Searchable cost contributor selection (2026-09-28)
 
 - Replaced the cost editor's contributor Select with a single-choice Command/Popover using existing design tokens. Search matches Chinese names, email addresses and departments without case sensitivity; candidates show department and email to distinguish duplicate names and use user IDs as their identity.

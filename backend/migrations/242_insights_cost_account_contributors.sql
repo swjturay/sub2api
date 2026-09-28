@@ -6,6 +6,27 @@ CREATE TABLE IF NOT EXISTS insights_cost_account_contributors (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Keep writes from both backend generations atomic during rollout or rollback.
+CREATE OR REPLACE FUNCTION insights_sync_cost_account_contributor()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO insights_cost_account_contributors(account_id, contributor_user_id, updated_by, updated_at)
+    VALUES (NEW.account_id, NEW.contributor_user_id, NEW.updated_by, NEW.updated_at)
+    ON CONFLICT (account_id) DO UPDATE
+    SET contributor_user_id = EXCLUDED.contributor_user_id,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = EXCLUDED.updated_at
+    WHERE insights_cost_account_contributors.contributor_user_id IS DISTINCT FROM EXCLUDED.contributor_user_id;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS insights_cost_account_contributor_sync ON insights_cost_account_months;
+CREATE TRIGGER insights_cost_account_contributor_sync
+AFTER INSERT OR UPDATE OF registered, contributor_user_id ON insights_cost_account_months
+FOR EACH ROW WHEN (NEW.registered = TRUE)
+EXECUTE FUNCTION insights_sync_cost_account_contributor();
+
 -- Resolve legacy month-level disagreements using the most recently edited row.
 INSERT INTO insights_cost_account_contributors(account_id, contributor_user_id, updated_by, updated_at)
 SELECT DISTINCT ON (account_id) account_id, contributor_user_id, updated_by, updated_at

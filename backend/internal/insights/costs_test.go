@@ -25,8 +25,8 @@ func TestNormalizeCostAmount(t *testing.T) {
 	}
 }
 
-func TestSaveCostMonthUpdatesAccountContributorAtomically(t *testing.T) {
-	for _, fail := range []string{"", "contributor", "month"} {
+func TestSaveCostMonthPreservesWriteErrors(t *testing.T) {
+	for _, fail := range []string{"", "month"} {
 		t.Run("failure_"+fail, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			if err != nil {
@@ -36,23 +36,11 @@ func TestSaveCostMonthUpdatesAccountContributorAtomically(t *testing.T) {
 			month := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 			mock.ExpectQuery("SELECT parent_account_id,deleted_at").WithArgs(int64(100)).WillReturnRows(sqlmock.NewRows([]string{"parent", "deleted"}).AddRow(nil, nil))
 			mock.ExpectQuery("SELECT EXISTS").WithArgs(int64(2)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-			mock.ExpectBegin()
-			owner := mock.ExpectExec("INSERT INTO insights_cost_account_contributors").WithArgs(int64(100), int64(2), int64(9))
-			if fail == "contributor" {
-				owner.WillReturnError(errors.New("contributor write failed"))
+			monthly := mock.ExpectExec("INSERT INTO insights_cost_account_months").WithArgs(int64(100), "2026-08-01", int64(2), "subscription", nil, "", int64(9))
+			if fail == "month" {
+				monthly.WillReturnError(errors.New("month write failed"))
 			} else {
-				owner.WillReturnResult(sqlmock.NewResult(0, 1))
-				monthly := mock.ExpectExec("INSERT INTO insights_cost_account_months").WithArgs(int64(100), "2026-08-01", int64(2), "subscription", nil, "", int64(9))
-				if fail == "month" {
-					monthly.WillReturnError(errors.New("month write failed"))
-				} else {
-					monthly.WillReturnResult(sqlmock.NewResult(0, 1))
-				}
-			}
-			if fail == "" {
-				mock.ExpectCommit()
-			} else {
-				mock.ExpectRollback()
+				monthly.WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 			err = NewQuery(db, "UTC", nil).SaveCostMonth(context.Background(), SaveCostMonthInput{AccountID: 100, Month: month, ContributorID: 2, PaymentMethod: "subscription", UpdatedBy: 9})
 			if (err != nil) != (fail != "") {

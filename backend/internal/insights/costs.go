@@ -706,18 +706,9 @@ func (q *Query) SaveCostMonth(ctx context.Context, input SaveCostMonthInput) err
 	if !exists {
 		return ErrCostContributorNotFound
 	}
-	tx, err := q.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_cost_account_contributors(account_id,contributor_user_id,updated_by) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET contributor_user_id=EXCLUDED.contributor_user_id,updated_by=EXCLUDED.updated_by,updated_at=NOW() WHERE insights_cost_account_contributors.contributor_user_id IS DISTINCT FROM EXCLUDED.contributor_user_id`, input.AccountID, input.ContributorID, input.UpdatedBy); err != nil {
-		return err
-	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES($1,$2,TRUE,$3,$4,$5,$6,$7) ON CONFLICT(account_id,month) DO UPDATE SET registered=TRUE,contributor_user_id=EXCLUDED.contributor_user_id,payment_method=EXCLUDED.payment_method,actual_cost=EXCLUDED.actual_cost,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, input.AccountID, input.Month.Format("2006-01-02"), input.ContributorID, input.PaymentMethod, input.ActualCost, input.Notes, input.UpdatedBy); err != nil {
-		return err
-	}
-	return tx.Commit()
+	// Migration 242 synchronizes account ownership in the same statement, including legacy writers.
+	_, err := q.db.ExecContext(ctx, `INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES($1,$2,TRUE,$3,$4,$5,$6,$7) ON CONFLICT(account_id,month) DO UPDATE SET registered=TRUE,contributor_user_id=EXCLUDED.contributor_user_id,payment_method=EXCLUDED.payment_method,actual_cost=EXCLUDED.actual_cost,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, input.AccountID, input.Month.Format("2006-01-02"), input.ContributorID, input.PaymentMethod, input.ActualCost, input.Notes, input.UpdatedBy)
+	return err
 }
 
 func (q *Query) StopCostAccountAfter(ctx context.Context, accountID int64, afterMonth time.Time, updatedBy int64) error {
