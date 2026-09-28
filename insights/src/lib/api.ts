@@ -42,6 +42,7 @@ const coverageLabels: Record<string, string> = {
 };
 const coverageMessage = (x: Meta["coverage"][number]) => {
   if (x.dataset === "department_attribute" && x.status === "not_configured") return "部门字段尚未配置";
+  if (x.dataset === "first_activity" && x.status === "partial") return "部分用户的首次调用或回访历史无法确认，不代表当前请求采集中断。";
   if (x.status === "partial") return (coverageLabels[x.dataset] || "部分数据") + "尚未完整采集";
   if (x.status === "not_collected") return `${coverageLabels[x.dataset] || "相关数据"}尚未采集`;
   return `${coverageLabels[x.dataset] || "相关数据"}暂不可用`;

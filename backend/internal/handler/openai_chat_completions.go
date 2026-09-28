@@ -102,6 +102,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	insightsUpdateCall(c, reqModel, "", reqStream)
 
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
@@ -215,6 +216,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			return
 		}
 		account := selection.Account
+		insightsUpdateCall(c, reqModel, account.Platform, reqStream)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_chat_completions.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		_ = scheduleDecision
@@ -267,6 +269,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		// #5148 对齐：错误返回携带的部分 result（流中断前上游已计量的 usage）照常
 		// 入账；failover 错误恒定 result=nil，不会重复计费。
+		var statisticalAt time.Time
+		if err == nil {
+			statisticalAt = insightsFinishOpenAIForwardSuccess(c, result)
+		}
 		submitChatUsage := func(res *service.OpenAIForwardResult) {
 			if res == nil {
 				return
@@ -282,6 +288,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			h.submitOpenAIUsageRecordTask(c.Request.Context(), res, func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 					Result:             res,
+					StatisticalAt:      statisticalAt,
 					APIKey:             apiKey,
 					User:               apiKey.User,
 					Account:            account,

@@ -202,7 +202,14 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	if err != nil {
 		return Envelope{}, err
 	}
-	tableRows := filterCostRows(pageRows, CostFilter{
+	// Hide unused accounts in every month's table without changing historical costs.
+	tableRows := make([]CostAccountItem, 0, len(pageRows))
+	for _, row := range pageRows {
+		if row.RequestCount > 0 {
+			tableRows = append(tableRows, row)
+		}
+	}
+	tableRows = filterCostRows(tableRows, CostFilter{
 		Search: filter.Search, Contributor: filter.Contributor, Payment: filter.Payment,
 		Status: filter.Status, Completeness: filter.Completeness, Registration: filter.Registration,
 	})

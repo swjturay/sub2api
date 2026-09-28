@@ -121,8 +121,13 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if !ok {
 		t.Fatalf("historical data type=%T", historical.Data)
 	}
-	if history.InProgress || history.Accounts.Total != 3 || history.Summary.ActualCost != "26.50" || history.Summary.PlatformCost != "19.00" {
+	if history.InProgress || history.Accounts.Total != 2 || history.Summary.ActualCost != "26.50" || history.Summary.PlatformCost != "19.00" {
 		t.Fatalf("historical=%+v", history)
+	}
+	for _, item := range history.Accounts.Items {
+		if item.RequestCount == 0 {
+			t.Fatalf("historical table includes unused account: %+v", item)
+		}
 	}
 	// Even cache-only usage makes an account visible again without editing its saved cost.
 	q.now = func() time.Time { return month.AddDate(0, 0, 23) }
@@ -145,6 +150,12 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	}
 
 	q.timezone = "UTC"
+	// Keep attribution/stop fixtures visible under the request-based table rule.
+	for _, selected := range []time.Time{month.AddDate(0, -2, 0), month.AddDate(0, -1, 0), month.AddDate(0, 1, 0)} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO usage_logs(user_id,account_id,input_tokens,cache_creation_tokens,cache_read_tokens,output_tokens,total_cost,created_at) VALUES(2,100,1,0,0,0,0,$1)`, selected.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	readMonth := func(selected time.Time) CostDashboard {
 		t.Helper()
 		envelope, err := q.CostDashboard(ctx, CostFilter{Month: selected, Page: 1, PageSize: 20})

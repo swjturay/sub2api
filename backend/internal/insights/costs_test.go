@@ -92,6 +92,78 @@ func TestCostDashboardDepartmentCoverage(t *testing.T) {
 	}
 }
 
+func TestCostDashboardTableHidesZeroRequestsBeforePagination(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		month      time.Month
+		active     int
+		page       int
+		search     string
+		wantTotal  int
+		wantItems  int
+		wantActive int
+	}{
+		{"historical_page", time.August, 21, 2, "", 21, 1, 22},
+		{"historical_empty", time.August, 0, 2, "", 0, 0, 1},
+		{"historical_search_idle", time.August, 1, 1, "idle", 0, 0, 2},
+		{"current_page", time.September, 21, 2, "", 21, 1, 21},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			mock.ExpectQuery("SELECT NULLIF").WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(nil))
+			mock.ExpectQuery("SELECT id,key,type,options,enabled").WillReturnRows(sqlmock.NewRows([]string{"id", "key", "type", "options", "enabled"}))
+			month := time.Date(2026, tc.month, 1, 0, 0, 0, 0, time.UTC)
+			columns := []string{"id", "name", "platform", "type", "status", "expires_at", "deleted_at", "registered", "month", "contributor_id", "payment", "contributor_name", "contributor_email", "contributor_status", "contributor_deleted", "department", "actual", "notes", "updated_at", "editor_id", "editor_name", "editor_email", "editor_status", "editor_deleted", "requests", "input", "write", "read", "output", "cost"}
+			rows := sqlmock.NewRows(columns)
+			for id := 0; id <= tc.active; id++ {
+				name, requests, tokens := "used", 1, 7
+				if id == 0 {
+					name, requests, tokens = "idle", 0, 0
+				} else if tc.month == time.August {
+					// Historical zero-token requests are not zero-request accounts.
+					tokens = 0
+				}
+				rows.AddRow(id, name, "openai", "oauth", "active", nil, nil, true, month, nil, "subscription", "", "", "", nil, "__unassigned__", "2.00", "", nil, nil, "", "", "", nil, requests, tokens, 0, 0, 0, "0.00")
+			}
+			mock.ExpectQuery("WITH monthly_usage AS").WillReturnRows(rows)
+			for _, query := range []string{"WITH months AS", "SELECT root.platform", "SELECT u.id"} {
+				mock.ExpectQuery(query).WillReturnRows(sqlmock.NewRows([]string{"empty"}))
+			}
+			q := NewQuery(db, "UTC", nil)
+			q.now = func() time.Time { return time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC) }
+			envelope, err := q.CostDashboard(context.Background(), CostFilter{Month: month, Page: tc.page, PageSize: 20, Search: tc.search})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, ok := envelope.Data.(CostDashboard)
+			if !ok {
+				t.Fatalf("data type=%T", envelope.Data)
+			}
+			if data.Accounts.Total != tc.wantTotal || len(data.Accounts.Items) != tc.wantItems {
+				t.Fatalf("zero-request rows affected table pagination: %+v", data.Accounts)
+			}
+			for _, row := range data.Accounts.Items {
+				if row.RequestCount == 0 {
+					t.Fatalf("zero-request account displayed: %d", row.ID)
+				}
+			}
+			if tc.wantTotal == 0 && (data.Accounts.Page != 1 || data.Accounts.Pages != 1) {
+				t.Fatalf("empty table pagination=%+v", data.Accounts)
+			}
+			if data.Summary.AccountCount != tc.wantActive || data.Summary.ActualCost != money(decimal.NewFromInt(int64(tc.wantActive*2))) {
+				t.Fatalf("table visibility changed stored-cost summary: %+v", data.Summary)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestCostAccountRowsExcludeZeroTokensOnlyInCurrentMonth(t *testing.T) {
 	for _, current := range []bool{true, false} {
 		t.Run(map[bool]string{true: "current", false: "historical"}[current], func(t *testing.T) {

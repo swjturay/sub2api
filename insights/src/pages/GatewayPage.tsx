@@ -12,6 +12,8 @@ import { TimeSeriesChart } from "../components/charts/TimeSeriesChart";
 import { Chart } from "../components/charts/Chart";
 import { buildFunnelOption, buildPreferenceOption } from "../features/chartOptions";
 import { Button } from "../components/ui/Button";
+import { HelpTip } from "../components/ui/HelpTip";
+import { resolveGatewayPreferences } from "../features/gatewayPreferences";
 
 export function GatewayPage({ auto }: { auto: boolean }) {
   const boot = useBootstrap();
@@ -36,8 +38,7 @@ export function GatewayPage({ auto }: { auto: boolean }) {
     <div className="page-stack grid gap-6">
       <header className="page-heading">
         <div>
-          <h1 className="m-0 text-2xl font-semibold">网关数据</h1>
-          <p className="mb-0 mt-1 text-sm muted">最终模型调用口径；内部重试归属同一调用，进行中不计入结果。</p>
+          <h1 className="m-0 flex items-center gap-2 text-2xl font-semibold">网关数据<HelpTip label="网关统计口径">最终模型调用口径；内部重试归属同一调用，进行中不计入结果。</HelpTip></h1>
         </div>
       </header>
 
@@ -60,7 +61,7 @@ export function GatewayPage({ auto }: { auto: boolean }) {
         <>
           <CoverageBanner coverage={data.coverage} />
           <section className="panel">
-            <SectionHeading icon={<Activity aria-hidden="true" className="h-4 w-4" />} title="请求质量" detail="成功率基于已有明确结果的模型调用。" />
+            <SectionHeading icon={<Activity aria-hidden="true" className="h-4 w-4" />} title="请求质量" detail="成功率基于已有明确结果的模型调用。全部部门包含身份未知及已删除用户的历史，可能大于当前各部门之和。" />
             <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-5">
               <MetricCard label="请求总次数" value={data.totalCalls} detail="成功 + 失败" />
               <MetricCard label="失败次数" value={data.failedCalls} detail="拒绝、报错、超时、中断或取消" />
@@ -72,19 +73,17 @@ export function GatewayPage({ auto }: { auto: boolean }) {
               <div className="text-xs font-semibold muted">请求成功率趋势</div>
               <TimeSeriesChart data={data.series} metric="successRate" mode="line" percent label="请求成功率趋势" height={300} />
             </div>
-            <p className="mb-0 mt-2 text-xs muted">全部部门口径保留身份未知及已删除用户历史，因此可能大于当前各部门之和。</p>
           </section>
 
           <section className="panel">
             <SectionHeading icon={<Users aria-hidden="true" className="h-4 w-4" />} title="用户分析" detail="频次按整个所选区间累计；切换粒度不会重新分类。" />
             <div className="mt-3"><CoverageBanner coverage={data.frequency.coverage} /></div>
-            <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-6">
+            <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-5">
               <MetricCard label="期末总用户数" value={data.totalUsers} detail="截至所选期末" />
               <MetricCard label="新增用户数" value={data.newUsers} detail="区间内新建账号" />
               <MetricCard label="高频用户" value={data.frequency.high} detail="> 200 次" />
               <MetricCard label="中频用户" value={data.frequency.medium} detail="20–200 次" />
               <MetricCard label="低频用户" value={data.frequency.low} detail="0–19 次，含已知未使用者" />
-              <MetricCard label="未分类用户" value={data.frequency.unclassified} detail="采集不完整，不并入低频" />
             </div>
             <div className="mt-4 border-t border-[var(--border)] pt-3">
               <div className="text-xs font-semibold muted">期末累计用户趋势</div>
@@ -106,7 +105,7 @@ export function GatewayPage({ auto }: { auto: boolean }) {
             <section className="panel xl:col-span-6">
               <SectionHeading icon={<ChartNoAxesCombined aria-hidden="true" className="h-4 w-4" />} title="部门模型偏好" detail="每个部门按完整区间的调用构成展示，条形合计100%。" />
               <div className="mt-3"><CoverageBanner coverage={data.preferenceCoverage} /></div>
-              {data.preferences.length ? <Chart label="部门模型偏好100%堆叠图" height={390} option={buildPreferenceOption(data.preferences)} /> : <Empty detail={emptyDetail(data.preferenceCoverage, "当前筛选范围没有部门模型调用。") } />}
+              {data.preferences.length ? <Chart label="部门模型偏好100%堆叠图" height={390} option={buildPreferenceOption(resolveGatewayPreferences(data.preferences, boot.models))} /> : <Empty detail={emptyDetail(data.preferenceCoverage, "当前筛选范围没有部门模型调用。") } />}
             </section>
           </div>
         </>
@@ -117,9 +116,9 @@ export function GatewayPage({ auto }: { auto: boolean }) {
 
 function SectionHeading({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex items-center gap-3">
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-[var(--primary-soft)] text-[var(--primary)]">{icon}</span>
-      <div><h2 className="m-0 text-base font-semibold">{title}</h2><p className="mb-0 mt-1 text-xs muted">{detail}</p></div>
+      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">{title}<HelpTip label={`${title}说明`}>{detail}</HelpTip></h2>
     </div>
   );
 }

@@ -106,6 +106,20 @@ type DepartmentPreference struct {
 	Models     []PreferenceModel `json:"models"`
 }
 
+// Resolve legacy routing identities only from an unambiguous usage record for
+// the same user, key, request and requested model. Never multiply call counts.
+const preferenceCallSourceSQL = `insights_call_facts f LEFT JOIN LATERAL (
+ SELECT MIN(a.platform) platform,MIN(COALESCE(NULLIF(ul.requested_model,''),ul.model)) model
+ FROM usage_logs ul LEFT JOIN accounts a ON a.id=ul.account_id
+ WHERE ul.request_id=f.request_id AND ul.user_id=f.user_id AND ul.api_key_id=f.api_key_id
+ AND (NULLIF(f.model,'') IS NULL OR COALESCE(NULLIF(ul.requested_model,''),ul.model)=f.model)
+ HAVING COUNT(*)=1
+) usage_identity ON LOWER(BTRIM(COALESCE(f.platform,''))) IN ('','composite','unknown') OR NULLIF(f.model,'') IS NULL`
+
+func preferenceCallModelSQL() string {
+	return usageProviderSQL("NULLIF(f.platform,'unknown')", "usage_identity.platform") + `||':'||COALESCE(NULLIF(f.model,''),usage_identity.model,'unknown')`
+}
+
 func (q *Query) GatewayModelPreferences(ctx context.Context, from, to time.Time, departments []string) (Envelope, error) {
 	states, err := q.coverageStates(ctx)
 	if err != nil {
@@ -123,7 +137,7 @@ func (q *Query) GatewayModelPreferences(ctx context.Context, from, to time.Time,
 		return q.envelope(map[string]any{"departments": []DepartmentPreference{}}, []CoverageInfo{{Dataset: "department_attribute", Status: dim.Status, Detail: dim.Detail}}), nil
 	}
 	valid := valuesOf(binding.Options)
-	rows, err := q.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(v.value,''),'__unassigned__'),COALESCE(f.platform,'unknown')||':'||COALESCE(f.model,''),COUNT(*) FROM insights_call_facts f JOIN users u ON u.id=f.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE f.statistical_at >= $1 AND f.statistical_at < $2 AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2 ORDER BY 1,3 DESC`, from, to, binding.ID, nullableTextArray(departments), nullableTextArray(valid))
+	rows, err := q.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(v.value,''),'__unassigned__'),`+preferenceCallModelSQL()+`,COUNT(*) FROM `+preferenceCallSourceSQL+` JOIN users u ON u.id=f.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE f.statistical_at >= $1 AND f.statistical_at < $2 AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2 ORDER BY 1,3 DESC`, from, to, binding.ID, nullableTextArray(departments), nullableTextArray(valid))
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -300,7 +314,7 @@ func (q *Query) GatewayRetentionFiltered(ctx context.Context, cutoff time.Time, 
 		valid = valuesOf(binding.Options)
 	}
 	var total, first, d1, d7, d30, unknownFirst, unknownReturn int64
-	err = q.db.QueryRowContext(ctx, `SELECT COUNT(*),COUNT(*) FILTER(WHERE l.first_observed_call_at<$1),COUNT(*) FILTER(WHERE l.returned_day_1_at<$1),COUNT(*) FILTER(WHERE l.returned_day_7_at<$1),COUNT(*) FILTER(WHERE l.returned_day_30_at<$1),COUNT(*) FILTER(WHERE l.first_observed_call_at IS NULL),COUNT(*) FILTER(WHERE l.first_observed_call_at<$1 AND (NOT COALESCE(l.first_call_coverage_complete,false) OR NOT COALESCE(l.return_coverage_complete,false))) FROM users u LEFT JOIN insights_user_lifecycle l ON l.user_id=u.id LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$2 WHERE u.deleted_at IS NULL AND u.created_at<$1 AND ($3::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($3)) AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($4))`, cutoff, binding.ID, nullableTextArray(departments), nullableTextArray(valid)).Scan(&total, &first, &d1, &d7, &d30, &unknownFirst, &unknownReturn)
+	err = q.db.QueryRowContext(ctx, `SELECT COUNT(*),COUNT(*) FILTER(WHERE l.first_observed_call_at<$1),COUNT(*) FILTER(WHERE l.returned_day_1_at<$1),COUNT(*) FILTER(WHERE l.returned_day_7_at<$1),COUNT(*) FILTER(WHERE l.returned_day_30_at<$1),COUNT(*) FILTER(WHERE (l.first_observed_call_at IS NULL OR l.first_observed_call_at >= $1) AND NOT COALESCE(l.first_call_coverage_complete,false)),COUNT(*) FILTER(WHERE l.first_observed_call_at<$1 AND (NOT COALESCE(l.first_call_coverage_complete,false) OR NOT COALESCE(l.return_coverage_complete,false))) FROM users u LEFT JOIN insights_user_lifecycle l ON l.user_id=u.id LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$2 WHERE u.deleted_at IS NULL AND u.created_at<$1 AND ($3::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($3)) AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($4))`, cutoff, binding.ID, nullableTextArray(departments), nullableTextArray(valid)).Scan(&total, &first, &d1, &d7, &d30, &unknownFirst, &unknownReturn)
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -493,7 +507,7 @@ func (q *Query) GatewayModelPreferencesLongTerm(ctx context.Context, from, to, s
 		return q.envelope(map[string]any{"departments": []DepartmentPreference{}}, []CoverageInfo{{Dataset: "department_attribute", Status: dim.Status, Detail: dim.Detail}}), nil
 	}
 	valid := valuesOf(binding.Options)
-	rows, err := q.db.QueryContext(ctx, `WITH x AS (SELECT COALESCE(NULLIF(v.value,''),'__unassigned__') dept,d.platform||':'||d.model model,SUM(d.success_count+d.failure_count)::bigint n FROM insights_user_model_daily d JOIN users u ON u.id=d.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE d.stat_date >= $1::date AND d.stat_date < $2::date AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2 UNION ALL SELECT COALESCE(NULLIF(v.value,''),'__unassigned__'),COALESCE(f.platform,'unknown')||':'||COALESCE(f.model,'unknown'),COUNT(*) FROM insights_call_facts f JOIN users u ON u.id=f.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE f.statistical_at >= $2 AND f.statistical_at < $6 AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2) SELECT dept,model,SUM(n) FROM x GROUP BY 1,2 ORDER BY 1,3 DESC`, from, oldTo, binding.ID, nullableTextArray(departments), nullableTextArray(valid), to)
+	rows, err := q.db.QueryContext(ctx, `WITH x AS (SELECT COALESCE(NULLIF(v.value,''),'__unassigned__') dept,`+usageProviderSQL("d.platform", "NULL")+`||':'||COALESCE(NULLIF(d.model,''),'unknown') model,SUM(d.success_count+d.failure_count)::bigint n FROM insights_user_model_daily d JOIN users u ON u.id=d.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE d.stat_date >= $1::date AND d.stat_date < $2::date AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2 UNION ALL SELECT COALESCE(NULLIF(v.value,''),'__unassigned__'),`+preferenceCallModelSQL()+`,COUNT(*) FROM `+preferenceCallSourceSQL+` JOIN users u ON u.id=f.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$3 WHERE f.statistical_at >= $2 AND f.statistical_at < $6 AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($5::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($5)) GROUP BY 1,2) SELECT dept,model,SUM(n) FROM x GROUP BY 1,2 ORDER BY 1,3 DESC`, from, oldTo, binding.ID, nullableTextArray(departments), nullableTextArray(valid), to)
 	if err != nil {
 		return Envelope{}, err
 	}

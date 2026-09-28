@@ -1,5 +1,32 @@
 # Development Journal
 
+## Historical gateway outcome repair (2026-09-28)
+
+- Applied the explicitly approved historical policy to missing-hook Chat Completions candidates before `2026-09-28 13:35:27.598476+08:00`: preserve explicit failures and classify remaining candidates as success. This assumption does not constitute reconstructed terminal evidence.
+- Rehearsed with rollback, then atomically repaired 45,873 call outcomes, removed their stale error facts and rebuilt call-only daily aggregates. Five candidates with explicit failure evidence and all other failure classes were retained. Usage, tokens, billing and costs were unchanged.
+- Production API confirms September 25 success rate 96.65% (previously 44.50%) and September 26 93.85% (previously 31.05%). Raw/daily counts reconcile and no target stale errors remain.
+- Backup schema `insights_repair_20260928`, private ops dump and guarded rollback are retained. See [the audit and executed repair record](INSIGHTS_GATEWAY_AUDIT_2026-09-28.md).
+
+Validation: post-commit database assertions, authenticated production API reconciliation and public health check passed. No restart, commit, push or deployment. New handler hooks remain local; the old production code can still misclassify requests after the fixed cutoff until deployment.
+
+## Gateway measurements and presentation (2026-09-28)
+
+- Read-only production diagnosis found missing Chat Completions identity/success hooks. September 25/26 have 8,058/19,456 interrupted records with default transport, missing model/provider and matching Chat usage; most are DeepSeek Flash streams. Added explicit successful-terminal recording and the shared usage timestamp; errors with partial usage are not upgraded to success. Historical outcomes were not rewritten.
+- Corrected retention coverage: trusted users without observed calls are inactive, not missing history. Genuine missing first/return coverage remains visible, and immature milestones remain pending.
+- Department preferences recover legacy composite providers from unambiguous, identity-scoped usage records without changing counts. Daily-only legacy identities stay unknown. Catalog-aware frontend normalization merges equivalent series without guessing ambiguous providers.
+- Removed the unclassified-user card and moved gateway/panel prose to accessible tooltips. Kept missing-collection warnings separate from frequency categories.
+- See [the read-only audit](INSIGHTS_GATEWAY_AUDIT_2026-09-28.md) for counts, evidence limits and historical-repair requirements.
+
+Validation: frontend lint, 84 tests and build; focused backend unit tests and full build; real PostgreSQL integration including the previously pending zero-request cost-table tests passed. The isolated test container was removed. Browser checks passed against the local frontend; its API still targets production, so backend changes are not live. No commit, push, deployment or production data change.
+
+## Hide unused account-month table rows (2026-09-28)
+
+- Historical account tables previously retained zero-request accounts because only the current month's zero-token rule excluded unused rows. Apply a request-count check to the table in every month, before table filters and pagination.
+- Keep persisted monthly records and historical summary/trend/department costs unchanged. Historical requests with zero tokens remain visible; the existing current-month zero-token accounting rule remains in effect.
+- Added dashboard regressions for historical pagination, all-unused empty results, searching an unused account, current-month behavior and unchanged historical spend. Updated PostgreSQL fixtures to keep ownership/stop scenarios backed by actual requests.
+
+Validation: the new dashboard regression failed on the original code and passed after the fix. Focused Insights, migration, handler and route unit tests and whitespace checks passed. PostgreSQL integration was explicitly attempted but skipped because `INSIGHTS_TEST_DATABASE_URL` is unset. No production data or deployment changes.
+
 ## Cost test lint gate (2026-09-28)
 
 - Exact-source PostgreSQL integration tests passed for the mixed-version contributor trigger. The CI lint gate also checked newer cost regressions and flagged unchecked test cleanup and type assertions.

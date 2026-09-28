@@ -110,10 +110,21 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	data := mustType[map[string]any](t, envelope.Data)
 	firstLayer := mustType[RetentionLayer](t, data["first_request"])
 	day1Layer := mustType[RetentionLayer](t, data["next_day"])
-	if firstLayer.Count == nil || *firstLayer.Count != 1 || firstLayer.Ratio == nil || firstLayer.Status != "partial" {
+	if firstLayer.Count == nil || *firstLayer.Count != 1 || firstLayer.Ratio == nil || firstLayer.Status != "observed" {
 		t.Fatalf("observed first layer=%+v", firstLayer)
 	}
-	if day1Layer.Count != nil || day1Layer.Ratio != nil || day1Layer.Status != "unknown" {
-		t.Fatalf("unknown return layer=%+v", day1Layer)
+	if day1Layer.Count == nil || *day1Layer.Count != 0 || day1Layer.Status != "observed" || envelope.Meta.Coverage[0].Status != "complete" {
+		t.Fatalf("covered unused account must not make retention unknown: %+v", day1Layer)
+	}
+	if _, e = db.Exec(`UPDATE insights_user_lifecycle SET first_call_coverage_complete=false WHERE user_id=3`); e != nil {
+		t.Fatal(e)
+	}
+	envelope, e = q.GatewayRetention(ctx, ret.AddDate(0, 0, 1))
+	if e != nil {
+		t.Fatal(e)
+	}
+	data = mustType[map[string]any](t, envelope.Data)
+	if mustType[RetentionLayer](t, data["first_request"]).Status != "partial" || mustType[RetentionLayer](t, data["next_day"]).Count != nil || envelope.Meta.Coverage[0].Status != "partial" {
+		t.Fatalf("genuine coverage gap must remain visible: %+v", envelope)
 	}
 }
