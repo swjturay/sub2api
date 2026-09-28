@@ -1,5 +1,10 @@
 # Development Journal
 
+## Cost test lint gate (2026-09-28)
+
+- Exact-source PostgreSQL integration tests passed for the mixed-version contributor trigger. The CI lint gate also checked newer cost regressions and flagged unchecked test cleanup and type assertions.
+- Matched the existing explicit cleanup pattern and added checked dashboard assertions. Focused Insights and migration tests passed locally; publication remains gated on a fully green final-source CI run.
+
 ## Mixed-version cost contributor writes (2026-09-28)
 
 - Before deploying migration 242, added a monthly-write trigger that synchronizes account-wide ownership in the same database statement. Both the old backend and the new backend now update the same account record during a gradual rollout or application rollback. Stop events do not erase ownership.

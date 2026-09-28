@@ -117,7 +117,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := historical.Data.(CostDashboard)
+	history, ok := historical.Data.(CostDashboard)
+	if !ok {
+		t.Fatalf("historical data type=%T", historical.Data)
+	}
 	if history.InProgress || history.Accounts.Total != 3 || history.Summary.ActualCost != "26.50" || history.Summary.PlatformCost != "19.00" {
 		t.Fatalf("historical=%+v", history)
 	}
@@ -130,7 +133,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if err != nil {
 		t.Fatal(err)
 	}
-	visible := resumed.Data.(CostDashboard)
+	visible, ok := resumed.Data.(CostDashboard)
+	if !ok {
+		t.Fatalf("resumed data type=%T", resumed.Data)
+	}
 	if !visible.InProgress || visible.Accounts.Total != 2 || visible.Summary.ActualCost != "26.50" || visible.Summary.PlatformCost != "19.00" || visible.Summary.Savings != "-7.50" {
 		t.Fatalf("resumed=%+v", visible)
 	}
@@ -145,7 +151,11 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 		if err != nil {
 			t.Fatal(err)
 		}
-		return envelope.Data.(CostDashboard)
+		data, ok := envelope.Data.(CostDashboard)
+		if !ok {
+			t.Fatalf("monthly data type=%T", envelope.Data)
+		}
+		return data
 	}
 	account := func(data CostDashboard, id int64) CostAccountItem {
 		t.Helper()
@@ -186,7 +196,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if err != nil {
 		t.Fatal(err)
 	}
-	ops := filtered.Data.(CostDashboard)
+	ops, ok := filtered.Data.(CostDashboard)
+	if !ok {
+		t.Fatalf("filtered data type=%T", filtered.Data)
+	}
 	if ops.Summary.AccountCount != 1 || ops.Summary.PlatformCost != "10.00" || len(ops.Flows) != 1 || ops.Flows[0].ContributionDepartmentID != "ops" || ops.Flows[0].PlatformCost != "10.00" || len(ops.ContributionDepartments) != 1 || ops.ContributionDepartments[0].ID != "ops" || len(ops.UsageDepartments) != 1 || ops.UsageDepartments[0].PlatformCost != "10.00" {
 		t.Fatalf("account-wide department attribution=%+v", ops)
 	}

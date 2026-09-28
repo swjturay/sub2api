@@ -32,7 +32,7 @@ func TestSaveCostMonthPreservesWriteErrors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			t.Cleanup(func() { _ = db.Close() })
 			month := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 			mock.ExpectQuery("SELECT parent_account_id,deleted_at").WithArgs(int64(100)).WillReturnRows(sqlmock.NewRows([]string{"parent", "deleted"}).AddRow(nil, nil))
 			mock.ExpectQuery("SELECT EXISTS").WithArgs(int64(2)).WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
@@ -60,7 +60,7 @@ func TestCostDashboardDepartmentCoverage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			t.Cleanup(func() { _ = db.Close() })
 			mock.ExpectQuery("SELECT NULLIF").WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(nil))
 			attributes := sqlmock.NewRows([]string{"id", "key", "type", "options", "enabled"})
 			if status != "not_configured" {
@@ -99,7 +99,7 @@ func TestCostAccountRowsExcludeZeroTokensOnlyInCurrentMonth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			t.Cleanup(func() { _ = db.Close() })
 			month := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 			columns := []string{"id", "name", "platform", "type", "status", "expires_at", "deleted_at", "registered", "month", "contributor_id", "payment", "contributor_name", "contributor_email", "contributor_status", "contributor_deleted", "department", "actual", "notes", "updated_at", "editor_id", "editor_name", "editor_email", "editor_status", "editor_deleted", "requests", "input", "write", "read", "output", "cost"}
 			rows := sqlmock.NewRows(columns)
@@ -134,7 +134,7 @@ func TestCostTrendExcludesCurrentZeroTokensWithoutChangingHistory(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	month := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	rows := sqlmock.NewRows([]string{"month", "platform", "deleted", "registered", "contributor", "department", "actual", "cost", "tokens"}).
 		AddRow(month.AddDate(0, -1, 0), "openai", nil, true, 1, "eng", "20.00", "9.00", 0).
@@ -160,7 +160,7 @@ func TestCostUsageDepartmentsAreRestrictedToIncludedAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	month := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	mock.ExpectQuery(`AND root.id=ANY\(\$5::bigint\[\]\)`).
 		WithArgs("2026-09-01", month, month.AddDate(0, 1, 0), int64(0), pq.Array([]int64{100})).
