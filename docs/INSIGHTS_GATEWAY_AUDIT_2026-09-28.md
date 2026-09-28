@@ -151,3 +151,60 @@ without changing department totals. Ambiguous catalog identities remain unknown.
 
 Code changes remain local and uncommitted. There was no publication or deployment;
 the separately authorized historical data repair above was applied to production.
+
+## Post-deployment follow-up (15:08 Asia/Shanghai)
+
+The preceding sections record the earlier audit. Revision `9e809e5e5` was
+subsequently deployed; the old backend retired at `14:35:43.021217+08:00`.
+There were 129 missing-hook records between the original repair cutoff and
+retirement, with no matched explicit failure evidence. A rollback rehearsal
+preceded committed repair of these outcomes, associated error facts and call-only
+daily aggregates. No matching candidates remain in the gap or after retirement.
+The five previously retained explicit failures were not changed.
+
+For the fixed pre-retirement September 28 cohort of 21,036 requests, successes
+increased from 18,762 to 18,891 and failures fell from 2,274 to 2,145 (89.80%).
+The live day at 15:08 had 20,871 successes out of 23,110 requests (90.31%).
+Remaining failures were 2,016 request rejections, 183 stream interruptions,
+24 client cancellations and 16 upstream errors. Rejections had no matching
+usage records; they are not evidence of the same missing-success-hook defect.
+No unrelated outcomes were rewritten.
+
+Retention had a separate cause: usage history starts June 2, but trusted
+first-call anchors and returns were rebuilt only from call facts starting
+September 23. Historical usage and daily rollups previously contributed only
+to observed activity. The store now uses that evidence for trusted, launch-scoped
+anchors and returns too, preferring exact timestamps over same-day rollups and
+preserving durable milestones. Coverage gates remain unchanged.
+
+| Milestone | Before | After |
+| --- | ---: | ---: |
+| Current users | 119 | 119 |
+| Observed first request | 105 | 105 |
+| Trusted first-call anchor | 75 | 105 |
+| Next-day-or-later return | 63 | 99 |
+| Seven-day-or-later return | 0 | 92 |
+| Thirty-day-or-later return | 0 | 68 |
+
+These retain the existing on-or-after-day-N return definition, not an exact
+day-N cohort retention rate. The earliest trusted anchor is June 2 at 15:28:52
+(Asia/Shanghai). One user is younger than seven days and 23 are younger than
+thirty days, so API pending status remains truthful for mixed cohorts. The local
+chart shows confirmed positive counts and explains immature users in the tooltip.
+Unknown and zero-pending states remain distinct.
+
+Private evidence, executed SQL, guarded rollback scripts and dumps are in
+`/root/insights-followup-20260928`. Backup schemas:
+`insights_repair_20260928_tail` (31,768-byte dump) and
+`insights_lifecycle_repair_20260928` (10,418-byte dump). Both operations used
+bounded transactions and application advisory locks, without a service restart.
+Historical request totals and usage counters were verified unchanged. The
+post-commit audit independently compared retained usage against trusted anchors
+and all three return milestones and found no missing milestone. Public health
+returned `ok`; the backfill survived subsequent maintenance by the deployed code.
+
+The new regression failed against the original store and passed against the fix.
+All Insights real-PostgreSQL tests, focused backend unit tests, backend build,
+Insights lint, 85 frontend tests and frontend build passed. The local browser
+shows the repaired funnel. This follow-up's code changes are not committed,
+pushed or deployed; only the guarded historical data repairs are live.

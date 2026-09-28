@@ -48,13 +48,13 @@ export function buildFunnelOption(funnel:GatewayAnalytics["funnel"]):EChartsOpti
  return {
   color:["#4f46e5","#6366f1","#818cf8","#a5b4fc","#c7d2fe"],
   tooltip:{...tooltipTheme(),trigger:"item",formatter:(p:unknown)=>{
-   const d=(p as {data:Datum}).data,status=statusText(d.status);
+   const d=(p as {data:Datum}).data,status=d.status==="pending"?"部分用户尚未满观察期；已确认的留存人数正常计入。":statusText(d.status);
    return `<b>${escapeHtml(d.name)}</b><br/>${d.value===null?"—":`${fullNumber(d.value)} 人`}${d.share===null?"":`<br/>占总用户 ${percent(d.share)}`}${status?`<br/>${status}`:""}`;
   }},
   series:[{
    type:"funnel",sort:"none",min:0,max:maximum,minSize:"0%",maxSize:"100%",left:"22%",top:18,bottom:12,width:"72%",gap:3,
    label:{position:"left",color:colors.ink,fontSize:12,formatter:(p:unknown)=>{
-    const d=(p as {data:Datum}).data,status=statusText(d.status);
+    const d=(p as {data:Datum}).data,status=d.status==="pending"&&(d.value??0)>0?"":statusText(d.status);
     return `${d.name}\n${d.value===null?"—":`${compactNumber(d.value)} 人`}${status?`\n${status}`:""}`;
    }},
    labelLine:{length:12,lineStyle:{color:colors.border}},itemStyle:{borderColor:colors.surface,borderWidth:2,borderRadius:4},emphasis:{focus:"self"},

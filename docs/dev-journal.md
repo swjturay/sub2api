@@ -1,5 +1,22 @@
 # Development Journal
 
+## Gateway duration units and timing diagnosis (2026-09-28)
+
+- Display both gateway quality durations in seconds, converting the millisecond API values only at the page boundary. Preserve null, zero and small positive values; other metrics and API units are unchanged. Rename the gateway metric to pre-forward time and explain both timing boundaries in tooltips.
+- Read-only production audit of the selected September 22-28 window found mean pre-forward time about 1.689s, median 0.201s, P95 7.517s and P99 32.309s. The 5,955 samples at or above 10s (about 4.2%) contributed 69.1% of the total elapsed time. Matching usage identifies DeepSeek Flash in 4,463 of those tail samples. September 27's mean was 3.929s versus September 28's approximately 1.115s.
+- The collector measures from middleware entry to the first transport send, including preparation/authorization/scheduling/concurrency waits. It is not pure CPU time or model response time. Persisted successful-request evidence does not break this interval down by phase, so queueing is not asserted as the sole cause. No production data, concurrency settings, forwarding code or instrumentation was changed. Private aggregate audit output is retained in `/root/insights-followup-20260928/timing-audit-*.json`.
+
+Validation: page regression reproduced `1.9万ms` before the change; Insights lint, 89 tests and TypeScript/production build passed. Local browser shows approximately 18.7s and 1.7s. This turn's frontend changes remain local and undeployed.
+
+## Gateway repair tail and historical retention backfill (2026-09-28)
+
+- Found and repaired 129 missing-hook Chat outcomes between the original repair cutoff and old backend retirement, after an explicit-failure check and rollback rehearsal. Existing failures, usage, tokens and costs were unchanged.
+- Lifecycle rebuild now reuses historical usage and nonempty daily activity for trusted, launch-scoped anchors and returns. Prefer exact timestamps over same-day rollups and retain milestones after cleanup; coverage gates and batch isolation are unchanged.
+- Backfilled existing history under the lifecycle lock with before/after backups. The 119-user funnel now has 105 first users, 99 next-day returns, 92 seven-day returns and 68 thirty-day returns. One/23 users are still younger than seven/thirty days. Local charts show confirmed positive counts and explain immature users in the tooltip.
+- Private evidence and guarded rollback scripts are in `/root/insights-followup-20260928`; see [the follow-up audit](INSIGHTS_GATEWAY_AUDIT_2026-09-28.md). At 15:08 the live September 28 success rate was 90.31%; most remaining failures were recorded as request rejections, not the repaired Chat signature.
+
+Validation: the new PostgreSQL regression failed before the fix; all Insights tests including real PostgreSQL integration passed after it. Focused backend unit tests and full build, Insights lint, 85 frontend tests, TypeScript/build, production API/history reconciliation and health check passed. The isolated test container was removed. Local browser shows the restored funnel. Production data backfills are complete without a service restart; this turn's code and tooltip changes remain local, uncommitted and undeployed.
+
 ## Historical gateway outcome repair (2026-09-28)
 
 - Applied the explicitly approved historical policy to missing-hook Chat Completions candidates before `2026-09-28 13:35:27.598476+08:00`: preserve explicit failures and classify remaining candidates as success. This assumption does not constitute reconstructed terminal evidence.

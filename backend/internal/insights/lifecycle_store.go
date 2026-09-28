@@ -42,13 +42,25 @@ func (s *Store) rebuildLifecycle(ctx context.Context, timezone string, statistic
 	if statisticsStart != nil {
 		since = *statisticsStart
 	}
+	// Usage predates call instrumentation; daily evidence survives detail cleanup.
+	// These prove activity, not request success. Coverage still gates trusted anchors.
 	_, err = tx.ExecContext(ctx, `
-WITH raw_first AS (
- SELECT user_id,MIN(statistical_at) at FROM insights_call_facts WHERE user_id IS NOT NULL AND ($2::timestamptz IS NULL OR statistical_at >= $2) AND ($3::bigint[] IS NULL OR user_id=ANY($3)) GROUP BY user_id
-), observed_evidence AS (
+WITH detail_evidence AS (
  SELECT user_id,statistical_at at FROM insights_call_facts WHERE user_id IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
  UNION ALL SELECT user_id,created_at FROM usage_logs WHERE user_id IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
- UNION ALL SELECT user_id,stat_date::timestamp AT TIME ZONE $1 FROM insights_user_model_daily WHERE user_id>0 AND usage_count+success_count+failure_count>0 AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+ UNION ALL SELECT user_id,first_call_at FROM insights_user_lifecycle WHERE first_call_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+ UNION ALL SELECT user_id,returned_day_1_at FROM insights_user_lifecycle WHERE returned_day_1_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+ UNION ALL SELECT user_id,returned_day_7_at FROM insights_user_lifecycle WHERE returned_day_7_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+ UNION ALL SELECT user_id,returned_day_30_at FROM insights_user_lifecycle WHERE returned_day_30_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+), activity_evidence AS (
+ SELECT user_id,COALESCE(MIN(at) FILTER(WHERE precise),MIN(at)) at FROM (
+  SELECT user_id,at,true precise FROM detail_evidence
+  UNION ALL SELECT user_id,stat_date::timestamp AT TIME ZONE $1,false FROM insights_user_model_daily WHERE user_id>0 AND usage_count+success_count+failure_count>0 AND ($3::bigint[] IS NULL OR user_id=ANY($3))
+ ) evidence GROUP BY user_id,(at AT TIME ZONE $1)::date
+), raw_first AS (
+ SELECT user_id,MIN(at) at FROM activity_evidence WHERE $2::timestamptz IS NULL OR at >= $2 GROUP BY user_id
+), observed_evidence AS (
+ SELECT user_id,at FROM activity_evidence
  UNION ALL SELECT user_id,first_observed_call_at FROM insights_user_lifecycle WHERE first_observed_call_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
  UNION ALL SELECT user_id,first_call_at FROM insights_user_lifecycle WHERE first_call_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
  UNION ALL SELECT user_id,returned_day_1_at FROM insights_user_lifecycle WHERE returned_day_1_at IS NOT NULL AND ($3::bigint[] IS NULL OR user_id=ANY($3))
@@ -64,7 +76,7 @@ WITH raw_first AS (
  FROM users u LEFT JOIN insights_user_lifecycle l ON l.user_id=u.id LEFT JOIN raw_first f ON f.user_id=u.id LEFT JOIN observed o ON o.user_id=u.id
  WHERE u.deleted_at IS NULL AND ($3::bigint[] IS NULL OR u.id=ANY($3))
 ), events AS (
- SELECT f.user_id,f.statistical_at at FROM insights_call_facts f JOIN eligible e ON e.id=f.user_id AND e.first_at IS NOT NULL
+ SELECT f.user_id,f.at FROM activity_evidence f JOIN eligible e ON e.id=f.user_id AND e.first_at IS NOT NULL
  UNION ALL SELECT id,previous_first FROM eligible WHERE previous_first IS NOT NULL
  UNION ALL SELECT id,r1 FROM eligible WHERE r1 IS NOT NULL
  UNION ALL SELECT id,r7 FROM eligible WHERE r7 IS NOT NULL

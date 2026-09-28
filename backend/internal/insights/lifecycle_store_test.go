@@ -127,4 +127,59 @@ func TestLifecyclePostgresRetainsMilestonesAndLateFirst(t *testing.T) {
 	if mustType[RetentionLayer](t, data["first_request"]).Status != "partial" || mustType[RetentionLayer](t, data["next_day"]).Count != nil || envelope.Meta.Coverage[0].Status != "partial" {
 		t.Fatalf("genuine coverage gap must remain visible: %+v", envelope)
 	}
+
+	t.Run("historical usage and daily returns", func(t *testing.T) {
+		// The new call recorder started later than the existing usage history.
+		for _, stmt := range []string{
+			`INSERT INTO users VALUES(4,'2025-12-01',NULL),(5,'2025-12-01',NULL),(6,'2025-12-01',NULL)`,
+			`INSERT INTO usage_logs VALUES(4,'2025-12-20T12:00:00+08:00'),(4,'2026-01-03T23:30:00+08:00'),(4,'2026-01-04T00:30:00+08:00'),(4,'2026-01-10T12:00:00+08:00'),(4,'2026-02-02T12:00:00+08:00'),(6,'2026-01-03T12:00:00+08:00')`,
+			`INSERT INTO insights_user_model_daily VALUES('2025-12-20',5,1,0,0),('2026-01-01',5,0,0,0),('2026-01-03',5,1,0,0),('2026-01-04',5,0,0,1),('2026-01-10',5,1,0,0),('2026-02-02',5,1,0,0)`,
+			`INSERT INTO insights_call_facts VALUES(4,'2026-02-03T12:00:00+08:00'),(5,'2026-02-03T12:00:00+08:00')`,
+		} {
+			if _, err := db.Exec(stmt); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := store.RebuildLifecycleUsers(ctx, "Asia/Shanghai", nil, []int64{4, 5, 6}); err != nil {
+			t.Fatal(err)
+		}
+		var untrusted int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM insights_user_lifecycle WHERE user_id IN(4,5,6) AND first_observed_call_at IS NOT NULL AND first_call_at IS NULL AND returned_day_30_at IS NULL AND NOT first_call_coverage_complete`).Scan(&untrusted); err != nil || untrusted != 3 {
+			t.Fatalf("history without trusted scope fabricated anchors: count=%d err=%v", untrusted, err)
+		}
+		if err := store.RebuildLifecycleUsers(ctx, "Asia/Shanghai", &since, []int64{4, 5}); err != nil {
+			t.Fatal(err)
+		}
+		assertHistory := func() {
+			t.Helper()
+			for _, id := range []int{4, 5} {
+				var gotFirst, got1, got7, got30 time.Time
+				if err := db.QueryRow(`SELECT first_call_at,returned_day_1_at,returned_day_7_at,returned_day_30_at FROM insights_user_lifecycle WHERE user_id=$1`, id).Scan(&gotFirst, &got1, &got7, &got30); err != nil {
+					t.Fatal(err)
+				}
+				got := []time.Time{gotFirst, got1, got7, got30}
+				want := []string{"2026-01-03", "2026-01-04", "2026-01-10", "2026-02-02"}
+				for i := range got {
+					if got[i].In(loc).Format("2006-01-02") != want[i] {
+						t.Fatalf("user %d milestone %d=%v want local date %s", id, i, got[i], want[i])
+					}
+				}
+			}
+		}
+		assertHistory()
+		if err := db.QueryRow(`SELECT COUNT(*) FROM insights_user_lifecycle WHERE user_id=6 AND first_call_at IS NULL AND NOT first_call_coverage_complete`).Scan(&untrusted); err != nil || untrusted != 1 {
+			t.Fatalf("batch changed an unrelated user: count=%d err=%v", untrusted, err)
+		}
+		for _, table := range []string{"usage_logs", "insights_call_facts", "insights_user_model_daily"} {
+			if _, err := db.Exec(`DELETE FROM ` + table + ` WHERE user_id IN(4,5)`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for range 2 {
+			if err := store.RebuildLifecycleUsers(ctx, "Asia/Shanghai", &since, []int64{4, 5}); err != nil {
+				t.Fatal(err)
+			}
+			assertHistory()
+		}
+	})
 }

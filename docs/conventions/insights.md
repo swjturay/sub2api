@@ -14,6 +14,13 @@ Use the platform timezone consistently for boundaries and aggregates. Department
 
 ## Gateway and storage isolation
 
+Lifecycle rebuilds share call, historical usage and nonempty per-user daily
+activity evidence for observed activity and coverage-gated, launch-scoped first
+anchors and returns. Prefer exact evidence over a same-day rollup timestamp;
+retain stored milestones after detail cleanup. A newer instrumentation start
+must not reset existing users' first-use dates. Mixed cohorts may contain both
+confirmed returns and users whose observation window has not matured.
+
 Additional analytics must not change forwarding, quota windows, billing, output identity or client response behavior. Do not retain prompts, response bodies, credentials or raw sensitive upstream errors. All model-call transports actually supported by this fork need outcome coverage or an explicit incomplete state; no happy-path-only success claims.
 
 Daily quota remains authoritative billing state. No report SUM may replace it for visual consistency. Current members exclude deleted users but include disabled users; all-gateway quality retains its separately defined anonymous/deleted-user history.

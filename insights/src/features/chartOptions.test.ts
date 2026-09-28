@@ -36,3 +36,12 @@ it("exposes pending and unknown retention without claiming zero loss",()=>{
  const unknown=o.tooltip.formatter({data:o.series[0].data[1]});
  expect(unknown).toContain("数据不足");expect(unknown).not.toContain("0 人");expect(unknown).not.toContain("0.0%");
 });
+
+it("shows confirmed retention while explaining immature users in the tooltip",()=>{
+ const o=buildFunnelOption([{key:"day_30",label:"30日留存",count:68,share:68/119,status:"pending"}]) as any;
+ const data=o.series[0].data[0];
+ expect(data.value).toBe(68);
+ expect(o.series[0].label.formatter({data})).toBe("30日留存\n68 人");
+ expect(o.tooltip.formatter({data})).toContain("部分用户尚未满观察期");
+ expect(o.tooltip.formatter({data})).toContain("68 人");
+});

@@ -66,8 +66,8 @@ export function GatewayPage({ auto }: { auto: boolean }) {
               <MetricCard label="请求总次数" value={data.totalCalls} detail="成功 + 失败" />
               <MetricCard label="失败次数" value={data.failedCalls} detail="拒绝、报错、超时、中断或取消" />
               <MetricCard label="成功率" value={data.successRate === null ? null : data.successRate * 100} unit="%" />
-              <MetricCard label="模型平均处理时长" value={data.modelDuration.value} unit="ms" detail="最终成功上游尝试，网关观测值" />
-              <MetricCard label="网关平均处理时长" value={data.gatewayDuration.value} unit="ms" detail="首次转发前，含排队" />
+              <MetricCard label="模型平均处理时长" value={data.modelDuration.value === null ? null : data.modelDuration.value / 1000} unit="s" detail="最终成功上游尝试，网关观测值" formula="最终成功的上游尝试从发送到完成的平均耗时，包含上游网络和输出传输，不等同于模型服务器的纯计算时间。仅统计有有效耗时的成功调用。" />
+              <MetricCard label="网关平均转发前耗时" value={data.gatewayDuration.value === null ? null : data.gatewayDuration.value / 1000} unit="s" detail="首次转发前，含排队" formula="从进入网关统计到首次调用上游的平均耗时，包含请求读取、鉴权、并发排队、账号调度及转发准备；不是纯计算耗时，不包含首次发送后的模型响应时间。仅统计有有效耗时的成功调用。" />
             </div>
             <div className="mt-4 border-t border-[var(--border)] pt-3">
               <div className="text-xs font-semibold muted">请求成功率趋势</div>
