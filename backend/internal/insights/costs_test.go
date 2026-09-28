@@ -157,6 +157,14 @@ func TestCostDashboardTableHidesZeroRequestsBeforePagination(t *testing.T) {
 			if data.Summary.AccountCount != tc.wantActive || data.Summary.ActualCost != money(decimal.NewFromInt(int64(tc.wantActive*2))) {
 				t.Fatalf("table visibility changed stored-cost summary: %+v", data.Summary)
 			}
+			if data.Summary.TotalAccounts != tc.active || data.Summary.CompletedAccounts != tc.active {
+				t.Fatalf("completeness includes accounts hidden from the monthly table: %+v", data.Summary)
+			}
+			for _, department := range data.ContributionDepartments {
+				if department.TotalAccounts != tc.active || department.CompletedAccounts != tc.active {
+					t.Fatalf("department completeness includes unused accounts: %+v", department)
+				}
+			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)
 			}
@@ -253,12 +261,30 @@ func TestCostUsageDepartmentsAreRestrictedToIncludedAccounts(t *testing.T) {
 func TestSummarizeCostRowsDistinguishesMissingAndConfirmedZero(t *testing.T) {
 	zero := "0.00"
 	rows := []CostAccountItem{
-		{Registered: true, Contributor: &CostContributor{ID: 1}, ActualCost: nil, platformCostExact: decimal.NewFromInt(10)},
-		{Registered: true, Contributor: &CostContributor{ID: 2}, ActualCost: &zero, platformCostExact: decimal.NewFromInt(5)},
+		{Registered: true, RequestCount: 1, Contributor: &CostContributor{ID: 1}, ActualCost: nil, platformCostExact: decimal.NewFromInt(10)},
+		{Registered: true, RequestCount: 1, Contributor: &CostContributor{ID: 2}, ActualCost: &zero, platformCostExact: decimal.NewFromInt(5)},
 	}
 	summary := summarizeCostRows(rows)
 	if summary.PlatformCost != "15.00" || summary.ActualCost != "0.00" || summary.Savings != "5.00" || summary.CompletedAccounts != 1 || summary.TotalAccounts != 2 {
 		t.Fatalf("summary=%+v", summary)
+	}
+}
+
+func TestCostCompletenessExcludesIdleAccountsWithAndWithoutSpend(t *testing.T) {
+	zero, paid := "0.00", "20.00"
+	rows := []CostAccountItem{
+		{Registered: true, RequestCount: 1, ActualCost: &zero},
+		{Registered: true, RequestCount: 2},
+		{Registered: true, ActualCost: &paid},
+		{Registered: true},
+	}
+	summary := summarizeCostRows(rows)
+	if summary.CompletedAccounts != 1 || summary.TotalAccounts != 2 || summary.ActualCost != paid {
+		t.Fatalf("summary=%+v", summary)
+	}
+	departments := summarizeContributionDepartments(rows)
+	if len(departments) != 1 || departments[0].CompletedAccounts != 1 || departments[0].TotalAccounts != 2 || departments[0].ActualCost != paid {
+		t.Fatalf("departments=%+v", departments)
 	}
 }
 

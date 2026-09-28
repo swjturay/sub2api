@@ -180,7 +180,14 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	}
 	// A September-only registration also configures August, without copying spend.
 	august := month.AddDate(0, -1, 0)
-	before := account(readMonth(august), 100)
+	augustDashboard := readMonth(august)
+	if augustDashboard.Summary.TotalAccounts != 1 || augustDashboard.Summary.CompletedAccounts != 0 || augustDashboard.Accounts.Total != 1 {
+		t.Fatalf("historical completeness must exclude idle paid accounts: %+v", augustDashboard)
+	}
+	if len(augustDashboard.ContributionDepartments) != 1 || augustDashboard.ContributionDepartments[0].TotalAccounts != 1 || augustDashboard.ContributionDepartments[0].CompletedAccounts != 0 {
+		t.Fatalf("historical department completeness=%+v", augustDashboard.ContributionDepartments)
+	}
+	before := account(augustDashboard, 100)
 	if !before.Registered || before.Contributor == nil || before.Contributor.ID != 1 || before.ActualCost != nil {
 		t.Fatalf("historical configuration=%+v", before)
 	}

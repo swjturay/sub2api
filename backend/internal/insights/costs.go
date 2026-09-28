@@ -417,8 +417,12 @@ func filterCostRows(rows []CostAccountItem, filter CostFilter) []CostAccountItem
 func summarizeCostRows(rows []CostAccountItem) CostSummary {
 	contributors := map[int64]struct{}{}
 	platformCost, actualCost, savings := decimal.Zero, decimal.Zero, decimal.Zero
-	completed := 0
+	completed, total := 0, 0
 	for _, row := range rows {
+		// Completeness follows table visibility; saved historical spend is preserved.
+		if row.RequestCount > 0 {
+			total++
+		}
 		platformCost = platformCost.Add(row.platformCostExact)
 		if row.Contributor != nil {
 			contributors[row.Contributor.ID] = struct{}{}
@@ -427,10 +431,12 @@ func summarizeCostRows(rows []CostAccountItem) CostSummary {
 			actual, _ := decimal.NewFromString(*row.ActualCost)
 			actualCost = actualCost.Add(actual)
 			savings = savings.Add(row.platformCostExact.Sub(actual))
-			completed++
+			if row.RequestCount > 0 {
+				completed++
+			}
 		}
 	}
-	return CostSummary{ContributorCount: len(contributors), AccountCount: len(rows), PlatformCost: money(platformCost), ActualCost: money(actualCost), Savings: money(savings), CompletedAccounts: completed, TotalAccounts: len(rows)}
+	return CostSummary{ContributorCount: len(contributors), AccountCount: len(rows), PlatformCost: money(platformCost), ActualCost: money(actualCost), Savings: money(savings), CompletedAccounts: completed, TotalAccounts: total}
 }
 
 func summarizeContributionDepartments(rows []CostAccountItem) []CostContributionDepartment {
@@ -451,7 +457,9 @@ func summarizeContributionDepartments(rows []CostAccountItem) []CostContribution
 			byDepartment[id] = a
 		}
 		a.item.AccountCount++
-		a.item.TotalAccounts++
+		if row.RequestCount > 0 {
+			a.item.TotalAccounts++
+		}
 		a.item.RequestCount += row.RequestCount
 		a.item.Tokens += row.Tokens.Total
 		a.platform = a.platform.Add(row.platformCostExact)
@@ -462,7 +470,9 @@ func summarizeContributionDepartments(rows []CostAccountItem) []CostContribution
 			actual, _ := decimal.NewFromString(*row.ActualCost)
 			a.actual = a.actual.Add(actual)
 			a.savings = a.savings.Add(row.platformCostExact.Sub(actual))
-			a.item.CompletedAccounts++
+			if row.RequestCount > 0 {
+				a.item.CompletedAccounts++
+			}
 		}
 	}
 	out := make([]CostContributionDepartment, 0, len(byDepartment))

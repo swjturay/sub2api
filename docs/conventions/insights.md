@@ -25,6 +25,17 @@ Additional analytics must not change forwarding, quota windows, billing, output 
 
 Daily quota remains authoritative billing state. No report SUM may replace it for visual consistency. Current members exclude deleted users but include disabled users; all-gateway quality retains its separately defined anonymous/deleted-user history.
 
+## Cost completeness
+
+Summary and contribution-department completeness count only registered accounts
+eligible for the selected month's account table, before table-only search,
+status filters and pagination. Exclude zero-request accounts in every month;
+the existing current-month zero-token exclusion still applies first. Count an
+explicit zero spend as complete, never a missing value. Exclude unused accounts
+from both numerator and denominator without changing saved historical amounts
+or historical contribution-account counts. Cost trends show only estimated
+price, actual spend and savings, without a completeness series or percent axis.
+
 ## Verification and presentation
 
 Use real interfaces and database fixtures for formula, scope, time, lifecycle and retention tests, plus browser tests for login and independent filters. Synthetic fixtures belong only to tests/development and must never be production fallback data. No live paid model invocation is needed for tests. The model plaza is a version-controlled allowlist of formal production model names with profiles derived only from vendor documentation. Account mappings, request history, internal test names and experiments do not add catalog entries; administrators cannot edit model profiles, and there is no automatic discovery or periodic verification mechanism. Absent prices stay unknown rather than false/zero. No export, arbitrary SQL, drag-layout builder or member impersonation is added.

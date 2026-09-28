@@ -1,5 +1,13 @@
 # Development Journal
 
+## Cost completeness and monetary trend (2026-09-28)
+
+- Matched summary and contribution-department completeness to monthly table usage eligibility. Zero-request accounts no longer enter either numerator or denominator, including historical months; the current-month zero-token rule is unchanged. Preserve explicit zero versus missing spend, stored amounts, historical cost totals and contribution-account counts.
+- Removed the completeness series, legend entry and secondary percentage axis from the cost trend. Keep estimated price, actual spend and savings, including gaps for missing entries and confirmed-zero values.
+- Added dashboard regressions for historical/current months, pagination, table-only search, all-unused months, paid/unpaid unused accounts and department completeness. Added real PostgreSQL and rendered-page checks.
+
+Validation: backend completeness tests and the chart-series assertion failed before the fix and passed after it. Insights lint, 90 tests and TypeScript/production build passed, as did focused backend Insights/handler/routes tests and the isolated PostgreSQL 18 cost suite. The temporary database container was removed; no production data was changed. Browser verification confirms the monetary-only trend. The local page still proxies production, so new completeness counts require backend deployment. Deployment is separate from this code change.
+
 ## Gateway duration units and timing diagnosis (2026-09-28)
 
 - Display both gateway quality durations in seconds, converting the millisecond API values only at the page boundary. Preserve null, zero and small positive values; other metrics and API units are unchanged. Rename the gateway metric to pre-forward time and explain both timing boundaries in tooltips.

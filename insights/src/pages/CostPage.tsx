@@ -270,21 +270,19 @@ function escapeHtml(value: unknown) { return String(value ?? "").replaceAll("&",
 function buildCostTrendOption(data: Array<{ month: string; platformCost: number; actualCost: number; savings: number; completedAccounts: number; totalAccounts: number }>): EChartsOption {
   const theme = cartesianTheme(58);
   return {
-    color: ["#4f46e5", "#0f766e", "#d97706", "#64748b"],
+    color: ["#4f46e5", "#0f766e", "#d97706"],
     textStyle: theme.textStyle,
     tooltip: { ...tooltipTheme(), trigger: "axis", valueFormatter: (value) => typeof value === "number" ? money(value) : String(value ?? "—") },
     legend: { ...legendTheme(), bottom: 0 },
-    grid: { ...(theme.grid as object), right: 52, bottom: 62 },
+    grid: { ...(theme.grid as object), right: 20, bottom: 62 },
     xAxis: { ...theme.xAxis, type: "category", data: data.map((point) => point.month) },
     yAxis: [
       { ...theme.yAxis, type: "value", axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: number) => `$${compactNumber(value)}` } },
-      { ...theme.yAxis, type: "value", min: 0, max: 100, axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: "{value}%" } },
     ],
     series: [
       { name: "预估价格", type: "bar", barMaxWidth: 28, data: data.map((point) => point.platformCost), itemStyle: { borderRadius: [4, 4, 1, 1] } },
       { name: "真实支出", type: "line", connectNulls: false, smooth: 0.16, showSymbol: data.length <= 8, data: data.map((point) => point.completedAccounts ? point.actualCost : null) },
       { name: "成本节省", type: "line", connectNulls: false, smooth: 0.16, showSymbol: data.length <= 8, data: data.map((point) => point.completedAccounts ? point.savings : null) },
-      { name: "录入完整度", type: "line", yAxisIndex: 1, symbol: "circle", symbolSize: 5, lineStyle: { type: "dashed", width: 1.5 }, data: data.map((point) => point.totalAccounts ? point.completedAccounts / point.totalAccounts * 100 : 0) },
     ],
   };
 }
