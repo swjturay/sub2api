@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/shopspring/decimal"
 )
 
@@ -168,28 +169,32 @@ func decimalFromDB(value string) (decimal.Decimal, error) {
 }
 
 func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope, error) {
+	currentMonth := q.now().In(mustLocation(q.timezone)).Format("2006-01")
+	inProgress := filter.Month.Format("2006-01") == currentMonth
 	binding, dimension, err := q.resolveDepartmentBinding(ctx)
 	if err != nil {
 		return Envelope{}, err
 	}
-	rows, err := q.loadCostAccountRows(ctx, filter.Month, binding)
+	rows, err := q.loadCostAccountRows(ctx, filter.Month, binding, inProgress)
 	if err != nil {
 		return Envelope{}, err
 	}
 	pageRows := filterCostRows(rows, CostFilter{Department: filter.Department, Platform: filter.Platform})
 	activeRows := make([]CostAccountItem, 0, len(pageRows))
+	activeIDs := make([]int64, 0, len(pageRows))
 	for _, row := range pageRows {
 		if row.Registered {
 			activeRows = append(activeRows, row)
+			activeIDs = append(activeIDs, row.ID)
 		}
 	}
 	summary := summarizeCostRows(activeRows)
-	trend, err := q.loadCostTrend(ctx, filter, binding)
+	trend, err := q.loadCostTrend(ctx, filter, binding, currentMonth)
 	if err != nil {
 		return Envelope{}, err
 	}
 	contributionDepartments := summarizeContributionDepartments(activeRows)
-	usageDepartments, flows, err := q.loadCostUsageDepartments(ctx, filter, binding)
+	usageDepartments, flows, err := q.loadCostUsageDepartments(ctx, filter, binding, activeIDs)
 	if err != nil {
 		return Envelope{}, err
 	}
@@ -225,19 +230,21 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	if end > total {
 		end = total
 	}
-	now := q.now().In(mustLocation(q.timezone))
-	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	data := CostDashboard{
-		Month: filter.Month.Format("2006-01"), InProgress: filter.Month.Equal(currentMonth), Summary: summary,
+		Month: filter.Month.Format("2006-01"), InProgress: inProgress, Summary: summary,
 		Trend: trend, ContributionDepartments: contributionDepartments, UsageDepartments: usageDepartments,
 		Flows: flows, Accounts: CostAccountPage{Items: tableRows[start:end], Total: total, Page: page, PageSize: pageSize, Pages: pages},
 		Dimensions: dimensions,
 	}
-	coverage := []CoverageInfo{{Dataset: "cost_data", Status: "complete"}, {Dataset: "department_attribute", Status: dimension.Status, Detail: dimension.Detail}}
+	departmentCoverage := CoverageInfo{Dataset: "department_attribute", Status: dimension.Status, Detail: dimension.Detail}
+	if dimension.Status == "configured" {
+		departmentCoverage.Status = "complete"
+	}
+	coverage := []CoverageInfo{{Dataset: "cost_data", Status: "complete"}, departmentCoverage}
 	return q.Envelope(data, coverage), nil
 }
 
-func (q *Query) loadCostAccountRows(ctx context.Context, month time.Time, binding departmentBinding) ([]CostAccountItem, error) {
+func (q *Query) loadCostAccountRows(ctx context.Context, month time.Time, binding departmentBinding, hideZeroTokens bool) ([]CostAccountItem, error) {
 	monthEnd := month.AddDate(0, 1, 0)
 	rows, err := q.db.QueryContext(ctx, `
 WITH monthly_usage AS (
@@ -254,7 +261,7 @@ WITH monthly_usage AS (
     GROUP BY COALESCE(source.parent_account_id, source.id)
 )
 SELECT a.id,a.name,a.platform,a.type,a.status,a.expires_at,a.deleted_at,
-       COALESCE(cfg.registered,false),cfg.month,cfg.contributor_user_id,cfg.payment_method,
+       COALESCE(cfg.registered,false),cfg.month,owner.contributor_user_id,cfg.payment_method,
        COALESCE(contributor.username,''),COALESCE(contributor.email,''),COALESCE(contributor.status,''),contributor.deleted_at,
        COALESCE(NULLIF(contributor_department.value,''),'__unassigned__'),
        exact.actual_cost::text,COALESCE(exact.notes,''),
@@ -263,14 +270,15 @@ SELECT a.id,a.name,a.platform,a.type,a.status,a.expires_at,a.deleted_at,
        COALESCE(usage.request_count,0),COALESCE(usage.input_tokens,0),COALESCE(usage.cache_creation_tokens,0),
        COALESCE(usage.cache_read_tokens,0),COALESCE(usage.output_tokens,0),COALESCE(usage.platform_cost,'0')
 FROM accounts a
+LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=a.id
 LEFT JOIN LATERAL (
-    SELECT month,registered,contributor_user_id,payment_method,updated_by,updated_at
+    SELECT month,registered,payment_method,updated_by,updated_at
     FROM insights_cost_account_months value
-    WHERE value.account_id=a.id AND value.month <= $1
-    ORDER BY value.month DESC LIMIT 1
+    WHERE value.account_id=a.id AND (value.month <= $1 OR value.registered=TRUE)
+    ORDER BY CASE WHEN value.month <= $1 THEN value.month END DESC NULLS LAST, value.month ASC LIMIT 1
 ) cfg ON TRUE
 LEFT JOIN insights_cost_account_months exact ON exact.account_id=a.id AND exact.month=$1
-LEFT JOIN users contributor ON contributor.id=cfg.contributor_user_id
+LEFT JOIN users contributor ON contributor.id=owner.contributor_user_id
 LEFT JOIN user_attribute_values contributor_department ON contributor_department.user_id=contributor.id AND contributor_department.attribute_id=$4
 LEFT JOIN users editor ON editor.id=COALESCE(exact.updated_by,cfg.updated_by)
 LEFT JOIN monthly_usage usage ON usage.account_id=a.id
@@ -312,6 +320,9 @@ LEFT JOIN monthly_usage usage ON usage.account_id=a.id
 		}
 		item.PaymentMethod = payment.String
 		item.Tokens = NewTokens(input, write, read, output)
+		if hideZeroTokens && item.Tokens.Total == 0 {
+			continue
+		}
 		item.platformCostExact, err = decimalFromDB(platformCost)
 		if err != nil {
 			return nil, err
@@ -321,7 +332,7 @@ LEFT JOIN monthly_usage usage ON usage.account_id=a.id
 			item.ConfigurationMonth = configMonth.Time.Format("2006-01")
 			item.Inherited = item.Registered && configMonth.Time.Format("2006-01") != month.Format("2006-01")
 		}
-		if item.Registered && contributorID.Valid {
+		if contributorID.Valid {
 			item.Contributor = &CostContributor{ID: contributorID.Int64, Name: costPersonName(contributorName, contributorEmail), Email: contributorEmail, Status: contributorStatus, DepartmentID: departmentID, Department: departmentLabel(binding, departmentID), Deleted: contributorDeleted.Valid}
 		}
 		if actual.Valid && item.Registered {
@@ -461,7 +472,7 @@ func summarizeContributionDepartments(rows []CostAccountItem) []CostContribution
 	return out
 }
 
-func (q *Query) loadCostTrend(ctx context.Context, filter CostFilter, binding departmentBinding) ([]CostTrendPoint, error) {
+func (q *Query) loadCostTrend(ctx context.Context, filter CostFilter, binding departmentBinding, currentMonth string) ([]CostTrendPoint, error) {
 	start := filter.Month.AddDate(0, -11, 0)
 	minimum := time.Date(2026, 6, 1, 0, 0, 0, 0, filter.Month.Location())
 	if start.Before(minimum) {
@@ -473,16 +484,22 @@ roots AS (SELECT id,platform,deleted_at FROM accounts WHERE parent_account_id IS
 monthly_usage AS (
  SELECT date_trunc('month',ul.created_at AT TIME ZONE $3)::date AS month,
         COALESCE(source.parent_account_id,source.id) AS account_id,
+        COALESCE(SUM(ul.input_tokens),0)+COALESCE(SUM(ul.cache_creation_tokens),0)+COALESCE(SUM(ul.cache_read_tokens),0)+COALESCE(SUM(ul.output_tokens),0) AS tokens,
         COALESCE(SUM(COALESCE(ul.account_stats_cost,ul.total_cost)*COALESCE(ul.account_rate_multiplier,1)),0)::text AS platform_cost
  FROM usage_logs ul JOIN accounts source ON source.id=ul.account_id
  WHERE ul.created_at >= $4 AND ul.created_at < $5
  GROUP BY 1,2)
-SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),cfg.contributor_user_id,
-       COALESCE(NULLIF(department.value,''),'__unassigned__'),exact.actual_cost::text,COALESCE(usage.platform_cost,'0')
+SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),owner.contributor_user_id,
+       COALESCE(NULLIF(department.value,''),'__unassigned__'),exact.actual_cost::text,COALESCE(usage.platform_cost,'0'),COALESCE(usage.tokens,0)
 FROM months CROSS JOIN roots
-LEFT JOIN LATERAL (SELECT registered,contributor_user_id FROM insights_cost_account_months value WHERE value.account_id=roots.id AND value.month<=months.month ORDER BY value.month DESC LIMIT 1) cfg ON TRUE
+LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=roots.id
+LEFT JOIN LATERAL (
+    SELECT registered FROM insights_cost_account_months value
+    WHERE value.account_id=roots.id AND (value.month<=months.month OR value.registered=TRUE)
+    ORDER BY CASE WHEN value.month<=months.month THEN value.month END DESC NULLS LAST, value.month ASC LIMIT 1
+) cfg ON TRUE
 LEFT JOIN insights_cost_account_months exact ON exact.account_id=roots.id AND exact.month=months.month
-LEFT JOIN user_attribute_values department ON department.user_id=cfg.contributor_user_id AND department.attribute_id=$6
+LEFT JOIN user_attribute_values department ON department.user_id=owner.contributor_user_id AND department.attribute_id=$6
 LEFT JOIN monthly_usage usage ON usage.account_id=roots.id AND usage.month=months.month
 		ORDER BY months.month`, start.Format("2006-01-02"), filter.Month.Format("2006-01-02"), q.timezone, start, filter.Month.AddDate(0, 1, 0), binding.ID)
 	if err != nil {
@@ -501,8 +518,12 @@ LEFT JOIN monthly_usage usage ON usage.account_id=roots.id AND usage.month=month
 		var registered bool
 		var contributor sql.NullInt64
 		var actual sql.NullString
-		if err := rows.Scan(&month, &platform, &deleted, &registered, &contributor, &departmentID, &actual, &platformRaw); err != nil {
+		var tokens int64
+		if err := rows.Scan(&month, &platform, &deleted, &registered, &contributor, &departmentID, &actual, &platformRaw, &tokens); err != nil {
 			return nil, err
+		}
+		if month.Format("2006-01") == currentMonth && tokens == 0 {
+			continue
 		}
 		if !registered || (deleted.Valid && month.After(time.Date(deleted.Time.In(mustLocation(q.timezone)).Year(), deleted.Time.In(mustLocation(q.timezone)).Month(), 1, 0, 0, 0, 0, month.Location()))) {
 			continue
@@ -550,7 +571,7 @@ LEFT JOIN monthly_usage usage ON usage.account_id=roots.id AND usage.month=month
 	return out, nil
 }
 
-func (q *Query) loadCostUsageDepartments(ctx context.Context, filter CostFilter, binding departmentBinding) ([]CostUsageDepartment, []CostDepartmentFlow, error) {
+func (q *Query) loadCostUsageDepartments(ctx context.Context, filter CostFilter, binding departmentBinding, activeIDs []int64) ([]CostUsageDepartment, []CostDepartmentFlow, error) {
 	rows, err := q.db.QueryContext(ctx, `
 SELECT root.platform,COALESCE(NULLIF(contribution_department.value,''),'__unassigned__'),COALESCE(NULLIF(usage_department.value,''),'__unassigned__'),
        COUNT(*),COALESCE(SUM(ul.input_tokens+ul.cache_creation_tokens+ul.cache_read_tokens+ul.output_tokens),0),
@@ -558,11 +579,17 @@ SELECT root.platform,COALESCE(NULLIF(contribution_department.value,''),'__unassi
 FROM usage_logs ul
 JOIN accounts source ON source.id=ul.account_id
 JOIN accounts root ON root.id=COALESCE(source.parent_account_id,source.id)
-JOIN LATERAL (SELECT registered,contributor_user_id FROM insights_cost_account_months value WHERE value.account_id=root.id AND value.month<=$1 ORDER BY value.month DESC LIMIT 1) cfg ON cfg.registered=TRUE
-LEFT JOIN user_attribute_values contribution_department ON contribution_department.user_id=cfg.contributor_user_id AND contribution_department.attribute_id=$4
+LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=root.id
+JOIN LATERAL (
+    SELECT registered FROM insights_cost_account_months value
+    WHERE value.account_id=root.id AND (value.month<=$1 OR value.registered=TRUE)
+    ORDER BY CASE WHEN value.month<=$1 THEN value.month END DESC NULLS LAST, value.month ASC LIMIT 1
+) cfg ON cfg.registered=TRUE
+LEFT JOIN user_attribute_values contribution_department ON contribution_department.user_id=owner.contributor_user_id AND contribution_department.attribute_id=$4
 LEFT JOIN user_attribute_values usage_department ON usage_department.user_id=ul.user_id AND usage_department.attribute_id=$4
 WHERE ul.created_at >= $2 AND ul.created_at < $3 AND (root.deleted_at IS NULL OR root.deleted_at >= $2)
-		GROUP BY 1,2,3`, filter.Month.Format("2006-01-02"), filter.Month, filter.Month.AddDate(0, 1, 0), binding.ID)
+AND root.id=ANY($5::bigint[])
+		GROUP BY 1,2,3`, filter.Month.Format("2006-01-02"), filter.Month, filter.Month.AddDate(0, 1, 0), binding.ID, pq.Array(activeIDs))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -679,8 +706,18 @@ func (q *Query) SaveCostMonth(ctx context.Context, input SaveCostMonthInput) err
 	if !exists {
 		return ErrCostContributorNotFound
 	}
-	_, err := q.db.ExecContext(ctx, `INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES($1,$2,TRUE,$3,$4,$5,$6,$7) ON CONFLICT(account_id,month) DO UPDATE SET registered=TRUE,contributor_user_id=EXCLUDED.contributor_user_id,payment_method=EXCLUDED.payment_method,actual_cost=EXCLUDED.actual_cost,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, input.AccountID, input.Month.Format("2006-01-02"), input.ContributorID, input.PaymentMethod, input.ActualCost, input.Notes, input.UpdatedBy)
-	return err
+	tx, err := q.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_cost_account_contributors(account_id,contributor_user_id,updated_by) VALUES($1,$2,$3) ON CONFLICT(account_id) DO UPDATE SET contributor_user_id=EXCLUDED.contributor_user_id,updated_by=EXCLUDED.updated_by,updated_at=NOW() WHERE insights_cost_account_contributors.contributor_user_id IS DISTINCT FROM EXCLUDED.contributor_user_id`, input.AccountID, input.ContributorID, input.UpdatedBy); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES($1,$2,TRUE,$3,$4,$5,$6,$7) ON CONFLICT(account_id,month) DO UPDATE SET registered=TRUE,contributor_user_id=EXCLUDED.contributor_user_id,payment_method=EXCLUDED.payment_method,actual_cost=EXCLUDED.actual_cost,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, input.AccountID, input.Month.Format("2006-01-02"), input.ContributorID, input.PaymentMethod, input.ActualCost, input.Notes, input.UpdatedBy); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (q *Query) StopCostAccountAfter(ctx context.Context, accountID int64, afterMonth time.Time, updatedBy int64) error {

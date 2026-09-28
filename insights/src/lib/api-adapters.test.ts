@@ -74,7 +74,14 @@ describe("Insights API adapters", () => {
       { id: "openai:gpt-6", name: "GPT-6", platform: "openai" },
     ])).toMatchObject({ id: "antigravity:gemini-3.8-flash-high", platform: "antigravity" });
   });
-  it("keeps missing cost spend nullable while preserving confirmed zero", async () => {
+  it.each([
+    ["department_attribute", "configured", "complete"],
+    ["department_attribute", "complete", "complete"],
+    ["department_attribute", "not_configured", "uncollected"],
+    ["department_attribute", "invalid", "unavailable"],
+    ["department_attribute", "partial", "partial"],
+    ["cost_data", "configured", "unavailable"],
+  ])("maps cost coverage %s/%s to %s without losing nullable spend", async (dataset, status, state) => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
       data: {
         month: "2026-09", in_progress: true,
@@ -86,10 +93,11 @@ describe("Insights API adapters", () => {
         ] },
         dimensions: { contributors: [], departments: [], platforms: [], statuses: [], payment_methods: [] },
       },
-      meta: { timezone: "Asia/Tokyo", generated_at: "2026-09-24T10:00:00+09:00", coverage: [] },
+      meta: { timezone: "Asia/Tokyo", generated_at: "2026-09-24T10:00:00+09:00", coverage: [{ dataset, status }] },
     }), { status: 200 }));
     await expect(insightsApi.costs({ month: "2026-09", department: "", platform: "", q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 })).resolves.toMatchObject({
       accounts: { items: [{ actualCost: null, savings: null }, { actualCost: 0, savings: 4 }] },
+      coverage: { state },
     });
   });
 });

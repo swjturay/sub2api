@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, ChevronDown } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { zhCN } from "react-day-picker/locale";
 import type { DateRange } from "react-day-picker";
 import type { DepartmentOption, FilterState, Granularity, ModelOption } from "../lib/types";
@@ -79,6 +79,36 @@ function DateRangeFilter({ from, to, today, onChange }: { from: string; to: stri
             {!valid && <p className="mb-0 mt-3 text-xs text-[var(--danger)]" role="status">请输入完整且有效的日期范围。</p>}
             <div className="mt-5 flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setOpen(false)}>取消</Button><Button type="button" disabled={!valid} onClick={apply}>应用</Button></div>
           </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function MonthFilter({ value, min, max, onChange }: { value: string; min: string; max: string; onChange: (month: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [year, setYear] = useState(Number(value.slice(0, 4)));
+  const select = (month: string) => { onChange(month); setOpen(false); };
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (next) setYear(Number(value.slice(0, 4))); }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="secondary" className="filter-trigger w-48 justify-start font-medium" aria-label="月份">
+          <CalendarDays aria-hidden="true" />
+          <span className="tabular-nums">{value.slice(0, 4)}年{value.slice(5)}月</span>
+          <ChevronDown className="ml-auto text-[var(--muted)]" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 max-w-[calc(100vw-32px)] p-0" align="start" aria-label="选择月份">
+        <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+          <Button type="button" variant="ghost" className="w-9 px-0" aria-label="上一年" title="上一年" disabled={year <= Number(min.slice(0, 4))} onClick={() => setYear(year - 1)}><ChevronLeft aria-hidden="true" /></Button>
+          <span className="text-sm font-semibold tabular-nums" aria-live="polite">{year}年</span>
+          <Button type="button" variant="ghost" className="w-9 px-0" aria-label="下一年" title="下一年" disabled={year >= Number(max.slice(0, 4))} onClick={() => setYear(year + 1)}><ChevronRight aria-hidden="true" /></Button>
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-3" role="group" aria-label={`${year}年月份`}>
+          {Array.from({ length: 12 }, (_, index) => {
+            const month = `${year}-${String(index + 1).padStart(2, "0")}`;
+            return <Button key={month} type="button" variant={value === month ? "primary" : "ghost"} aria-label={`${year}年${index + 1}月`} aria-pressed={value === month} disabled={month < min || month > max} onClick={() => select(month)}>{index + 1}月</Button>;
+          })}
         </div>
       </PopoverContent>
     </Popover>

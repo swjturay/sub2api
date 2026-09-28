@@ -10,6 +10,8 @@ import { HelpTip } from "../components/ui/HelpTip";
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "../components/ui/Popover";
 import { CoverageBanner, Empty, ErrorBanner, Loading } from "../components/ui/States";
 import { useBootstrap } from "../features/BootstrapContext";
+import { CostContributorSelect } from "../features/CostContributorSelect";
+import { MonthFilter } from "../features/Filters";
 import { costCompletionLabel, costPaymentLabels, costSavingsPreview } from "../features/costs";
 import { insightsApi } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -124,7 +126,7 @@ export function CostPage({ auto }: { auto: boolean }) {
 
       <section className="filter-toolbar">
         <div className="analytics-filters" aria-label="成本数据筛选条件">
-          <div className="filter-field"><span className="filter-label sr-only">月份</span><Input aria-label="月份" type="month" min="2026-06" max={currentMonth} value={filters.month} onChange={(event) => setFilter("month", event.target.value)} className="filter-trigger !h-[34px] w-40" /></div>
+          <div className="filter-field"><span className="filter-label sr-only">月份</span><MonthFilter min="2026-06" max={currentMonth} value={filters.month} onChange={(month) => setFilter("month", month)} /></div>
           <div className="filter-field"><span className="filter-label sr-only">贡献部门</span><SingleFilter label="贡献部门" value={filters.department} onChange={(value) => setFilter("department", value)} options={[{ value: "", label: "全部部门" }, ...(data?.dimensions.departments.map((department) => ({ value: department.id, label: department.name })) || [])]} className="w-44" /></div>
           <div className="filter-field"><span className="filter-label sr-only">平台</span><SingleFilter label="平台" value={filters.platform} onChange={(value) => setFilter("platform", value)} options={[{ value: "", label: "全部平台" }, ...(data?.dimensions.platforms.map((platform) => ({ value: platform, label: platform })) || [])]} className="w-40" /></div>
         </div>
@@ -219,12 +221,12 @@ export function CostPage({ auto }: { auto: boolean }) {
           {editing && <div className="mt-5 grid gap-4">
             <div className="grid grid-cols-3 gap-3 rounded-md border border-[var(--border)] bg-[var(--surface-subtle)] p-3 text-sm"><div><span className="flex items-center text-xs muted"><EstimatedPriceLabel /></span><strong className="tabular-nums">{money(editing.platformCost)}</strong></div><div><span className="block text-xs muted">真实支出</span><strong className="tabular-nums">{actualCost.trim() ? money(Number(actualCost)) : "未录入"}</strong></div><div><span className="block text-xs muted">成本节省</span><strong className={cn("tabular-nums", moneyClass(previewSavings))}>{previewSavings === null ? "—" : money(previewSavings)}</strong></div></div>
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="field-label">贡献人<Select value={contributorID} onChange={(event) => setContributorID(event.target.value)} disabled={editingDeleted} className="w-full"><option value="">请选择现有用户</option>{data?.dimensions.contributors.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.department}</option>)}</Select></label>
+              <div className="field-label"><span className="inline-flex items-center gap-1">账号贡献人<HelpTip label="账号贡献人适用范围">所有月份共用同一贡献人，修改后历史月份和部门统计同步更新。</HelpTip></span><CostContributorSelect value={contributorID} onChange={setContributorID} contributors={data?.dimensions.contributors || []} current={editing.contributor} disabled={editingDeleted} /></div>
               <label className="field-label">付费方式<Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as CostPaymentMethod)} disabled={editingDeleted} className="w-full"><option value="subscription">订阅</option><option value="payg">即用即付</option><option value="other">其他</option></Select></label>
             </div>
             <label className="field-label">真实支出（USD）<Input value={actualCost} onChange={(event) => setActualCost(event.target.value)} inputMode="decimal" placeholder="留空表示尚未录入；0.00表示确认无支出" disabled={editingDeleted} /></label>
             <label className="field-label">备注<textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={1000} rows={4} disabled={editingDeleted} className="cost-textarea" /></label>
-            {editing.inherited && <p className="m-0 text-xs muted">贡献人和付费方式继承自 {editing.configurationMonth}；保存后会形成 {filters.month} 的明确月记录，真实支出不会自动继承。</p>}
+            {editing.inherited && <p className="m-0 text-xs muted">付费方式沿用 {editing.configurationMonth} 的配置；真实支出仅属于 {filters.month}。</p>}
             {editingDeleted && <p className="m-0 text-sm text-[var(--danger)]">该账号已软删除，不能新增删除月份之后的记录。</p>}
             {mutationError && <ErrorBanner message={mutationError} retry={() => void save()} />}
           </div>}

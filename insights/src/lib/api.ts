@@ -47,7 +47,8 @@ const coverageMessage = (x: Meta["coverage"][number]) => {
   return `${coverageLabels[x.dataset] || "相关数据"}暂不可用`;
 };
 const cov = (m: Meta, datasets?: string[]): T.Coverage => {
-  const x = m.coverage.find((c) => (!datasets || datasets.includes(c.dataset)) && c.status !== "complete");
+  // Older cost endpoints expose the department binding status as coverage.
+  const x = m.coverage.find((c) => (!datasets || datasets.includes(c.dataset)) && c.status !== "complete" && !(c.dataset === "department_attribute" && c.status === "configured"));
   return x
     ? {
         state:

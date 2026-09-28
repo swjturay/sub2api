@@ -1,5 +1,39 @@
 # Development Journal
 
+## Searchable cost contributor selection (2026-09-28)
+
+- Replaced the cost editor's contributor Select with a single-choice Command/Popover using existing design tokens. Search matches Chinese names, email addresses and departments without case sensitivity; candidates show department and email to distinguish duplicate names and use user IDs as their identity.
+- Added empty results, existing-selection display, disabled-state preservation, automatic search focus, keyboard navigation, close-on-select, Escape cancellation and search reset on reopening. Filtering stays local and does not mutate saved account configuration.
+- Aligned Radix Dialog and Select with the existing Popover focus/dismissable-layer versions. The older Dialog had a separate focus-scope stack that immediately dismissed the nested search popover; nested modal mode instead caused conflicting focus traps. The matching primitives support the non-modal search layer without additional scroll locking.
+- Added eight component regressions inside the actual editor Dialog, including duplicate names, empty/current initial selections, missing current users, no results, focus restoration and the adjacent payment Select.
+
+Validation: frozen-lockfile install, Insights lint, 19 files / 81 tests and TypeScript/production build passed. Restarted local Vite with dependency re-optimization. Browser checks verified Chinese-name filtering, duplicate-name email display, keyboard selection, trigger summary and the payment dropdown; all test edits were canceled without saving. The local preview remains at `http://127.0.0.1:4178/insights/costs` with the production API proxy. No production data change or deployment.
+
+## Account-wide cost contributors (2026-09-28)
+
+- Added migration 242 for one contributor per logical account, shared across all accounting months. Backfill selects the latest edited registered monthly record (month breaks timestamp ties), ignores stop records, and preserves every monthly amount. Legacy monthly contributor snapshots remain for compatibility; dashboard attribution now reads the account-level record.
+- Historical months before the first registration use the earliest registered configuration for registration/payment defaults, without copying actual spend. Existing stop events take precedence over future registration. Stopping an account never clears its shared contributor.
+- Account tables, contributor/department filters, contribution summaries, usage flows and trend attribution use the same account-wide contributor. Saving the shared contributor and the selected month's record is atomic. The editor labels the field as account-scoped and explains the historical impact in its tooltip.
+- Added transaction commit/rollback regressions and migration contract tests. Expanded the PostgreSQL integration fixture to execute the actual migrations and cover historical defaults, changing ownership from an earlier month, independent spend, department/trend/flow attribution, failed-save rollback, stop/restart boundaries and idempotent backfill conflict resolution.
+
+Validation: `go test -tags=unit ./internal/insights ./migrations ./internal/handler ./internal/server/routes -count=1`, `go build ./...`, Insights lint, 73 frontend tests, TypeScript/production build and `git diff --check` passed. PostgreSQL integration was skipped because `INSIGHTS_TEST_DATABASE_URL` is unset and Docker Desktop is unavailable. No production data or deployment changes; local preview still uses the production backend, so account-wide attribution requires the new backend and migration 242.
+
+## Cost month picker and department coverage (2026-09-28)
+
+- Replaced the native cost month input with the shared analytics Button/Popover styling, calendar icon, bounded year navigation and a twelve-month grid. Selection closes the popover; Escape cancels without changing the filter. Existing statistics start/current-month limits are retained.
+- Fixed the cost endpoint leaking the department binding status `configured` into coverage metadata. Healthy bindings now return `complete`; missing/invalid bindings retain their status and diagnostic detail. The frontend narrowly accepts the legacy `department_attribute/configured` pair so the local preview works with the deployed backend without hiding genuine warnings.
+- Added regression coverage for backend binding states, frontend healthy/invalid/missing/partial coverage, month bounds, year navigation, selection and Escape/focus behavior. Both healthy-coverage regression tests failed before the fix.
+
+Validation: Insights lint, 18 files / 73 tests, TypeScript/production build, backend Insights tests and `git diff --check` passed. Browser verification covered month changes and restoration, keyboard interaction, removal of the false warning and unchanged toolbar/scroll geometry on opening. Checked the 1024px desktop layout and the month popover at 390px; the existing application-wide 1024px minimum width remains unchanged. Local Vite uses the production API; only read-only dashboard requests were made. No production deployment or data changes.
+
+## Hide idle accounts from current-month costs (2026-09-28)
+
+- Exclude logical accounts with zero total monthly tokens from the ongoing month's account table, summary, completeness, contribution departments, usage departments, flow matrix, and trend point. Count input, output, cache-write and cache-read tokens after rolling child accounts into their parent. Use one platform-timezone month value per dashboard request.
+- Retain saved contribution settings and actual spend. Accounts become visible again when usage arrives; historical months keep all accounts and costs. Department usage queries use the same included root account IDs as the summary.
+- Added query regressions for zero-token paid accounts, cache-only activity, historical cost retention and restricted department aggregation. Extended the PostgreSQL fixture for child-only activity, a timezone month boundary and automatic reappearance without re-entering cost.
+
+Validation: Insights, handler and routes package tests, `go build ./...`, and `git diff --check` passed. PostgreSQL integration execution is unavailable because Docker Desktop is not running and `INSIGHTS_TEST_DATABASE_URL` is unset. The local Vite preview still proxies the production backend, so this backend change requires a backend rollout to appear there.
+
 ## Subscription requests share user platform quotas (2026-09-27)
 
 Base: `b359b2b30883b839968f55b8f7180b05c383b493`. Branch: `cce-deploy`.
