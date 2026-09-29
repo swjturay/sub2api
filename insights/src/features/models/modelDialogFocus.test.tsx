@@ -121,6 +121,25 @@ function DisabledComparisonOpenerHarness() {
 }
 
 describe("model dialog focus restoration", () => {
+  it("keeps full pricing conditions and safe sources available in the detail drawer", async () => {
+    const user = userEvent.setup();
+    render(<ModelDetailDialog model={{
+      ...model,
+      pricing: [{ label: "input", value: "0.000005 USD/token", condition: "max_tokens=272000,tier=≤272K" }],
+      sources: [
+        { label: "官方规格", url: "https://example.com/spec", updatedAt: null },
+        { label: "无效来源", url: "javascript:alert(1)", updatedAt: null },
+      ],
+    }} close={() => undefined} restoreFocusElement={null} />);
+    expect(screen.getByText("实测性能")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "价格与来源" }));
+    expect(screen.getByText("5 USD/百万 Token")).toBeVisible();
+    expect(screen.getByText("272,000")).toBeVisible();
+    expect(screen.getByText("≤272K")).toBeVisible();
+    expect(screen.getByRole("link", { name: "官方规格" })).toHaveAttribute("href", "https://example.com/spec");
+    expect(screen.queryByRole("link", { name: "无效来源" })).not.toBeInTheDocument();
+  });
+
   it("returns comparison focus to the tray action after Escape", async () => {
     const user = userEvent.setup();
     render(<ComparisonHarness />);

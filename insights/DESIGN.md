@@ -6,7 +6,7 @@ A desktop analytics workspace with a compact navigation row, clear numerical hie
 
 ## Approved composition
 
-- One approximately 64px top navigation row; no left sidebar.
+- One approximately 64px top navigation row; no global left navigation sidebar. The model catalog has its own local filter rail.
 - A desktop content grid with wider usable space on large displays and consistent gutters.
 - Compact date-range, granularity and searchable multi-selection controls instead of always-expanded native multi-select lists.
 - Department overview keeps all 9 metrics in three semantic columns: membership and requests; total and normalized Token consumption; output and cache composition. Each column has one primary value and two supporting values. Formulas use focusable help.
@@ -14,7 +14,9 @@ A desktop analytics workspace with a compact navigation row, clear numerical hie
 - Pareto and TOP10 stay adjacent; model performance retains its independent model selection.
 - Personal daily subscriptions remain separate quota ledgers. Today Token composition is labeled clearly. Annual heatmap remains independent of model filtering.
 - Gateway quality, user analysis, retention and preference are distinct sections. Uncollected periods, unknown values and genuine errors have different presentations.
-- Model cards prioritize identity and useful available information; a persistent comparison tray opens the 2–4-model comparison in a large dialog. Pricing preserves labels, units and tier conditions.
+- The model catalog uses a search header, manufacturer/capability/input filters, sorting, card/list views and 12-item pagination. Group Gemini, Claude and other known model families by manufacturer rather than routing platform; cards, details and comparison labels use the matching manufacturer mark/name while preserving backend identities. Cards prioritize display names and exact invocation identifiers, context/capabilities, reference prices and aggregated performance. The existing repository artwork is reused. New API's pricing catalog is an information-hierarchy reference only; its source and assets are not vendored.
+- Model selection survives filtering, paging and view changes; a persistent comparison tray opens the existing 2–4-model comparison. A right-side detail dialog separates specifications/performance from full pricing/sources and restores focus on close. Pricing preserves labels, units and tier conditions; cards never present conditional/tiered entries as an unconditional quote. Missing measurements remain unknown and sort after measured values, including genuine zero.
+- Catalog and comparison performance use the last 24 hours. The 24-hour/7-day control lives inside each model's detail performance section and changes only that detail. Opening another detail resets to 24 hours. Capability filters cover declared reasoning, tools, structured output, image/audio/video inputs, file/PDF inputs, image output and an explicit 128K-token context threshold. Omit the price-count summary and explanatory catalog banners; retain metric definitions in tooltips.
 
 ## Component foundation
 

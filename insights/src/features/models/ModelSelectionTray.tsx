@@ -1,6 +1,7 @@
 import { GitCompareArrows, X } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import type { ModelProfile } from "../../lib/types";
+import { modelVendor, vendorLabel } from "./modelCatalog";
 
 type SelectedModel = Pick<ModelProfile, "id" | "name" | "platform">;
 
@@ -27,7 +28,7 @@ export function ModelSelectionTray({ selected, onRemove, onClear, onCompare }: {
       <div className="flex min-w-0 flex-1 flex-wrap gap-2">
         {selected.map((model) => (
           <span key={model.id} className="inline-flex min-w-0 max-w-[220px] items-center gap-1 rounded-[8px] border border-[var(--border)] bg-[var(--surface-subtle)] py-1 pl-2.5 pr-1 text-xs">
-            <span className="truncate" title={model.platform + " · " + model.name}>{model.name}</span>
+            <span className="truncate" title={vendorLabel(modelVendor(model)) + " · " + model.name}>{model.name}</span>
             <button
               type="button"
               className="grid h-7 w-7 shrink-0 place-items-center rounded-[6px] muted hover:bg-[var(--surface-muted)] hover:text-[var(--ink)]"

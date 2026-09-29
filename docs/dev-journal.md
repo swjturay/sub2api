@@ -1,5 +1,22 @@
 # Development Journal
 
+## Model plaza annotation refinements (2026-09-29)
+
+- Replaced routing-platform presentation with manufacturer classification across filters, counts, cards, lists, details and comparison. Gemini contains only Gemini families, Claude appears under Anthropic, and OpenCode's DeepSeek entries appear under DeepSeek. Backend identities, distinct routing entries and their measured values are preserved; no aliases or performance averages are merged. Gemini uses the existing Gemini star mark in blue.
+- Expanded capability filtering from three to nine options using declared input/output modalities and an explicit 128K-token context threshold. Removed the requested sidebar explanation, price-count summary and global performance note.
+- Fixed catalog/comparison performance to 24 hours. Moved the independent 24-hour/7-day control into model details, with fresh default selection on reopening, request cancellation, no stale values under a new period and in-place error retry. Detail subtab changes preserve its selected window.
+
+Validation: Insights lint, 26 test files / 104 tests and TypeScript/production build passed. Regressions cover manufacturer separation, inferred capability boundaries, independent detail windows, late responses, retry and closing pending requests. Browser preview confirms Gemini-only results, combined image-generation filtering and the moved detail control. The local preview retains clearly labeled example performance/prices. No commit, push or production deployment in this refinement.
+
+## Model catalog discovery and presentation (2026-09-29)
+
+- Reorganized the Insights model plaza around a search header, platform/capability/input filters, four sort modes, card/list views and 12-item pagination. Used the [New API pricing catalog](https://github.com/QuantumNous/new-api/tree/f116414284162ad15d8925f7bca494c109b83e93/web/src/features/pricing) as an information-hierarchy reference; no New API code, artwork or dependencies were copied. Platform marks reuse the existing repository frontend artwork.
+- Cards and rows expose both display names and invocation identifiers, context/capabilities, reference-price summaries and aggregated performance. Unknown capability metadata does not satisfy a supported filter; absent measurements sort last, genuine zero remains zero, and conditional prices point to full details instead of appearing unconditional.
+- Kept 2–4-model selection across filtering, paging and view changes. Model details now use a right-side dialog with specification/performance and pricing/source views, retaining full tier conditions, safe source links and focus restoration. Fixed inherited dialog translation after browser inspection and disabled sticky filtering on short desktop windows.
+- Updated the design and Insights conventions. API contracts, catalog contents, authentication, aggregation and production configuration are unchanged.
+
+Validation: Insights lint, 25 test files / 99 tests, TypeScript and production build passed. Browser checks covered platform filtering, card/list switching, latency sorting, comparison, details, price/source access and focus restoration. DOM checks found no horizontal document overflow at 1366, 1440 and 1920 desktop widths; inspected light/dark screenshots, the list and the corrected detail drawer. Local preview at `http://127.0.0.1:4189/insights/models` uses the repository's 89-model catalog with explicitly labeled example prices/performance. Preview fixtures are ignored and cannot enter the production bundle. No live paid inference or deployment was performed. The existing large-bundle build warning remains.
+
 ## CCE upstream v0.2.9 intake (2026-09-29)
 
 Base: `5019d448a90043b5c358482c0b35b0916106beb7`. Upstream: `v0.2.9` (`4c00df2e0183e2c70b7fa8ba45914205e36aad0c`). Target: `cce-deploy`.

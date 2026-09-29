@@ -14,6 +14,7 @@ import { buildComparisonTrendOption } from "../chartOptions";
 import type { Capability, ModelComparison, ModelProfile } from "../../lib/types";
 import { PricingList } from "./PricingList";
 import { restoreModelDialogFocus } from "./modelDialogFocus";
+import { modelIdentifier, modelVendor, vendorLabel } from "./modelCatalog";
 
 const capability = (value: Capability) => value === "supported" ? "支持" : value === "unsupported" ? "不支持" : "未知";
 const amount = (value: number | null) => value === null ? "未知" : value.toLocaleString("zh-CN");
@@ -79,7 +80,8 @@ export function ModelComparisonDialog({ open, onOpenChange, data, loading, error
                           <div className="flex items-start justify-between gap-2 py-1">
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-[var(--ink)]" title={model.name}>{model.name}</div>
-                              <div className="mt-0.5 truncate text-xs font-normal muted" title={model.platform}>{model.platform}</div>
+                              <div className="mt-0.5 truncate text-xs font-normal muted">{vendorLabel(modelVendor(model))}</div>
+                              <div className="mt-0.5 truncate font-mono text-xs font-normal muted" title={modelIdentifier(model)}>{modelIdentifier(model)}</div>
                             </div>
                             <Button variant="ghost" className="h-8 w-8 p-0" aria-label={"移除 " + model.name} onClick={() => remove(model.id)}>
                               <X aria-hidden="true" />

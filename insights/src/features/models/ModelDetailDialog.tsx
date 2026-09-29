@@ -10,6 +10,10 @@ import {
 import type { Capability, ModelProfile } from "../../lib/types";
 import { PricingList } from "./PricingList";
 import { restoreModelDialogFocus } from "./modelDialogFocus";
+import { PlatformMark } from "./PlatformMark";
+import { capabilityOptions, modalityLabel, modelIdentifier, modelVendor, supportsCapability, vendorLabel } from "./modelCatalog";
+import { Segmented } from "../../components/ui/Controls";
+import { ModelPerformance } from "./ModelPerformance";
 
 const capability = (value: Capability) => value === "supported" ? "支持" : value === "unsupported" ? "不支持" : "未知";
 function safeUrl(url: string) {
@@ -27,6 +31,7 @@ export function ModelDetailDialog({ model, close, restoreFocusElement }: {
   restoreFocusElement: HTMLElement | null;
 }) {
   const [open, setOpen] = useState(true);
+  const [tab, setTab] = useState<"overview" | "pricing">("overview");
   const closeTimer = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -44,28 +49,33 @@ export function ModelDetailDialog({ model, close, restoreFocusElement }: {
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent
-        className="w-[min(calc(100vw-24px),64rem)] max-w-5xl"
+        className="catalog-detail-dialog translate-x-0 translate-y-0"
         onCloseAutoFocus={(event) => restoreModelDialogFocus(event, restoreFocusElement)}
       >
         <DialogHeader>
-          <DialogTitle>{model.name}</DialogTitle>
-          <DialogDescription>{model.platform} · 官方模型资料与当前聚合指标</DialogDescription>
+          <div className="mb-3 flex items-center gap-3"><PlatformMark platform={modelVendor(model)} /><span className="text-sm muted">{vendorLabel(modelVendor(model))}</span></div>
+          <DialogTitle className="break-words text-2xl">{model.name}</DialogTitle>
+          <p className="break-all font-mono text-sm muted">{modelIdentifier(model)}</p>
+          <DialogDescription>模型资料、参考价格与当前聚合指标</DialogDescription>
         </DialogHeader>
-        <div className="mt-5"><ProfileView model={model} /></div>
+        <div className="mt-6"><Segmented value={tab} onChange={setTab} label="模型详情内容" options={[{ value: "overview", label: "规格与性能" }, { value: "pricing", label: "价格与来源" }]} /></div>
+        <div className="mt-6"><ProfileView model={model} tab={tab} /></div>
+        <div className="mt-6" hidden={tab !== "overview"}><ModelPerformance model={model} /></div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ProfileView({ model }: { model: ModelProfile }) {
+function ProfileView({ model, tab }: { model: ModelProfile; tab: "overview" | "pricing" }) {
   const facts = [
     ["上下文", model.contextLimit?.toLocaleString("zh-CN") || "未知"],
     ["最大输出", model.maxOutput?.toLocaleString("zh-CN") || "未知"],
-    ["输入模态", model.inputModalities.join("、") || "未知"],
-    ["输出模态", model.outputModalities.join("、") || "未知"],
+    ["输入模态", model.inputModalities.map(modalityLabel).join("、") || "未知"],
+    ["输出模态", model.outputModalities.map(modalityLabel).join("、") || "未知"],
   ];
   return (
     <div className="grid gap-6">
+      {tab === "overview" ? <>
       <section>
         <h3 className="m-0 text-sm font-semibold">模型介绍</h3>
         <p className="mt-2 mb-0 max-w-3xl text-sm leading-6 muted">{model.description || "暂无介绍。"}</p>
@@ -85,9 +95,11 @@ function ProfileView({ model }: { model: ModelProfile }) {
           <span className="rounded-full border border-[var(--border)] px-2.5 py-1">推理：{capability(model.reasoning)}</span>
           <span className="rounded-full border border-[var(--border)] px-2.5 py-1">工具调用：{capability(model.toolCalling)}</span>
           <span className="rounded-full border border-[var(--border)] px-2.5 py-1">结构化输出：{capability(model.structuredOutput)}</span>
+          {capabilityOptions.slice(3).filter(option => supportsCapability(model, option.value)).map(option => <span key={option.value} className="rounded-full border border-[var(--border)] px-2.5 py-1">{option.label}</span>)}
         </div>
       </section>
-      <section><h3 className="m-0 text-sm font-semibold">参考价格</h3><div className="mt-2"><PricingList pricing={model.pricing} /></div></section>
+      </> : <>
+      <section><h3 className="m-0 text-sm font-semibold">参考价格</h3><p className="mb-3 mt-1 text-xs muted">保留原始币种、计价单位和分档条件，不代表实际结算价格。</p><div className="mt-2"><PricingList pricing={model.pricing} /></div></section>
       <section>
         <h3 className="m-0 text-sm font-semibold">资料来源</h3>
         {model.sources.length ? (
@@ -99,6 +111,7 @@ function ProfileView({ model }: { model: ModelProfile }) {
           </ul>
         ) : <p className="mt-2 mb-0 text-sm muted">未配置</p>}
       </section>
+      </>}
     </div>
   );
 }
