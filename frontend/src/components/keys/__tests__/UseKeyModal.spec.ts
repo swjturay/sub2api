@@ -1123,6 +1123,9 @@ describe('UseKeyModal', () => {
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.OpenAI]'))
     expect(windowsConfig).not.toContain('model_catalog_json')
+    expect(windowsConfig).not.toContain('%userprofile%')
+    expect(wrapper.get('[data-testid="codex-model-catalog"]').text())
+      .toContain('%userprofile%\\.codex\\codex-models.json')
   })
 
   it.each(['anthropic', 'gemini', 'antigravity', 'kimi', 'zhipu', 'minimax'] as const)(

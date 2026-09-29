@@ -33,10 +33,10 @@ const (
 	codexWireFPSeedKey   = "codex_fingerprint_seed"
 	codexWireConvergeKey = "codex_experimental_fingerprint_convergence"
 	codexWireInboundInst = "7f582abd-05d2-4a59-b4e5-ec1b733b4edc"
-	// 非 legacy 的 openai-beta：只有透传构造器原样转发，用作分支判别标记。
-	codexWirePassthroughMarker = "responses_websockets=2026-02-06"
-	codexWireInboundSess       = "01a07c73-e312-76e1-9054-e4665b8ee0a1"
-	codexWireTurnMetadata      = `{"installation_id":"` + codexWireInboundInst + `","session_id":"` + codexWireInboundSess +
+	// 非 legacy 的 openai-beta 在普通转发和透传路径中都应保留。
+	codexWireIndependentBeta = "responses_websockets=2026-02-06"
+	codexWireInboundSess     = "01a07c73-e312-76e1-9054-e4665b8ee0a1"
+	codexWireTurnMetadata    = `{"installation_id":"` + codexWireInboundInst + `","session_id":"` + codexWireInboundSess +
 		`","thread_id":"` + codexWireInboundSess + `","turn_id":"01a07c73-e3a0-7ae1-baf0-ce1c532f019c",` +
 		`"root_turn_id":"01a07c73-e3a0-7ae1-baf0-ce1c532f019c","window_id":"` + codexWireInboundSess + `:1",` +
 		`"window_number":1,"tool_namespaces_info":["shell","apply_patch"]}`
@@ -498,8 +498,8 @@ func TestCodexWireEntryCompactCacheKeyPathsAgree(t *testing.T) {
 			codexWireAccount(806, "target", extra),
 		})
 		defer cleanup()
-		// 非 legacy 的 openai-beta 只有透传构造器会原样转发，用它证明确实走了那条分支，
-		// 而不是悄悄回落到非透传后两边"当然一致"。
+		// 请求体不带 instructions：普通转发会补默认指令，透传保留缺失，
+		// 用这一差异证明没有悄悄回落到同一条分支。
 		req := httptest.NewRequest(http.MethodPost, "/v1/responses/compact",
 			strings.NewReader(codexWireCompactBody()))
 		req.Header.Set("content-type", "application/json")
@@ -507,7 +507,7 @@ func TestCodexWireEntryCompactCacheKeyPathsAgree(t *testing.T) {
 		req.Header.Set("session-id", codexWireInboundSess)
 		req.Header.Set("thread-id", codexWireInboundSess)
 		req.Header.Set("x-codex-turn-metadata", codexWireTurnMetadata)
-		req.Header.Set("openai-beta", codexWirePassthroughMarker)
+		req.Header.Set("openai-beta", codexWireIndependentBeta)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -517,9 +517,10 @@ func TestCodexWireEntryCompactCacheKeyPathsAgree(t *testing.T) {
 	}
 
 	forward, passthrough := derive(false), derive(true)
-	require.Empty(t, forward.header.Get("openai-beta"), "非透传不转发该头")
-	require.Equal(t, codexWirePassthroughMarker, passthrough.header.Get("openai-beta"),
-		"标记头缺失说明没走透传分支，后面的一致性断言就没有意义了")
+	require.Equal(t, codexWireIndependentBeta, forward.header.Get("openai-beta"))
+	require.Equal(t, codexWireIndependentBeta, passthrough.header.Get("openai-beta"))
+	require.NotEmpty(t, gjson.GetBytes(forward.body, "instructions").String(), "普通转发补默认指令")
+	require.False(t, gjson.GetBytes(passthrough.body, "instructions").Exists(), "透传必须保留原始请求体")
 
 	forwardKey := gjson.GetBytes(forward.body, "prompt_cache_key").String()
 	passthroughKey := gjson.GetBytes(passthrough.body, "prompt_cache_key").String()

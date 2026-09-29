@@ -1,5 +1,16 @@
 # Development Journal
 
+## CCE upstream v0.2.9 intake (2026-09-29)
+
+Base: `5019d448a90043b5c358482c0b35b0916106beb7`. Upstream: `v0.2.9` (`4c00df2e0183e2c70b7fa8ba45914205e36aad0c`). Target: `cce-deploy`.
+
+- Merged the upstream release, including wildcard model allowlists, Responses Beta forwarding and context-window rollover, client-disconnect classification, quota reset/backoff, billing corrections, protocol conversion fixes, model-plaza video pricing and CC Switch import fixes.
+- Resolved the client-configuration conflicts by retaining CCE's default config without a mandatory `model_catalog_json` file. Preserve the optional catalog download and Windows save-path display; verify that the generated TOML contains no `%userprofile%` path. Existing local client setup, authentication modes and shared-AI providers remain intact.
+- Updated the CCE wire-entry regression to expect independent Beta tokens on both forwarding paths. Default-instruction synthesis still proves that the two paths are distinct before their cache keys are compared.
+- Preserved CPR transport/identity boundaries, platform quotas, gateway observations, Insights costs/retention and CCE release tooling. No database migration or production configuration changed. Set `VERSION` to `0.2.9`; the upstream release tag still contains `0.2.8` in that file.
+
+Validation: the full backend unit run passed except for the obsolete Beta assertion and three missing-`sh` environment failures; after correcting the assertion and adding Git's `bin` to PATH, both complete failing packages passed. `go build ./...` passed. Frontend lint, typecheck, all 338 files / 2,556 tests and production build passed; the updated 37-test client-configuration suite passed separately. Insights lint, 90 tests and TypeScript/production build passed. CCE release-helper tests and Compose security, gateway environment and runtime-resource checks passed. Whitespace checks passed. Docker Desktop is unavailable locally, so container-backed integration and Go lint remain for the exact-commit CI after pushing. This change synchronizes source only; no image release or production deployment was performed.
+
 ## Cost completeness and monetary trend (2026-09-28)
 
 - Matched summary and contribution-department completeness to monthly table usage eligibility. Zero-request accounts no longer enter either numerator or denominator, including historical months; the current-month zero-token rule is unchanged. Preserve explicit zero versus missing spend, stored amounts, historical cost totals and contribution-account counts.
