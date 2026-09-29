@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Gauge } from "lucide-react";
 import { platformDateParts, subtractPlatformDays } from "../lib/format";
-import type { ChartMode, FilterState } from "../lib/types";
+import type { FilterState } from "../lib/types";
 import { useBootstrap } from "../features/BootstrapContext";
 import { AnalyticsFilters } from "../features/Filters";
 import { insightsApi } from "../lib/api";
@@ -10,7 +10,7 @@ import { CoverageBanner, Empty, ErrorBanner, Loading } from "../components/ui/St
 import { MetricCard } from "../components/ui/MetricCard";
 import { ModelDonut } from "../components/charts/ModelDonut";
 import { Segmented, Select } from "../components/ui/Controls";
-import { TimeSeriesChart } from "../components/charts/TimeSeriesChart";
+import { CategoryTokenChart } from "../components/charts/CategoryTokenChart";
 import { Chart, palette } from "../components/charts/Chart";
 import { cartesianTheme, chartColors, compactNumber, legendTheme, tooltipTheme } from "../components/charts/chartTheme";
 import { departmentMetricGroups } from "../features/departmentMetrics";
@@ -26,9 +26,7 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
       departments: [],
     })),
     [performanceModel, setPerformanceModel] = useState(""),
-    [pareto, setPareto] = useState<"department" | "member">("department"),
-    [mode, setMode] = useState<ChartMode>("line"),
-    [metric, setMetric] = useState<"totalTokens" | "outputTokens" | "cacheHitRate">("totalTokens");
+    [pareto, setPareto] = useState<"department" | "member">("department");
   const state = useRemote(
     (signal) => insightsApi.departments(filters, performanceModel, signal),
     [filters, performanceModel],
@@ -59,32 +57,22 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
         <>
           <CoverageBanner coverage={data.coverage} />
           {metricGroups && (
-            <section className="panel overflow-hidden !p-0" aria-label="部门概览">
-              <div className="department-metrics-primary grid md:grid-cols-3 [&_.metric-card]:!min-h-18 [&_.metric-card]:!py-2.5">
-                  {metricGroups.primary.map((item) => <MetricCard key={item.label} {...item} detail={undefined} formula={item.formula || item.detail} />)}
-              </div>
-              <div className="grid border-t border-[var(--border)] md:grid-cols-3 xl:grid-cols-6 [&_.metric-card]:!min-h-16 [&_.metric-card]:!px-3 [&_.metric-card]:!py-2.5 [&_.metric-card>div:nth-child(2)]:!text-xl">
-                {metricGroups.secondary.map((item) => <MetricCard key={item.label} {...item} />)}
-              </div>
+            <section className="panel department-overview grid overflow-hidden !p-0 md:grid-cols-3" aria-label="部门概览">
+              {metricGroups.map(group => <div className="department-metric-group" key={group.title}>
+                <h2 className="m-0 px-4 pt-3 text-xs font-medium muted">{group.title}</h2>
+                <div className="department-metric-lead"><MetricCard {...group.primary} /></div>
+                <div className="grid grid-cols-2 border-t border-[var(--border)]">
+                  {group.secondary.map(item => <MetricCard key={item.label} {...item} />)}
+                </div>
+              </div>)}
             </section>
           )}
+          <section className="panel">
+            <CategoryTokenChart data={data.series} dimension="departments" />
+          </section>
           <div className="grid items-stretch gap-6 xl:grid-cols-12">
             <section className="panel xl:col-span-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="m-0 text-base font-semibold">指标趋势</h2>
-                  <Segmented value={metric} onChange={setMetric} label="趋势指标" options={[
-                    { value: "totalTokens", label: "总Token" },
-                    { value: "outputTokens", label: "输出Token" },
-                    { value: "cacheHitRate", label: "缓存命中率" },
-                  ]} />
-                </div>
-                <Segmented value={mode} onChange={setMode} label="图表模式" options={[
-                  { value: "line", label: "折线" },
-                  { value: "bar", label: "柱状" },
-                ]} />
-              </div>
-              <TimeSeriesChart data={data.series} metric={metric} mode={mode} label="部门指标趋势" percent={metric === "cacheHitRate"} height={280} />
+              <CategoryTokenChart data={data.series} dimension="models" />
             </section>
             <section className="panel xl:col-span-4">
               <h2 className="m-0 text-base font-semibold">模型调用分布</h2>

@@ -8,7 +8,8 @@ export interface Coverage { state:CoverageState; message?:string }
 export interface TokenBreakdown { input:number|null; cacheWrite:number|null; cacheRead:number|null; output:number|null; total:number|null }
 export interface MetricValue { value:number|null; unit?:string; sampleCount?:number; coverage?:Coverage }
 export interface ModelSlice { modelId:string; name:string; platform:string; requests:number; totalTokens:number|null; outputTokens:number|null }
-export interface TimePoint { bucket:string; totalTokens:number|null; outputTokens:number|null; cacheHitRate:number|null; requests:number; successRate?:number|null; users?:number; incomplete?:boolean; models?:ModelSlice[] }
+export interface DepartmentSlice { id:string; name:string; requests:number; totalTokens:number|null; outputTokens:number|null }
+export interface TimePoint { bucket:string; totalTokens:number|null; outputTokens:number|null; cacheHitRate:number|null; requests:number; successRate?:number|null; users?:number; incomplete?:boolean; models?:ModelSlice[]; departments?:DepartmentSlice[] }
 export interface ModelOption { id:string; name:string; platform:string }
 export interface DepartmentOption { id:string; name:string; issue?:string }
 export interface FilterState { from:string; to:string; granularity:Granularity; models:string[]; departments:string[] }

@@ -9,8 +9,8 @@ A desktop analytics workspace with a compact navigation row, clear numerical hie
 - One approximately 64px top navigation row; no left sidebar.
 - A desktop content grid with wider usable space on large displays and consistent gutters.
 - Compact date-range, granularity and searchable multi-selection controls instead of always-expanded native multi-select lists.
-- Department overview keeps all 9 metrics in one coherent group: 3 primary values and 6 compact supporting values. Formulas move to focusable help instead of expanding the metric height.
-- Department and personal history pair the main trend (8 grid columns) with compact model distribution (4 columns). The distribution retains all models in an accessible full-detail dialog.
+- Department overview keeps all 9 metrics in three semantic columns: membership and requests; total and normalized Token consumption; output and cache composition. Each column has one primary value and two supporting values. Formulas use focusable help.
+- Department history starts with a full-width department Token trend, followed by model Token trends (8 columns) and request-based model distribution (4 columns). Both trends default to stacked bars; each independently selects total/output Tokens and lines/stacked bars. Categories use actual per-bucket values; show the leading seven with a conserved remainder, preserve missing breakdowns as unknown, and label incomplete buckets. Personal history retains its existing trend/distribution layout. The model distribution retains all models in an accessible full-detail dialog.
 - Pareto and TOP10 stay adjacent; model performance retains its independent model selection.
 - Personal daily subscriptions remain separate quota ledgers. Today Token composition is labeled clearly. Annual heatmap remains independent of model filtering.
 - Gateway quality, user analysis, retention and preference are distinct sections. Uncollected periods, unknown values and genuine errors have different presentations.

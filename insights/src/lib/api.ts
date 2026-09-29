@@ -79,6 +79,10 @@ export const adaptTimePoint = (x: any): T.TimePoint => ({
   users: x.total_users,
   incomplete: x.complete === false,
   models: Array.isArray(x.models) ? x.models.map(adaptModelSlice) : undefined,
+  departments: Array.isArray(x.departments) ? x.departments.map((department: any) => ({
+    id: department.id, name: department.label, requests: department.request_count ?? 0,
+    totalTokens: department.tokens?.total ?? null, outputTokens: department.tokens?.output ?? null,
+  })) : undefined,
 });
 export const adaptModelSlice = (x: any): T.ModelSlice => ({
   modelId:

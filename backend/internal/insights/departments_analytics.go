@@ -19,13 +19,22 @@ type DepartmentSummary struct {
 }
 
 type DepartmentBucket struct {
-	Start         time.Time `json:"start"`
-	End           time.Time `json:"end"`
-	Complete      bool      `json:"complete"`
-	Tokens        Tokens    `json:"tokens"`
-	RequestCount  int64     `json:"request_count"`
-	OutputRatio   *float64  `json:"output_ratio"`
-	CacheHitRatio *float64  `json:"cache_hit_ratio"`
+	Start         time.Time         `json:"start"`
+	End           time.Time         `json:"end"`
+	Complete      bool              `json:"complete"`
+	Tokens        Tokens            `json:"tokens"`
+	RequestCount  int64             `json:"request_count"`
+	OutputRatio   *float64          `json:"output_ratio"`
+	CacheHitRatio *float64          `json:"cache_hit_ratio"`
+	Models        []UsageModel      `json:"models"`
+	Departments   []DepartmentUsage `json:"departments"`
+}
+
+type DepartmentUsage struct {
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	Tokens       Tokens `json:"tokens"`
+	RequestCount int64  `json:"request_count"`
 }
 
 type ParetoItem struct {
@@ -98,6 +107,8 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 	summary := DepartmentSummary{MemberCount: memberCount}
 	active := map[int64]bool{}
 	bucketMap := map[time.Time]*DepartmentBucket{}
+	bucketModels := map[time.Time]map[string]*UsageModel{}
+	bucketDepartments := map[time.Time]map[string]*DepartmentUsage{}
 	modelMap := map[string]*UsageModel{}
 	deptTotals := map[string]int64{}
 	userTotals := map[int64]*TopUser{}
@@ -111,9 +122,25 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 		if b == nil {
 			b = &DepartmentBucket{Start: a.bucket, End: bucketEnd(a.bucket, granularity)}
 			bucketMap[a.bucket] = b
+			bucketModels[a.bucket] = map[string]*UsageModel{}
+			bucketDepartments[a.bucket] = map[string]*DepartmentUsage{}
 		}
 		b.RequestCount += a.requests
 		addTokens(&b.Tokens, a.tokens)
+		bm := bucketModels[a.bucket][a.model]
+		if bm == nil {
+			bm = &UsageModel{Model: a.model}
+			bucketModels[a.bucket][a.model] = bm
+		}
+		bm.RequestCount += a.requests
+		addTokens(&bm.Tokens, a.tokens)
+		bd := bucketDepartments[a.bucket][a.department]
+		if bd == nil {
+			bd = &DepartmentUsage{ID: a.department, Label: departmentLabel(binding, a.department)}
+			bucketDepartments[a.bucket][a.department] = bd
+		}
+		bd.RequestCount += a.requests
+		addTokens(&bd.Tokens, a.tokens)
 		m := modelMap[a.model]
 		if m == nil {
 			m = &UsageModel{Model: a.model}
@@ -146,6 +173,14 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 		b.Complete = !b.End.After(q.now())
 		b.OutputRatio = Ratio(b.Tokens.Output, b.Tokens.Total)
 		b.CacheHitRatio = CacheHitRatio(b.Tokens)
+		for _, model := range bucketModels[b.Start] {
+			b.Models = append(b.Models, *model)
+		}
+		b.Models = mergeUsageModels(b.Models, nil, b.RequestCount)
+		for _, department := range bucketDepartments[b.Start] {
+			b.Departments = append(b.Departments, *department)
+		}
+		b.Departments = mergeDepartmentUsage(b.Departments, nil)
 		buckets = append(buckets, *b)
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Start.Before(buckets[j].Start) })
@@ -422,6 +457,9 @@ func mergeDepartmentBuckets(a, b []DepartmentBucket) []DepartmentBucket {
 			} else {
 				d.RequestCount += v.RequestCount
 				addTokens(&d.Tokens, v.Tokens)
+				d.Models = mergeUsageModels(d.Models, v.Models, d.RequestCount)
+				d.Departments = mergeDepartmentUsage(d.Departments, v.Departments)
+				d.Complete = d.Complete && v.Complete
 			}
 			d.OutputRatio = Ratio(d.Tokens.Output, d.Tokens.Total)
 			d.CacheHitRatio = CacheHitRatio(d.Tokens)
@@ -452,7 +490,38 @@ func mergeUsageModels(a, b []UsageModel, total int64) []UsageModel {
 		v.Ratio = Ratio(v.RequestCount, total)
 		out = append(out, *v)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].RequestCount > out[j].RequestCount })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].RequestCount == out[j].RequestCount {
+			return out[i].Model < out[j].Model
+		}
+		return out[i].RequestCount > out[j].RequestCount
+	})
+	return out
+}
+
+func mergeDepartmentUsage(a, b []DepartmentUsage) []DepartmentUsage {
+	m := map[string]*DepartmentUsage{}
+	for _, src := range [][]DepartmentUsage{a, b} {
+		for _, v := range src {
+			d := m[v.ID]
+			if d == nil {
+				d = &DepartmentUsage{ID: v.ID, Label: v.Label}
+				m[v.ID] = d
+			}
+			d.RequestCount += v.RequestCount
+			addTokens(&d.Tokens, v.Tokens)
+		}
+	}
+	out := make([]DepartmentUsage, 0, len(m))
+	for _, v := range m {
+		out = append(out, *v)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Tokens.Total == out[j].Tokens.Total {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Tokens.Total > out[j].Tokens.Total
+	})
 	return out
 }
 func mergePareto(a, b map[string]any, total int64) map[string]any {

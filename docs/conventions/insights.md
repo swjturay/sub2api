@@ -12,6 +12,10 @@ Usage-record request counts and final-client-call request counts are distinct po
 
 Use the platform timezone consistently for boundaries and aggregates. Department membership is the current single complete attribute value, not an upstream resource group or a historical snapshot. Missing user values and invalid bindings are distinct. Preserve per-user/per-model daily facts and first/retention milestones before details expire; global totals cannot reconstruct them. Rollups must preserve sums, valid sample counts, source identities and coverage, not averages of averages.
 
+## Department consumption trends
+
+Department analytics buckets expose both department and provider-qualified model Token breakdowns. Build them from the same filtered aggregates as bucket totals and merge them by identity across the daily/detail retention boundary. Never reconstruct time-bucket categories from whole-window proportions. Missing breakdowns remain unavailable, while an absent category in a supplied breakdown means zero recorded usage.
+
 ## Gateway and storage isolation
 
 Lifecycle rebuilds share call, historical usage and nonempty per-user daily

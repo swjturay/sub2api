@@ -139,8 +139,8 @@ export function AnalyticsFilters({
     <div className="analytics-filters" aria-label="分析筛选条件">
       <div className="filter-field filter-field--range"><span className="filter-label sr-only">日期范围</span><DateRangeFilter from={value.from} to={value.to} today={platformToday} onChange={(from, to) => onChange({ ...value, from, to })} /></div>
       <div className="filter-field"><span className="filter-label sr-only">粒度</span><Segmented value={value.granularity} onChange={(next) => set("granularity", next)} label="统计粒度" options={granularities.map((granularity) => ({ value: granularity, label: granularityLabels[granularity] }))} /></div>
-      {showModels && <div className="filter-field"><span className="filter-label sr-only">模型</span><MultiSelect label="模型筛选" value={value.models} onChange={(next) => set("models", next)} options={models.map((model) => ({ value: model.id, label: model.name, keywords: model.platform }))} allLabel="全部模型" selectedLabel="个模型" searchPlaceholder="搜索模型或平台" emptyText="没有匹配模型" /></div>}
       {showDepartments && <div className="filter-field"><span className="filter-label sr-only">部门</span><MultiSelect label="部门筛选" value={value.departments} onChange={(next) => set("departments", next)} options={(departments || []).map((department) => ({ value: department.id, label: department.issue ? `${department.name}（配置异常）` : department.name, keywords: department.issue }))} allLabel="全部部门" selectedLabel="个部门" searchPlaceholder="搜索部门" emptyText="没有匹配部门" /></div>}
+      {showModels && <div className="filter-field"><span className="filter-label sr-only">模型</span><MultiSelect label="模型筛选" value={value.models} onChange={(next) => set("models", next)} options={models.map((model) => ({ value: model.id, label: model.name, keywords: model.platform }))} allLabel="全部模型" selectedLabel="个模型" searchPlaceholder="搜索模型或平台" emptyText="没有匹配模型" /></div>}
     </div>
   );
 }

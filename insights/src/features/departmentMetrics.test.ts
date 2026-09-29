@@ -17,13 +17,16 @@ describe("department metric bands", () => {
     } as DepartmentAnalytics;
 
     const groups = departmentMetricGroups(data);
-    expect(groups.primary).toHaveLength(3);
-    expect(groups.secondary).toHaveLength(6);
-    expect([...groups.primary, ...groups.secondary]).toHaveLength(9);
-    expect(groups.secondary).toContainEqual(
+    expect(groups.map(group => group.title)).toEqual(["成员与使用", "Token规模", "消耗结构"]);
+    expect(groups.map(group => [group.primary.label, ...group.secondary.map(item => item.label)])).toEqual([
+      ["总成员数", "活跃成员数", "请求次数"],
+      ["总Token", "日均Token", "每日人均Token"],
+      ["输出Token", "输出Token占比", "缓存命中率"],
+    ]);
+    expect(groups.flatMap(group => [group.primary, ...group.secondary])).toContainEqual(
       expect.objectContaining({ label: "输出Token", value: 11234 }),
     );
-    expect(groups.secondary).toContainEqual(
+    expect(groups[2].secondary).toContainEqual(
       expect.objectContaining({ label: "输出Token占比", value: 19.31 }),
     );
   });

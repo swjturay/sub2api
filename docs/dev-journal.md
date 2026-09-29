@@ -296,3 +296,15 @@ make test-frontend-critical
 - Fixed `unknown:gemini-3.8-flash-high`: usage SQL had incorrectly excluded `antigravity` even though the model catalog uses it as the production identity. Composite remains excluded until a concrete call-fact provider is available; the frontend also reconciles old-backend `unknown` identities against a unique catalog match during mixed-version previews.
 
 Validation: Insights ESLint, TypeScript, 17 files / 63 tests and production build passed; backend `internal/insights` and `internal/handler` unit suites passed. A 1569x1270 local browser check confirmed both recent-hour pulses, the combined heatmap legend, stable zero-use hover, the default stacked model bars and no horizontal overflow. Preview-only recent and model-bucket data are used only because the connected production backend does not yet expose the new response fields.
+
+
+## Department consumption classification and overview grouping (2026-09-29)
+
+- Addressed the department-page browser annotations: added a full-width department Token trend above the model Token trend, with independent total/output and line/stacked-bar controls. The request-based model distribution remains adjacent to model consumption.
+- Reorganized all nine overview metrics into membership/usage, Token scale, and consumption composition columns, with one primary and two supporting values per column.
+- Added actual department and provider-qualified model breakdowns to each department analytics bucket using the existing filtered aggregate rows. Daily/detail hybrid merges retain both breakdowns by identity and recompute model ratios. No migrations or additional database queries.
+- Kept category sums conserved when grouping the tail, distinguished same-label identities, retained incomplete bucket labels, and preserved absent breakdowns/null token values as unavailable instead of deriving synthetic production time series.
+
+Validation: Insights lint, TypeScript, all 23 test files / 93 tests, and production build passed. `go test ./internal/insights` passed, including day/week/month bucket merge and classification-conservation regression coverage; PostgreSQL integration tests were skipped because INSIGHTS_TEST_DATABASE_URL is not configured. Browser verification used a loopback-only fixture API and the actual production frontend build, explicitly labelled as example data. Inspected 1366x768, 1440x900 and 1920x1080 desktop layouts in light/dark, confirmed no horizontal document overflow, independent chart controls, and department filtering; browser console reported no warnings/errors. Preview remains at http://127.0.0.1:4188/insights/departments. These changes have not been deployed.
+
+Follow-up: Both department and model Token trends default to stacked bars, with the stacked-bar option before line. The filter toolbar orders date, granularity, department, then model. Rebuilt and reloaded the local preview to verify both default selections and control order. Before committing, reran Insights lint, all 93 tests, production build (including TypeScript), and the backend Insights suite successfully; PostgreSQL integration remains unverified without its test database.
