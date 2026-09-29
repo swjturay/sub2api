@@ -12,8 +12,17 @@ func TestDepartmentBucketBreakdownsAndHybridMerge(t *testing.T) {
 	for _, granularity := range []string{"day", "week", "month"} {
 		t.Run(granularity, func(t *testing.T) {
 			finish := func(aggs []departmentAggregate) []DepartmentBucket {
+				t.Helper()
 				result := q.finishDepartments(from, from.AddDate(0, 0, 2), granularity, nil, 2, aggs, ModelPerformance{}, "usage_detail", binding)
-				return result.Data.(map[string]any)["buckets"].([]DepartmentBucket)
+				data, ok := result.Data.(map[string]any)
+				if !ok {
+					t.Fatalf("unexpected department response type: %T", result.Data)
+				}
+				buckets, ok := data["buckets"].([]DepartmentBucket)
+				if !ok {
+					t.Fatalf("unexpected department buckets type: %T", data["buckets"])
+				}
+				return buckets
 			}
 			old := finish([]departmentAggregate{
 				{bucket: from, userID: 1, department: "a", model: "openai:x", requests: 2, tokens: NewTokens(10, 0, 0, 2)},

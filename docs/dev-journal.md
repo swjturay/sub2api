@@ -1,5 +1,9 @@
 # Development Journal
 
+## Insights release validation correction (2026-09-29)
+
+The release CI caught unchecked type assertions in the department bucket regression helper. Added explicit response/bucket type checks with test failures and helper attribution, preserving the existing regression coverage and production behavior. The release remains gated on all exact-source CI checks; no lint rules were weakened.
+
 ## Model plaza annotation refinements (2026-09-29)
 
 - Replaced routing-platform presentation with manufacturer classification across filters, counts, cards, lists, details and comparison. Gemini contains only Gemini families, Claude appears under Anthropic, and OpenCode's DeepSeek entries appear under DeepSeek. Backend identities, distinct routing entries and their measured values are preserved; no aliases or performance averages are merged. Gemini uses the existing Gemini star mark in blue.
