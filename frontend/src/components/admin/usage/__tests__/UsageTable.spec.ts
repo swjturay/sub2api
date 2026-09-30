@@ -857,6 +857,17 @@ describe('admin UsageTable deleted-user badge', () => {
 })
 
 describe('Codex passive observations', () => {
+  it('shows CPR completeness for HTTP and WS without changing unobserved history', () => {
+    const wrapper = mount(UsageTable, {
+      props: { data: ['complete', 'partial', 'unknown'].map((status, i) => ({ ...baseImageRow, request_id: `cpr-${i}`, codex_observation: { transport: i ? 'websocket_unobserved' : 'http', usage: { status, terminal_event: 'response.failed' } } })), loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, Icon: true, IpGeoCell: true } },
+    })
+    expect(wrapper.findAll('details')).toHaveLength(3)
+    for (const status of ['complete', 'partial', 'unknown']) {
+      expect(wrapper.text()).toContain(`admin.usage.usageCompleteness_${status}`)
+    }
+    expect(wrapper.text()).toContain('response.failed')
+  })
   it('distinguishes false, invalid, absent and unobserved without exposing cookies', () => {
     const observations = [
       { transport: 'http', safety: { enabled_present: true, enabled: false, faster_model_present: true, faster_model: 'retry-only' }, route: { outbound_digest: 'v1:outbound', response_digest: 'v1:response', response_gateway_hint: 'unified-123' } },

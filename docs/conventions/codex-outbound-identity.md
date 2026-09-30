@@ -15,7 +15,8 @@ estimate locally after model mapping/conversion, before credential retrieval,
 refresh or upstream dispatch. Reuse the existing estimator and minimum fallback;
 these are approximate preflight counts, never billing usage. Logs identify the
 direct estimate with reason=oauth_local and upstream_status=0. Preserve API-key
-counting policy and CPR's separate native/Anthropic behavior.
+counting policy. CPR also estimates both count endpoints locally (cpr_local for
+Messages), since its inference server exposes Responses rather than Messages.
 
 Token import must stop if an explicitly selected proxy cannot be resolved,
 including an empty lookup result. Token exchange and refresh reuse connections
@@ -51,8 +52,9 @@ disables digests. A bounded, unverified response gateway hint is diagnostic
 only. Never persist raw cookies or use observations for billing/scheduling.
 
 Only administrators receive `codex_observation`. Historical/unobserved rows
-remain NULL. Native WS turns explicitly report `websocket_unobserved`; pooled
-handshake headers are not per-turn evidence. A WS-to-HTTP bridge reports its
+remain NULL. Direct native WS turns report `websocket_unobserved`; pooled
+handshake headers are not per-turn evidence. CPR WS can additionally carry
+received per-turn usage and safety metadata; this does not imply route visibility. A WS-to-HTTP bridge reports its
 actual HTTP observation. This feature introduces no Cookie storage or replay,
 so an absent outbound route digest is expected when no cookie was sent.
 
@@ -66,6 +68,38 @@ retain precedence. The internal CPR hop does not determine public egress.
 CPR quota snapshots come only from the CPR Admin API. Sub2API still owns quota,
 scheduling, model, and rate-limit policy, but must not query OpenAI directly on
 behalf of a CPR account or silently fall back to a direct OAuth path.
+
+## CPR Native Relay And Accounting
+
+Only CPR uses the native HTTP/SSE and WebSocket raw relay. Preserve original
+wire bytes (including request compression), unknown fields and call IDs when
+no authorized group/account policy changes them. Retain model mappings,
+reasoning and Fast policy, every-turn image permission, and passive turn-state
+provenance checks. Do not add API-key raw switches or direct OAuth rewrites.
+Chat/Messages still convert to/from Responses, without truncating CPR history
+or adding the non-Codex todo guard. These paths retain existing mapping rules.
+
+All CPR inference paths cancel upstream on client disconnect. Once execution
+starts, user and account slots remain owned until local upstream teardown has
+returned; waiting cancellation still releases promptly. WS applies the same
+rule per turn. There is no background drain to obtain the final bill.
+
+Capture bounded received usage before downstream writes/conversion. Valid
+numeric zero differs from missing/empty/malformed usage; terminal usage with
+both counters is complete, progressive or one-counter usage is partial, and
+no evidence is unknown. Persist completeness in admin-only codex_observation;
+this diagnostic field is never pricing input. Bill the separate captured real
+counters, including failed/cancelled and Cyber results. Never bill token-count
+estimates as generation usage. A CPR attempt/turn has an independent billing
+ID so failover attempts cannot suppress one another under one client ID;
+resubmitting one captured result uses the same billing ID. Cyber alerts remain
+active, with a single authoritative captured result for settlement.
+
+Use the existing failover counts and KLNO raw-relay error classification.
+Do not replay after generated output or cancellation. Retry before response
+can still duplicate remote execution; incomplete usage is not reconciled
+or estimated automatically. HTTP CPR observations contain safety/completeness
+but no route digest of the internal hop. No new Cookie replay is introduced.
 
 ## Codex Management-Plane Clients
 

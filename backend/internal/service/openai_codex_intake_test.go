@@ -93,6 +93,10 @@ func codexIntakeForward(t *testing.T, kind string, pass bool, body []byte, meta 
 		require.NotNil(t, result.CodexObservation.Safety.Enabled)
 		require.False(t, *result.CodexObservation.Safety.Enabled)
 		require.NotEmpty(t, result.CodexObservation.Route.ResponseDigest)
+	} else if a.IsCPR() {
+		require.NotNil(t, result.CodexObservation)
+		require.Nil(t, result.CodexObservation.Route)
+		require.Equal(t, "complete", result.CodexObservation.Usage.Status)
 	} else {
 		require.Nil(t, result.CodexObservation)
 	}
@@ -134,7 +138,7 @@ func TestCodexIntakeMetadataHTTP(t *testing.T) {
 						}
 						m := gjson.Parse(raw)
 						want := "gpt-6-astra"
-						if !compact && (kind == "oauth" || kind == "setup") {
+						if kind == "cpr" || (!compact && (kind == "oauth" || kind == "setup")) {
 							want = gjson.GetBytes(out, "model").String()
 						}
 						t.Logf("%s: body model=%s metadata model=%s", name, gjson.GetBytes(out, "model").String(), m.Get("model").String())

@@ -70,6 +70,8 @@ type RelayExit struct {
 }
 
 type RelayOptions struct {
+	// CancelOnClientDisconnect disables the legacy usage-drain window.
+	CancelOnClientDisconnect        bool
 	WriteTimeout                    time.Duration
 	IdleTimeout                     time.Duration
 	UpstreamDrainTimeout            time.Duration
@@ -78,6 +80,7 @@ type RelayOptions struct {
 	FirstMessageType                coderws.MessageType
 	FirstMessageSent                bool
 	StartClientAfterFirstDownstream bool
+	BareErrorEndsTurn               bool // CPR emits one terminal error per turn.
 	OnUsageParseFailure             func(eventType string, usageRaw string)
 	OnTurnComplete                  func(turn RelayTurnResult)
 	BeforeUpstreamTurnWrite         func()
@@ -116,6 +119,7 @@ type relayState struct {
 	turnTimingByID          map[string]*relayTurnTiming
 	activeTurn              *relayTurnTiming
 	pendingBareError        *observedUpstreamEvent
+	bareErrorEndsTurn       bool
 }
 
 type relayExitSignal struct {
@@ -181,7 +185,7 @@ func Relay(
 		firstMessageType = coderws.MessageText
 	}
 	startAt := nowFn()
-	state := &relayState{requestModel: result.RequestModel}
+	state := &relayState{requestModel: result.RequestModel, bareErrorEndsTurn: options.BareErrorEndsTurn}
 	if isClientResponseCreateFrame(firstMessageType, firstClientMessage) {
 		firstTurnStartedAt := options.FirstTurnStartedAt
 		if firstTurnStartedAt.IsZero() {
@@ -353,7 +357,7 @@ func Relay(
 	hasSecondExit := false
 
 	// 客户端断开后尽力继续读取上游短窗口，捕获延迟 usage/terminal 事件用于计费。
-	if firstExit.stage == "read_client" && firstExit.graceful {
+	if firstExit.stage == "read_client" && firstExit.graceful && !options.CancelOnClientDisconnect {
 		dropDownstreamWrites.Store(true)
 		secondExit, hasSecondExit = waitRelayExit(exitCh, drainTimeout)
 	} else {
@@ -814,9 +818,11 @@ func observeUpstreamMessage(
 		if observed.responseID == "" {
 			observed.responseID = openAIWSRelayActiveTurnID(state)
 		}
-		pending := observed
-		state.pendingBareError = &pending
-		return observed
+		if !state.bareErrorEndsTurn {
+			pending := observed
+			state.pendingBareError = &pending
+			return observed
+		}
 	}
 	state.pendingBareError = nil
 	return finalizeObservedRelayTerminal(state, observed, now)

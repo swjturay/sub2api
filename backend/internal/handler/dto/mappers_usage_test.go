@@ -334,11 +334,13 @@ func f64Ptr(value float64) *float64 {
 }
 
 func TestUsageLogCodexObservationAdminOnly(t *testing.T) {
-	log := &service.UsageLog{CodexObservation: &service.CodexObservation{Transport: "websocket_unobserved"}}
+	log := &service.UsageLog{CodexObservation: &service.CodexObservation{Transport: "websocket_unobserved", Usage: &service.CPRUsageObservation{Status: "partial", TerminalEvent: "response.failed"}}}
 	admin, err := json.Marshal(UsageLogFromServiceAdmin(log))
 	require.NoError(t, err)
 	user, err := json.Marshal(UsageLogFromService(log))
 	require.NoError(t, err)
 	require.Contains(t, string(admin), "codex_observation")
+	require.Contains(t, string(admin), `"status":"partial"`)
+	require.NotContains(t, string(user), "terminal_event")
 	require.NotContains(t, string(user), "codex_observation")
 }

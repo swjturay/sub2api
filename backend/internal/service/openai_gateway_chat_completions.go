@@ -58,7 +58,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	body []byte,
 	promptCacheKey string,
 	defaultMappedModel string,
-) (*OpenAIForwardResult, error) {
+) (forwardResult *OpenAIForwardResult, forwardErr error) {
+	ctx, finishCPR := s.beginCPRForward(ctx, c, account, body)
+	defer finishCPR(&forwardResult, &forwardErr)
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 
@@ -377,7 +379,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	}
 
 	// 6. Build upstream request
-	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	upstreamCtx, releaseUpstreamCtx := openAICompatExecutionContext(ctx, account)
 	cancelUpstream := func() {}
 	if clientStream {
 		upstreamCtx, cancelUpstream = context.WithCancel(upstreamCtx)
@@ -934,6 +936,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if len(chunks) > 0 && !clientDisconnected && clientOutputStarted {
 			c.Writer.Flush()
 		}
+		if account.IsCPR() && clientDisconnected {
+			_ = resp.Body.Close()
+			streamNonFailoverErr = context.Canceled
+			return true
+		}
 		return isTerminalEvent
 	}
 
@@ -1189,6 +1196,10 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 					zap.String("request_id", requestID),
 				)
 				clientDisconnected = true
+				if account.IsCPR() {
+					_ = resp.Body.Close()
+					return resultWithUsage(), context.Canceled
+				}
 				continue
 			}
 			c.Writer.Flush()

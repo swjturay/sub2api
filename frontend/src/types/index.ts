@@ -1809,6 +1809,10 @@ export interface UsageLogAccountSummary {
 }
 
 export interface CodexObservation {
+  usage?: {
+    status: 'complete' | 'partial' | 'unknown'
+    terminal_event?: string
+  }
   transport: 'http' | 'websocket_unobserved'
   safety?: {
     enabled_present: boolean

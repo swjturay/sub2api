@@ -1949,6 +1949,12 @@ type openAIResponsesWSUsageLogCase struct {
 	firstFrameCloseExpected bool
 	// secondTurnCloseExpected：第二个 turn 被拒（连接被 1008 关闭）。
 	secondTurnCloseExpected bool
+	// rawRelay 打开 apikey 账号的原样中继；cpr 把账号换成 cpr 类型（恒走原样中继）。
+	rawRelay bool
+	cpr      bool
+	// clientHeaders 附加到客户端握手。
+	clientHeaders map[string]string
+	upstreamEvent string
 }
 
 type openAIResponsesWSUsageLogResult struct {
@@ -1957,6 +1963,7 @@ type openAIResponsesWSUsageLogResult struct {
 	upstreamFirstPayload []byte
 	upstreamPayloads     [][]byte
 	clientEvents         [][]byte
+	upstreamHeader       http.Header
 }
 
 type openAIWSUsageHandlerAccountRepoStub struct {
@@ -2877,7 +2884,13 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	upstreamPayloadCh := make(chan []byte, turnCount)
 	upstreamErrCh := make(chan error, 1)
 	var channelSvc *service.ChannelService
+	// 只留首条上游连接的握手头；它先于首个请求帧入队，读完帧再取不会落空。
+	upstreamHeaderCh := make(chan http.Header, 1)
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case upstreamHeaderCh <- r.Header.Clone():
+		default:
+		}
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
 			CompressionMode: coderws.CompressionContextTakeover,
 		})
@@ -2914,6 +2927,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 				turn,
 				gjson.GetBytes(payload, "model").String(),
 			)
+			if tc.upstreamEvent != "" {
+				response = tc.upstreamEvent
+			}
 			writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
 			writeErr := conn.Write(writeCtx, coderws.MessageText, []byte(response))
 			cancelWrite()
@@ -2947,6 +2963,13 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 	if strings.TrimSpace(tc.ingressMode) != "" {
 		account.Extra["openai_apikey_responses_websockets_v2_mode"] = tc.ingressMode
+	}
+	if tc.rawRelay {
+		account.Extra["openai_raw_relay"] = true
+	}
+	if tc.cpr {
+		account.Type = service.AccountTypeCPR
+		account.Extra = map[string]any{}
 	}
 
 	cfg := &config.Config{}
@@ -3052,6 +3075,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	if tc.userAgent != nil {
 		headers.Set("User-Agent", *tc.userAgent)
 	}
+	for k, v := range tc.clientHeaders {
+		headers.Set(k, v)
+	}
 	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
 	clientConn, _, err := coderws.Dial(
 		dialCtx,
@@ -3092,7 +3118,11 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		_, event, readErr := clientConn.Read(readCtx)
 		cancelRead()
 		require.NoError(t, readErr)
-		require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+		expectedType := "response.completed"
+		if tc.upstreamEvent != "" {
+			expectedType = gjson.Get(tc.upstreamEvent, "type").String()
+		}
+		require.Equal(t, expectedType, gjson.GetBytes(event, "type").String())
 		clientEvents = append(clientEvents, append([]byte(nil), event...))
 	}
 	readCompleted()
@@ -3162,6 +3192,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		upstreamFirstPayload: upstreamPayloads[0],
 		upstreamPayloads:     upstreamPayloads,
 		clientEvents:         clientEvents,
+		upstreamHeader:       <-upstreamHeaderCh,
 	}
 }
 

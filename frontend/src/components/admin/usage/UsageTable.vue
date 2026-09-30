@@ -297,11 +297,13 @@
         </template>
 
         <template #cell-codex_observation="{ row }">
-          <details v-if="row.codex_observation?.transport === 'http'" class="max-w-xs text-xs text-gray-700 dark:text-gray-200">
+          <details v-if="row.codex_observation?.transport === 'http' || row.codex_observation?.usage" class="max-w-xs text-xs text-gray-700 dark:text-gray-200">
             <summary class="cursor-pointer rounded py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500">
               {{ t('admin.usage.codexObservation') }}
             </summary>
             <dl class="space-y-2 whitespace-normal py-2">
+              <div v-if="row.codex_observation.usage"><dt>{{ t('admin.usage.usageCompleteness') }}</dt><dd>{{ t(`admin.usage.usageCompleteness_${row.codex_observation.usage.status}`) }}</dd></div>
+              <div v-if="row.codex_observation.usage?.terminal_event"><dt>{{ t('admin.usage.usageTerminalEvent') }}</dt><dd>{{ row.codex_observation.usage.terminal_event }}</dd></div>
               <div><dt>{{ t('admin.usage.safetyHeader') }}</dt><dd>{{ safetyObservationLabel(row) }}</dd></div>
               <div><dt>{{ t('admin.usage.safetyFallbackModel') }}</dt><dd>{{ row.codex_observation.safety?.faster_model || (row.codex_observation.safety?.faster_model_present ? t('admin.usage.observationInvalid') : t('admin.usage.observationAbsent')) }}</dd></div>
               <div><dt>{{ t('admin.usage.routeOutboundDigest') }}</dt><dd class="break-all font-mono">{{ row.codex_observation.route?.outbound_digest || t('admin.usage.observationNoDigest') }}</dd></div>

@@ -247,6 +247,8 @@ type OpenAIUsage struct {
 
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
+	// BillingRequestID identifies one executed CPR attempt/turn across asynchronous recording.
+	BillingRequestID string
 	CodexObservation *CodexObservation
 	RequestID        string
 	ResponseID       string

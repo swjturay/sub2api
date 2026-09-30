@@ -62,6 +62,10 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 		return "", fmt.Errorf("unsupported account type for openai websocket: %s", account.Type)
 	}
 
+	return openAIWSURLFromHTTP(targetURL)
+}
+
+func openAIWSURLFromHTTP(targetURL string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(targetURL))
 	if err != nil {
 		return "", fmt.Errorf("invalid target url: %w", err)

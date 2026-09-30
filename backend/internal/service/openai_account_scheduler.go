@@ -2493,6 +2493,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 		return false
 	}
 	if requiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2Ingress {
+		if account.IsCPR() {
+			return s.cfg != nil && s.cfg.Gateway.OpenAIWS.Enabled && !s.cfg.Gateway.OpenAIWS.ForceHTTP && !account.IsOpenAIWSForceHTTPEnabled()
+		}
 		if s.cfg == nil || !s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled {
 			return s.getOpenAIWSProtocolResolver().Resolve(account).Transport == OpenAIUpstreamTransportResponsesWebsocketV2
 		}
@@ -2508,6 +2511,9 @@ func (s *OpenAIGatewayService) isOpenAIAccountTransportCompatible(account *Accou
 }
 
 func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(account *Account, model string, success bool, firstTokenMs *int, observedErr ...error) bool {
+	if !success && account.IsCPR() && len(observedErr) > 0 && errors.Is(observedErr[0], ErrOpenAIRawRelayNotAccountFault) {
+		return false
+	}
 	if account == nil {
 		return false
 	}

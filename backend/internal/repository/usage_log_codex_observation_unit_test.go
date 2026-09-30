@@ -17,7 +17,7 @@ import (
 func TestUsageLogCodexObservationSQLRoundTrip(t *testing.T) {
 	disabled := false
 	observation := &service.CodexObservation{Transport: "http", Safety: &service.CodexSafetyObservation{EnabledPresent: true, Enabled: &disabled}, Route: &service.CodexRouteObservation{OutboundDigest: "v1:out", ResponseDigest: "v1:response", ResponseGatewayHint: "unified-123"}}
-	for _, o := range []*service.CodexObservation{nil, observation, {Transport: "websocket_unobserved"}} {
+	for _, o := range []*service.CodexObservation{nil, observation, {Transport: "websocket_unobserved", Usage: &service.CPRUsageObservation{Status: "partial", TerminalEvent: "response.failed"}}} {
 		log := &service.UsageLog{UserID: 1, APIKeyID: 2, AccountID: 3, Model: "gpt-6-astra", CodexObservation: o}
 		prepared := prepareUsageLogInsert(log)
 		require.Len(t, prepared.args, len(usageLogInsertArgTypes))

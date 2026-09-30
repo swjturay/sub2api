@@ -1,5 +1,29 @@
 # Development Journal
 
+## CPR native relay and observed usage (2026-09-30)
+
+Targeted intake from KLNO d75d6b87 onto CCE 6335c8a2, following the confirmed
+[task scope](tasks/cpr-integration.md) and [cancellation ADR](adr/0002-cpr-cancellation-and-observed-usage.md). CPR native Responses now uses dedicated HTTP/SSE and WS relays; Chat/Messages
+retain conversion, mappings and full history. Both CPR count endpoints estimate
+locally. No CPR kernel changes, production switch or API-key raw switch.
+
+Received usage survives downstream write failures, nil-result error paths and
+client cancellation. Complete/partial/unknown evidence is stored in existing
+admin-only observation JSONB. Independent attempt billing keys prevent failover
+dedup collisions; Cyber uses one captured bill and preserves its risk event.
+User/account execution leases stop releasing before CPR teardown; normal WS
+close is cancelled, not an upstream error. Per-turn image policy, Insights,
+passive provenance and existing mapping remain active. CPR inference headers
+do not update quota snapshots or fabricate public route observations.
+
+Validation: final `go test -tags=unit -p 2 ./...` and `go build -p 2 ./...` passed;
+117 targeted top-level backend tests and 36 frontend table/i18n tests passed.
+Frontend production build, final typecheck, changed-file ESLint, root repository
+validation and diff checks passed. Local/remote state and live-validation limits
+are recorded in the task report. The user subsequently authorized publication
+to `cce-deploy` and a deployment-readiness assessment; production is unchanged.
+
+
 ## OAuth local token counting (2026-09-30)
 
 OAuth and OpenAI setup-token accounts now estimate both Responses input_tokens

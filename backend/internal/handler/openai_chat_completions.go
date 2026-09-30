@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/insights"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
@@ -249,13 +250,16 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
+			if !holdCPRUserExecution(c, account) {
+				return nil, context.Canceled
+			}
 			return h.gatewayService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody, promptCacheKey, "")
 		}()
 		var cyberBlockBodyChat []byte
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyChat = body
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyChat, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, reqModel, err != nil, cyberBlockBodyChat, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body), result)
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
@@ -268,7 +272,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		// #5148 对齐：错误返回携带的部分 result（流中断前上游已计量的 usage）照常
-		// 入账；failover 错误恒定 result=nil，不会重复计费。
+		// 入账；CPR failover 按独立尝试计费键记录已观测用量。
 		var statisticalAt time.Time
 		if err == nil {
 			statisticalAt = insightsFinishOpenAIForwardSuccess(c, result)
@@ -316,7 +320,12 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			})
 		}
 		if err != nil {
-			if result != nil && result.ImageCount > 0 {
+			if account.IsCPR() && (failoverClientGone(c) || (result != nil && result.ClientDisconnect)) {
+				statisticalAt = insightsFinishFailure(c, insights.OutcomeCancelled, "client_cancelled")
+				submitChatUsage(result)
+				return
+			}
+			if result != nil && result.ImageCount > 0 && !account.IsCPR() {
 				reqLog.Warn("openai_chat_completions.forward_partial_error_with_image_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
@@ -325,6 +334,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					if account.IsCPR() && result != nil {
+						statisticalAt = time.Now()
+						submitChatUsage(result)
+					}
 					if failoverClientGone(c) {
 						reqLog.Info("openai_chat_completions.failover_aborted_client_disconnected",
 							zap.Int64("account_id", account.ID),

@@ -13,7 +13,10 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 		return nil, err
 	}
 	outbound := s.codexRouteDigest(account, request.Cookies())
-	defer func() { s.observeCodexHTTPResponse(request, account, outbound, response) }()
+	defer func() {
+		s.observeCodexHTTPResponse(request, account, outbound, response)
+		s.attachCPRUsageCapture(request, response)
+	}()
 	if s.pluginManager != nil {
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {

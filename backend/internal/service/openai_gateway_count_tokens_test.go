@@ -138,7 +138,7 @@ func TestOpenAIGatewayService_OAuthCountsLocallyWithoutCredentials(t *testing.T)
 	}
 }
 
-func TestOpenAIGatewayService_CPRAnthropicCountStillUsesRelay(t *testing.T) {
+func TestOpenAIGatewayService_CPRAnthropicCountUsesLocalEstimate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -153,9 +153,8 @@ func TestOpenAIGatewayService_CPRAnthropicCountStillUsesRelay(t *testing.T) {
 		Credentials: map[string]any{"api_key": "relay-test", "base_url": "https://relay.example"}}
 	err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "")
 	require.NoError(t, err)
-	require.JSONEq(t, `{"input_tokens":4242}`, rec.Body.String())
-	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "relay.example", upstream.lastReq.URL.Host)
+	require.JSONEq(t, `{"input_tokens":6}`, rec.Body.String())
+	require.Nil(t, upstream.lastReq)
 }
 
 func TestOpenAIGatewayService_OpenAIOAuthInputTokensFallbackUsesMinimumWhenEstimateFails(t *testing.T) {

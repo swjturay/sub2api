@@ -345,6 +345,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			requestID = upstreamRequestID
 		}
 	}
+	// CPR retries can each consume tokens under the same client request ID.
+	// Keep each attempt separate; duplicate submissions of one result remain idempotent.
+	if account.IsCPR() && result.BillingRequestID != "" {
+		requestID = result.BillingRequestID
+	}
 	// Async Grok video: always use the stable task id for dedup (status + content polls
 	// share one bill). Context-local client/local IDs would otherwise create a new row
 	// per poll if Redis claim is lost.

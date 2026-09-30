@@ -16,6 +16,7 @@ import (
 // HTTP observations describe one attempt. WS is explicitly unobserved: a pooled
 // handshake cannot establish per-turn safety or serving-route information.
 type CodexObservation struct {
+	Usage     *CPRUsageObservation    `json:"usage,omitempty"`
 	Transport string                  `json:"transport"`
 	Safety    *CodexSafetyObservation `json:"safety,omitempty"`
 	Route     *CodexRouteObservation  `json:"route,omitempty"`
@@ -132,7 +133,7 @@ func codexObservationFromResponse(resp *http.Response) *CodexObservation {
 }
 
 func (s *OpenAIGatewayService) observeCodexHTTPResponse(request *http.Request, account *Account, outbound string, resp *http.Response) {
-	if resp == nil || account == nil || !account.UsesOpenAICodexProtocol() {
+	if resp == nil || account == nil || (!account.UsesOpenAICodexProtocol() && !account.IsCPR()) {
 		return
 	}
 	cookies := resp.Cookies()
@@ -142,6 +143,11 @@ func (s *OpenAIGatewayService) observeCodexHTTPResponse(request *http.Request, a
 		Route: &CodexRouteObservation{OutboundDigest: outbound,
 			ResponseDigest:      s.codexRouteDigest(account, cookies),
 			ResponseGatewayHint: codexResponseGatewayHint(cookies)},
+	}
+	if account.IsCPR() {
+		// CPR does not expose its external cookie route. Internal-hop cookies
+		// must never be presented as evidence of the OpenAI serving route.
+		o.Route = nil
 	}
 	// The response owns its context snapshot; no shared jar or mutable Gin state
 	// is read later when asynchronous usage recording runs.

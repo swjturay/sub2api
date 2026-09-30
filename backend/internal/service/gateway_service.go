@@ -702,6 +702,8 @@ type UpstreamFailoverError struct {
 	NextAccountAction        NextAccountAction
 	ClientStatusCode         int
 	ClientMessage            string
+	// RawRelayResponse preserves the final CPR rejection when failover is exhausted.
+	RawRelayResponse bool
 }
 
 func (e *UpstreamFailoverError) Error() string {

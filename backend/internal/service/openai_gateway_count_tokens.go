@@ -310,7 +310,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 		return err
 	}
 
-	if account.UsesOpenAICodexProtocol() {
+	if account.UsesOpenAICodexProtocol() || account.IsCPR() {
 		writeOpenAIOAuthInputTokensFallback(c, account, prepared, 0)
 		return nil
 	}
@@ -543,6 +543,9 @@ func writeOpenAIOAuthInputTokensFallback(c *gin.Context, account *Account, prepa
 	reason := "upstream_unsupported"
 	if statusCode == 0 {
 		reason = "oauth_local"
+		if account.IsCPR() {
+			reason = "cpr_local"
+		}
 	}
 	estimated := openAIInputTokensFallbackMinimum
 	if got, err := estimateOpenAIInputTokens(prepared.Request); err == nil {
