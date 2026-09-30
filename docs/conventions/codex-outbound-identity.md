@@ -101,6 +101,26 @@ resubmitting one captured result uses the same billing ID. Cyber alerts remain
 active, with a single authoritative captured result for settlement.
 
 Use the existing failover counts and KLNO raw-relay error classification.
+CPR does not inherit the direct OAuth 120-second retry window, deferred 429
+cooldown or extra account-switch cap. A structured account-quota error stops
+same-account retry, including pool mode. Specific model/key/queue/capacity codes
+are not account-quota evidence; do not classify free-form messages.
+
+Observe CPR quota failures beside the received usage. Preserve valid reset
+evidence from the response or the same WS error frame. Without it, query the
+bound CPR management account with a two-second timeout and per-binding
+singleflight/short caching. Only confirmed quota_exhausted main windows or
+rate_limited account state supply a future next-attempt time; aggregate display
+limitReached and fetch timestamps are not authority or fresh quota evidence.
+Use the existing configured fallback when no future time is available. Extend
+the existing rate-limit field atomically with SetRateLimitedIfLater and notify
+the existing runtime blocker; generic concurrent CPR 429s must not shorten it.
+Do not add disabled/error state, recovery timers, probes or database fields.
+Streaming quota updates run after writing the received failure frame; upstream
+teardown still cancels immediately. The management query can delay local
+settlement/release by up to its timeout. A reset is permission to try again,
+not proof that CPR has recovered. Every attempt/turn settles this fact once.
+
 Do not replay after generated output or cancellation. Retry before response
 can still duplicate remote execution; incomplete usage is not reconciled
 or estimated automatically. HTTP CPR observations contain safety/completeness

@@ -106,6 +106,14 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
 		return false
 	}
+	// Captured relays settle after downstream writes. Other CPR endpoints (such
+	// as images/alpha search) have no relay observer and settle the same fact here.
+	if account != nil && account.IsCPR() && isCPRQuotaError(responseBody) {
+		if capture, _ := ctx.Value(cprUsageContextKey{}).(*cprUsageCapture); capture == nil && s.rateLimitService != nil {
+			s.rateLimitService.handleCPRQuotaFailure(ctx, account, cprQuotaResponseReset(headers, responseBody))
+		}
+		return false
+	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) {
@@ -222,7 +230,7 @@ func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []b
 }
 
 func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context, account *Account, headers http.Header, responseBody []byte) {
-	if s == nil || !account.TargetsChatGPTCodexUpstream() {
+	if s == nil || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) {
 		return
 	}
 	// Spark 影子：不按 /responses 429 的 global x-codex-* 信号做内存运行时熔断(同 handle429,外审第8轮 P1)。
@@ -257,7 +265,7 @@ func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *A
 }
 
 func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account *Account, statusCode int, shouldDisable bool, headers http.Header, responseBody []byte) bool {
-	if shouldDisable || statusCode != http.StatusTooManyRequests || !account.TargetsChatGPTCodexUpstream() || account.IsShadow() {
+	if shouldDisable || statusCode != http.StatusTooManyRequests || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) || account.IsShadow() {
 		return false
 	}
 	disposition, _ := classifyOpenAIOAuth429(headers, responseBody)
@@ -275,7 +283,7 @@ func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccountWithRespons
 // ShouldRetryOpenAIOAuth429 lets RateLimitService defer persistent account
 // cooldown until the gateway's same-account retry window is exhausted.
 func (s *OpenAIGatewayService) ShouldRetryOpenAIOAuth429(account *Account, headers http.Header, responseBody []byte) bool {
-	if s == nil || !account.TargetsChatGPTCodexUpstream() || account.IsShadow() || s.isOpenAIAccountRuntimeBlocked(account) {
+	if s == nil || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) || account.IsShadow() || s.isOpenAIAccountRuntimeBlocked(account) {
 		return false
 	}
 	disposition, _ := classifyOpenAIOAuth429(headers, responseBody)
@@ -286,7 +294,7 @@ func (s *OpenAIGatewayService) ShouldRetryOpenAIOAuth429(account *Account, heade
 }
 
 func (s *OpenAIGatewayService) openAIOAuth429RetryWindowActive(account *Account) bool {
-	if s == nil || !account.TargetsChatGPTCodexUpstream() || account.IsShadow() {
+	if s == nil || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) || account.IsShadow() {
 		return false
 	}
 	now := time.Now()
@@ -300,7 +308,7 @@ func (s *OpenAIGatewayService) openAIOAuth429RetryWindowActive(account *Account)
 }
 
 func (s *OpenAIGatewayService) openAIOAuth429RetryDeadline(account *Account) time.Time {
-	if s == nil || !account.TargetsChatGPTCodexUpstream() || account.IsShadow() {
+	if s == nil || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) || account.IsShadow() {
 		return time.Time{}
 	}
 	value, ok := s.openaiOAuth429RetryStartedAt.Load(account.ID)
@@ -611,7 +619,7 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 		}
 		return false
 	}
-	if statusCode != http.StatusTooManyRequests || !account.TargetsChatGPTCodexUpstream() {
+	if statusCode != http.StatusTooManyRequests || (!account.TargetsChatGPTCodexUpstream() || account.IsCPR()) {
 		return false
 	}
 	// Each OpenAI OAuth candidate has already consumed its full same-account

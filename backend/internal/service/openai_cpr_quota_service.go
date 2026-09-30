@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
-	"sync"
 )
 
 // CPR admin API 额度适配器。
@@ -80,6 +82,7 @@ type CPRAccountState struct {
 	ErrorReason      string
 	LimitReached     bool
 	RateLimitedUntil *time.Time
+	QuotaResetAt     *time.Time // Next check for an explicitly exhausted main window; not guaranteed recovery.
 	RateLimit        *OpenAIRateLimit
 	// LimitIDs 是 CPR 返回的全部额度窗口的 limitId（含空串），只用于诊断日志。
 	LimitIDs              []string
@@ -99,8 +102,10 @@ func (s *CPRAccountState) Schedulable() bool {
 // 不走账号代理：CPR 是本机服务，直连才对。admin_base_url 指向远端时同样直连，
 // 这是有意的——那条链路不是上游推理流量，不应该占用账号的出口。
 type CPRQuotaService struct {
-	client *http.Client
-	cfg    *config.Config
+	client           *http.Client
+	cfg              *config.Config
+	rateLimitQueries singleflight.Group
+	rateLimitCache   sync.Map
 }
 
 func NewCPRQuotaService(cfg *config.Config) *CPRQuotaService {
@@ -243,6 +248,11 @@ func buildCPRAccountState(view *cprAccountView, now time.Time) *CPRAccountState 
 	}
 	for _, window := range view.Quota.Windows {
 		state.LimitIDs = append(state.LimitIDs, window.LimitID)
+		if isCPRMainCodexLimitLine(window.LimitID) && (window.LimitReached || (window.UsedPercent != nil && *window.UsedPercent >= 100)) {
+			if reset := parseCPRDisplayTime(window.ResetAtDisplay); reset != nil && reset.After(now) && (state.QuotaResetAt == nil || reset.Before(*state.QuotaResetAt)) {
+				state.QuotaResetAt = reset
+			}
+		}
 	}
 	state.RateLimit = buildCPRRateLimit(view.Quota, now)
 	return state

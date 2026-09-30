@@ -361,12 +361,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketRawRelay(
 					markOpenAIWSClientVisibleFailure(c, gjson.GetBytes(payload, "type").String(), payload)
 				}
 				if openAIRawRelayWSTurnEnded(payload) {
+					if writeErr == nil {
+						s.applyCapturedCPRQuota(ctx, account, captured.Load())
+					}
 					turns.finishTerminalWrite(writeErr == nil, nil)
 				}
 			},
 		},
 	})
 
+	s.applyCapturedCPRQuota(ctx, account, captured.Load())
 	var closeErr *OpenAIWSClientCloseError
 	policyClose := relayExit != nil && errors.As(relayExit.Err, &closeErr)
 	if policyClose {
@@ -529,6 +533,9 @@ func (s *OpenAIGatewayService) openAIRawRelayWSDialError(
 		body = handshakeErr.Body
 	}
 	event := openAIRawRelayWSErrorEvent(status, header, body)
+	if isCPRQuotaError(body) && s.rateLimitService != nil {
+		s.rateLimitService.handleCPRQuotaFailure(ctx, account, cprQuotaResponseReset(header, body))
+	}
 	if failoverErr := s.recordOpenAIRawRelayUpstreamError(c, account, status, header, body); failoverErr != nil {
 		// WS 换号耗尽时 handler 把 ResponseBody 当一帧原样发给客户端。
 		failoverErr.ResponseBody = event

@@ -38,12 +38,35 @@ type cprUsageCapture struct {
 	requestBody   []byte
 	header        http.Header
 	observation   *CodexObservation
+	quotaFailure  bool
+	quotaHandled  bool
+	quotaReset    time.Time
 }
 
 func (o *cprUsageCapture) observe(payload []byte, event string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	event = effectiveOpenAISSEEventType(payload, event)
+	if isCPRQuotaError(payload) {
+		o.quotaFailure = true
+		headers := o.header
+		// CPR WS errors may carry allowed response headers in the same frame.
+		// Never borrow opening/previous-turn metadata for a quota decision.
+		if event == "error" {
+			if sameFrame := gjson.GetBytes(payload, "headers"); sameFrame.IsObject() {
+				headers = make(http.Header)
+				sameFrame.ForEach(func(key, value gjson.Result) bool {
+					if value.Type == gjson.String {
+						headers.Set(key.String(), value.String())
+					}
+					return true
+				})
+			}
+		}
+		if reset := cprQuotaResponseReset(headers, payload); reset.After(o.quotaReset) {
+			o.quotaReset = reset
+		}
+	}
 	terminal := openAIStreamEventTypeIsTerminal(event) || event == "error"
 	if event == "" && !o.streaming {
 		status := gjson.GetBytes(payload, "status").String()
@@ -98,7 +121,18 @@ func (s *OpenAIGatewayService) beginCPRForward(ctx context.Context, c *gin.Conte
 	billingRequestID := "cpr:" + generateRequestID()
 	capture := &cprUsageCapture{}
 	ctx = context.WithValue(ctx, cprUsageContextKey{}, capture)
+	// Error adapters that only receive Gin still need the same deferred observer.
+	originalRequest := c.Request
+	c.Request = c.Request.WithContext(ctx)
 	return ctx, func(result **OpenAIForwardResult, returnErr *error) {
+		defer func() { c.Request = originalRequest }()
+		if s.applyCapturedCPRQuota(ctx, account, capture) {
+			var failure *UpstreamFailoverError
+			if errors.As(*returnErr, &failure) {
+				failure.RetryableOnSameAccount = false
+				failure.SameAccountRetryDeadline = time.Time{}
+			}
+		}
 		capture.mu.Lock()
 		started, requestID, responseID := capture.started, capture.requestID, capture.responseID
 		sentBody, headers, observation := capture.requestBody, capture.header, capture.observation

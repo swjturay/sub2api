@@ -1,5 +1,31 @@
 # Development Journal
 
+## CPR exhausted-binding retry and cooldown (2026-09-30)
+
+Fix the inherited direct OAuth 120-second retry/deferred-cooldown policy on CPR
+without changing the common retry loop or configured counts. Structured quota
+failures stop same-account retry and extend the existing rate-limit field and
+runtime scheduling block. Ordinary concurrent CPR 429s also use the existing
+atomic IfLater write, so they cannot erase a longer known quota reset.
+
+Reuse the received-usage observer for HTTP/SSE and WS failure facts. Query the
+exact management binding only when response reset evidence is missing, with a
+two-second budget, singleflight and five-second success/error cache. Accept only
+confirmed main quota exhaustion or account rate-limited state, preserving the
+configured fallback and excluding model/key/capacity errors. Forward stream
+failure frames before querying, retain measured usage and cancel upstream on
+disconnect. Also cover images/alpha-search error paths without a relay capture.
+No CPR kernel, schema, background reconciliation or production change.
+
+Source correction to the earlier diagnosis: deployed CPR 3.18.2 (e30aad4)
+preserves usage_limit_reached for selection-time quota exhaustion; capacity and
+key-budget errors are separate. Its detail endpoint reads a stored snapshot,
+and reset expiry does not guarantee quota_exhausted recovery. Account pause and
+release statements in earlier entries describe those observation times only.
+
+Validation and remaining environment limits are recorded in
+[the repair task](tasks/cpr-quota-retry-fix.md).
+
 ## CPR quota refresh failures (2026-09-30)
 
 Production account 40 lacked its CPR management key. The quota API swallowed

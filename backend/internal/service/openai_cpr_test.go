@@ -1241,11 +1241,8 @@ func TestCPRForwardPreservesNativeBody(t *testing.T) {
 	require.Equal(t, body, sent, "native CPR body must not receive direct OAuth normalizations")
 }
 
-// TestCPRHandle429DefersToSameAccountRetry：ChatGPT Codex 后端的瞬时 429 在有界
-// 重试窗口内不落库限流（否则下一次重试就不可选，同账号恢复被静默变成换号）。
-// cpr 收到的是同一个后端的 429，语义相同。之前只换了谓词没有行为断言，改回
-// 旧谓词整个包仍全绿。
-func TestCPRHandle429DefersToSameAccountRetry(t *testing.T) {
+// CPR uses the configured cooldown immediately instead of the direct OAuth window.
+func TestCPRHandle429RecordsConfiguredCooldown(t *testing.T) {
 	repo := &oauth429RateLimitRepo{}
 	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	blocker := &OpenAIGatewayService{}
@@ -1254,15 +1251,15 @@ func TestCPRHandle429DefersToSameAccountRetry(t *testing.T) {
 	cpr := newCPRTestAccount()
 	headers := http.Header{"Retry-After": []string{"1"}}
 	body := []byte(`{"error":{"type":"rate_limit_error","message":"try again"}}`)
-	require.True(t, blocker.ShouldRetryOpenAIOAuth429(cpr, headers, body), "夹具必须落在瞬时 429 的重试窗口内")
+	require.False(t, blocker.ShouldRetryOpenAIOAuth429(cpr, headers, body))
 
 	rateLimits.handle429(context.Background(), cpr, headers, body)
-	require.Equal(t, 0, repo.setRateLimitedCalls, "重试窗口内不得把 cpr 账号标成限流")
+	require.Equal(t, 1, repo.setRateLimitedCalls)
 
 	// 对照：apikey 上游不是 Codex 后端，同一份 429 照常落库。
 	apikey := &Account{ID: 4202, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	rateLimits.handle429(context.Background(), apikey, headers, body)
-	require.Equal(t, 1, repo.setRateLimitedCalls)
+	require.Equal(t, 2, repo.setRateLimitedCalls)
 }
 
 // TestCPRManualPlanTypeOverridesProbe：凭据里人工写的 plan_type 是显式覆盖，
@@ -1301,11 +1298,7 @@ func TestCPRJoinsOpenAIUpstreamCostPool(t *testing.T) {
 	require.False(t, newOpenAILegacyUpstreamRateOrder([]*Account{apikey}, now, &oauthRateMultiplier).enabled)
 }
 
-// TestCPRImages429CarriesSameAccountRetryWindow：images 路径的 429 闸门与 /responses
-// 主线同源。cpr 进了 429 延迟（handle429 / markOpenAIOAuth429RateLimited 在窗口内
-// 不落库不熔断），这里若仍按旧谓词判成不可同账号重试，cpr 在 2 分钟窗口内既不
-// 冷却也不重试，调度器会反复选中它反复 429。
-func TestCPRImages429CarriesSameAccountRetryWindow(t *testing.T) {
+func TestCPRImages429DoesNotUseOAuthRetryWindow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat","response_format":"b64_json"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
@@ -1327,13 +1320,12 @@ func TestCPRImages429CarriesSameAccountRetryWindow(t *testing.T) {
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.RetryableOnSameAccount, "与 oauth 同：瞬时 429 在窗口内同账号重试")
-	require.Equal(t, time.Second, failoverErr.SameAccountRetryDelay)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.SameAccountRetryDeadline.IsZero())
+	require.Zero(t, failoverErr.SameAccountRetryDelay)
 }
 
-// TestCPR429FastPathSemanticsMatchOAuth：/responses 主线的 429 快路径三件套
-// 对 cpr 与 oauth 同语义，apikey 不走这套。
-func TestCPR429FastPathSemanticsMatchOAuth(t *testing.T) {
+func TestCPR429FastPathIsSeparateFromOAuth(t *testing.T) {
 	repo := &oauth429RateLimitRepo{}
 	rateLimits := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 	svc := &OpenAIGatewayService{rateLimitService: rateLimits}
@@ -1344,10 +1336,8 @@ func TestCPR429FastPathSemanticsMatchOAuth(t *testing.T) {
 	oauth := &Account{ID: 4204, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apikey := &Account{ID: 4205, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(cpr, http.StatusTooManyRequests, false, headers, body))
-	require.Equal(t,
-		svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(oauth, http.StatusTooManyRequests, false, headers, body),
-		svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(cpr, http.StatusTooManyRequests, false, headers, body))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(cpr, http.StatusTooManyRequests, false, headers, body))
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(oauth, http.StatusTooManyRequests, false, headers, body))
 	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(apikey, http.StatusTooManyRequests, false, headers, body))
 
 	svc.markOpenAIOAuth429RateLimited(context.Background(), cpr, headers, body)
@@ -1355,16 +1345,12 @@ func TestCPR429FastPathSemanticsMatchOAuth(t *testing.T) {
 	require.Equal(t, 0, repo.setRateLimitedCalls)
 
 	switches := openAIOAuth429MaxAccountAttempts + openAIOAuth429StormMaxAccountSwitches
-	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(cpr, http.StatusTooManyRequests, switches, nil))
-	require.Equal(t,
-		svc.ShouldStopOpenAIOAuth429Failover(oauth, http.StatusTooManyRequests, switches, nil),
-		svc.ShouldStopOpenAIOAuth429Failover(cpr, http.StatusTooManyRequests, switches, nil))
+	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(cpr, http.StatusTooManyRequests, switches, nil))
+	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(oauth, http.StatusTooManyRequests, switches, nil))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apikey, http.StatusTooManyRequests, switches, nil))
 }
 
-// TestCPRAlphaSearch429CarriesSameAccountRetryWindow：/alpha/search 两条分支的 429
-// 闸门与 /responses 主线同源（同 images）。
-func TestCPRAlphaSearch429CarriesSameAccountRetryWindow(t *testing.T) {
+func TestCPRAlphaSearch429DoesNotUseOAuthRetryWindow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"id":"search-session","model":"gpt-5.6-sol","commands":{}}`)
 	recorder := httptest.NewRecorder()
@@ -1387,7 +1373,8 @@ func TestCPRAlphaSearch429CarriesSameAccountRetryWindow(t *testing.T) {
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
-	require.True(t, failoverErr.RetryableOnSameAccount, "与 oauth/setup-token 同：瞬时 429 在窗口内同账号重试")
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.True(t, failoverErr.SameAccountRetryDeadline.IsZero())
 	require.Equal(t, "127.0.0.1:18081", upstream.lastReq.URL.Host)
 }
 

@@ -386,6 +386,9 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
 	oauth429Retry := s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, statusCode, shouldDisable, classificationHeaders, responseBody)
+	if account != nil && account.IsCPR() && isCPRQuotaError(responseBody) {
+		retryableOnSameAccount = false
+	}
 	failoverErr := newOpenAIUpstreamFailoverError(
 		statusCode,
 		responseHeaders,
