@@ -1,5 +1,18 @@
 # Development Journal
 
+## CPR publication and database-test isolation (2026-09-30)
+
+Published the native-relay implementation as `fb61caa11` on `cce-deploy`.
+Deployment assessment found baseline CI `36652265720` failed two dashboard
+integration assertions because the observation round-trip test retained two
+records in the shared database. Keep its real batch-insert path and assertions,
+but clean up its usage and owned fixtures at test exit. Include CPR completeness
+in the real PostgreSQL JSONB round trip. Also remove an unused donor raw-switch
+constant reported by exact-source lint; the API-key exclusion test keeps the
+literal legacy key. No runtime behavior changes. Production deployment is still
+pending exact-source CI, the release image,
+additive migration preflight, and real CPR cancellation/accounting verification.
+
 ## CPR native relay and observed usage (2026-09-30)
 
 Targeted intake from KLNO d75d6b87 onto CCE 6335c8a2, following the confirmed

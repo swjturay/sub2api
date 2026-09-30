@@ -21,10 +21,24 @@ func TestUsageLog_CodexObservationPersistence(t *testing.T) {
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
 
 	user := mustCreateUser(t, client, &service.User{Email: "observation-" + uuid.NewString() + "@example.com"})
+	t.Cleanup(func() { require.NoError(t, client.User.DeleteOneID(user.ID).Exec(ctx)) })
 	apiKey := mustCreateApiKey(t, client, &service.APIKey{UserID: user.ID, Key: "sk-session-" + uuid.NewString(), Name: "k"})
+	t.Cleanup(func() { require.NoError(t, client.APIKey.DeleteOneID(apiKey.ID).Exec(ctx)) })
 	account := mustCreateAccount(t, client, &service.Account{Name: "acc-session-" + uuid.NewString()})
+	t.Cleanup(func() { require.NoError(t, client.Account.DeleteOneID(account.ID).Exec(ctx)) })
+	// Keep the real batch-insert path, but do not leave usage in the shared
+	// database where later dashboard suites would count these two requests.
+	t.Cleanup(func() {
+		_, err := integrationDB.ExecContext(ctx, "DELETE FROM usage_logs WHERE api_key_id = $1", apiKey.ID)
+		require.NoError(t, err)
+	})
 
-	observation := &service.CodexObservation{Transport: "http", Safety: &service.CodexSafetyObservation{EnabledPresent: true}, Route: &service.CodexRouteObservation{OutboundDigest: "v1:out", ResponseDigest: "v1:response"}}
+	observation := &service.CodexObservation{
+		Transport: "http",
+		Safety:    &service.CodexSafetyObservation{EnabledPresent: true},
+		Route:     &service.CodexRouteObservation{OutboundDigest: "v1:out", ResponseDigest: "v1:response"},
+		Usage:     &service.CPRUsageObservation{Status: "complete", TerminalEvent: "response.completed"},
+	}
 
 	withSession := &service.UsageLog{
 		UserID:           user.ID,

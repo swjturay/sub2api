@@ -305,9 +305,9 @@ func TestUsesOpenAIRawRelay(t *testing.T) {
 	require.True(t, newCPRTestAccount().UsesOpenAIRawRelay(), "cpr 恒走原样中继")
 	apikey := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{}}
 	require.False(t, apikey.UsesOpenAIRawRelay())
-	apikey.Extra[openAIRawRelayExtraKey] = true
+	apikey.Extra["openai_raw_relay"] = true
 	require.False(t, apikey.UsesOpenAIRawRelay(), "intake is CPR-only")
-	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{openAIRawRelayExtraKey: true}}
+	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{"openai_raw_relay": true}}
 	require.False(t, oauth.UsesOpenAIRawRelay(), "开关只对 apikey 生效")
 }
 

@@ -27,8 +27,6 @@ import (
 // 只有上游「整体不可用」才换号（isOpenAIRawRelayUnavailable），换不了由 handler
 // 原样写回最后一次的上游响应（UpstreamFailoverError.RawRelayResponse）。
 
-const openAIRawRelayExtraKey = "openai_raw_relay"
-
 // UsesOpenAIRawRelay 报告账号是否走原样中继。
 func (a *Account) UsesOpenAIRawRelay() bool {
 	return a.IsCPR()
