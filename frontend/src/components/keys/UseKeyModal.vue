@@ -247,7 +247,19 @@
                 {{ t('keys.useKeyModal.codexModelCatalog.description') }}
               </p>
               <p class="mt-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300">
-                {{ codexModelCatalogPath }}
+                {{ codexModelCatalogMode === 'remote' ? codexModelCatalogUrl : codexModelCatalogPath }}
+              </p>
+              <select
+                v-model="codexModelCatalogMode"
+                data-testid="codex-model-catalog-mode"
+                :aria-label="t('keys.useKeyModal.codexModelCatalog.mode')"
+                class="input mt-2 text-sm"
+              >
+                <option value="remote" :disabled="codexModelCatalogOversized">{{ t('keys.useKeyModal.codexModelCatalog.remote') }}</option>
+                <option value="file">{{ t('keys.useKeyModal.codexModelCatalog.local') }}</option>
+              </select>
+              <p v-if="codexModelCatalogOversized" class="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                {{ t('keys.useKeyModal.codexModelCatalog.oversized') }}
               </p>
             </div>
             <button
@@ -322,7 +334,7 @@ import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
-import { fetchCodexModelsManifest } from '@/api/codex'
+import { buildCodexModelCatalogUrl, fetchCodexModelsManifest } from '@/api/codex'
 import { fetchGatewayModels } from '@/api/models'
 import type { GroupPlatform } from '@/types'
 import { getModelsByPlatform } from '@/composables/useModelWhitelist'
@@ -345,6 +357,7 @@ interface Props {
   apiKey: string
   baseUrl: string
   platform: GroupPlatform | null
+  claudeCodeOnly?: boolean
   allowMessagesDispatch?: boolean
 }
 
@@ -381,6 +394,15 @@ type CodexModelManifestState = 'idle' | 'loading' | 'ready' | 'error'
 const codexModelManifestState = ref<CodexModelManifestState>('idle')
 const codexModelManifestContent = ref('')
 const codexModelManifestModelCount = ref(0)
+const codexModelCatalogMode = ref<'remote' | 'file'>('remote')
+const codexModelManifestResponseBytes = ref(0)
+const codexModelCatalogOversized = computed(() => codexModelManifestResponseBytes.value > 1024 * 1024)
+const codexModelCatalogUrl = computed(() => buildCodexModelCatalogUrl(props.baseUrl))
+// Codex expands ~/ on Windows too; %userprofile% is only a display path.
+const CODEX_MODEL_CATALOG_CONFIG_PATH = '~/.codex/codex-models.json'
+const codexLocalCatalogToml = computed(() => codexModelCatalogMode.value === 'file'
+  ? `model_catalog_json = "${CODEX_MODEL_CATALOG_CONFIG_PATH}"\n`
+  : '')
 let codexModelManifestController: AbortController | null = null
 let codexModelManifestRequestID = 0
 type OpenCodeModelsState = 'idle' | 'loading' | 'ready' | 'error'
@@ -408,6 +430,7 @@ const codexManifestContext = computed(() => {
 
 // Reset tabs when platform changes
 const defaultClientTab = computed(() => {
+  if (props.claudeCodeOnly) return 'claude'
   return props.platform ? 'codex' : 'claude'
 })
 
@@ -416,7 +439,7 @@ function defaultSystemTab(client: string): string {
   return ['codex', 'codex-ws', 'grok', 'opencode'].includes(client) ? 'windows' : 'powershell'
 }
 
-watch(() => props.platform, () => {
+watch(() => [props.platform, props.claudeCodeOnly], () => {
   const client = defaultClientTab.value
   activeClientTab.value = client
   activeTab.value = defaultSystemTab(client)
@@ -526,6 +549,9 @@ const SparkleIcon = {
 
 const clientTabs = computed((): TabConfig[] => {
   if (!props.platform) return []
+  if (props.claudeCodeOnly) {
+    return [{ id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon }]
+  }
   switch (props.platform) {
     case 'openai': {
       const tabs: TabConfig[] = [
@@ -713,6 +739,7 @@ function resetCodexModelManifest() {
   codexModelManifestState.value = 'idle'
   codexModelManifestContent.value = ''
   codexModelManifestModelCount.value = 0
+  codexModelManifestResponseBytes.value = 0
 }
 
 function resetOpenCodeModels() {
@@ -815,6 +842,8 @@ async function loadCodexModelManifest() {
     if (requestID !== codexModelManifestRequestID) return
     codexModelManifestContent.value = result.content
     codexModelManifestModelCount.value = result.modelCount
+    codexModelManifestResponseBytes.value = result.responseBytes
+    if (codexModelCatalogOversized.value) codexModelCatalogMode.value = 'file'
     codexModelManifestState.value = 'ready'
   } catch (error) {
     const errorName = error && typeof error === 'object' && 'name' in error
@@ -1130,14 +1159,14 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-web_search = "live"
+${codexLocalCatalogToml.value}web_search = "live"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
-wire_api = "responses"
+${codexModelCatalogMode.value === 'remote' ? `model_catalog_url = "${escapeTomlBasicString(buildCodexModelCatalogUrl(baseUrl))}"\n` : ''}wire_api = "responses"
 supports_websockets = false
 supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
@@ -1350,7 +1379,7 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 
 model_provider = "OpenAI"
 model = "${model}"
-web_search = "live"
+${codexLocalCatalogToml.value}web_search = "live"
 network_access = "enabled"
 # Optional:
 # review_model = "${model}"
@@ -1363,7 +1392,7 @@ network_access = "enabled"
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
-experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
+${codexModelCatalogMode.value === 'remote' ? `model_catalog_url = "${escapeTomlBasicString(buildCodexModelCatalogUrl(baseUrl))}"\n` : ''}experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 # API-key providers: do not require ChatGPT OAuth login
 requires_openai_auth = false
@@ -1425,13 +1454,13 @@ model_provider = "OpenAI"
 model = "${model}"
 review_model = "${model}"
 disable_response_storage = true
-web_search = "live"
+${codexLocalCatalogToml.value}web_search = "live"
 network_access = "enabled"
 
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
-experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
+${codexModelCatalogMode.value === 'remote' ? `model_catalog_url = "${escapeTomlBasicString(buildCodexModelCatalogUrl(baseUrl))}"\n` : ''}experimental_bearer_token = "${escapeTomlBasicString(apiKey)}"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
@@ -1465,14 +1494,14 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-web_search = "live"
+${codexLocalCatalogToml.value}web_search = "live"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
 [model_providers.OpenAI]
 name = "OpenAI"
 base_url = "${baseUrl}"
-wire_api = "responses"
+${codexModelCatalogMode.value === 'remote' ? `model_catalog_url = "${escapeTomlBasicString(buildCodexModelCatalogUrl(baseUrl))}"\n` : ''}wire_api = "responses"
 supports_websockets = true
 supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
@@ -1547,6 +1576,23 @@ function generateOpenCodeConfig(
     },
     'gpt-5.6': {
       name: 'GPT-5.6 (Sol)',
+      limit: {
+        context: 1050000,
+        output: 128000
+      },
+      options: {
+        store: false
+      },
+      variants: {
+        low: {},
+        medium: {},
+        high: {},
+        xhigh: {},
+        max: {}
+      }
+    },
+    'gpt-6.1-sol': {
+      name: 'GPT-6.1 Sol',
       limit: {
         context: 1050000,
         output: 128000
@@ -1966,6 +2012,19 @@ function generateOpenCodeConfig(
     }
   }
   const claudeModels = {
+    'claude-sonnet-5-5': {
+      name: 'Claude Sonnet 5.5',
+      limit: { context: 1000000, output: 128000 },
+      modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
+      options: { thinking: { type: 'adaptive' }, effort: 'high' },
+      variants: {
+        low: { effort: 'low' },
+        medium: { effort: 'medium' },
+        high: { effort: 'high' },
+        xhigh: { effort: 'xhigh' },
+        max: { effort: 'max' }
+      }
+    },
     'claude-opus-5-5': {
       name: 'Claude Opus 5.5',
       limit: { context: 1000000, output: 128000 },

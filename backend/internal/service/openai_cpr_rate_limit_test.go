@@ -164,18 +164,22 @@ func TestCPRQuotaFailureCapturedForAllHTTPProtocols(t *testing.T) {
 				svc.rateLimitService = limits
 				limits.SetAccountRuntimeBlocker(svc)
 				body := []byte(fmt.Sprintf(`{"model":"gpt-5.4","max_tokens":10,"input":"hi","messages":[{"role":"user","content":"hi"}],"stream":%t}`, streaming))
-				c, rec, _ := rawRelayTestContext(t, context.Background(), "/v1/"+protocol, body, "", nil)
+				reservation := &InflightReservation{}
+				ctx := WithInflightReservation(context.Background(), reservation)
+				c, rec, _ := rawRelayTestContext(t, ctx, "/v1/"+protocol, body, "", nil)
 				var result *OpenAIForwardResult
 				var err error
 				switch protocol {
 				case "responses":
-					result, err = svc.Forward(context.Background(), c, account, body)
+					result, err = svc.Forward(ctx, c, account, body)
 				case "messages":
-					result, err = svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "")
+					result, err = svc.ForwardAsAnthropic(ctx, c, account, body, "", "")
 				default:
-					result, err = svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+					result, err = svc.ForwardAsChatCompletions(ctx, c, account, body, "", "")
 				}
 				require.Error(t, err)
+				require.Same(t, reservation, InflightReservationFromContext(c.Request.Context()),
+					"CPR usage capture must preserve the reservation for failure billing")
 				if !streaming {
 					var f *UpstreamFailoverError
 					require.ErrorAs(t, err, &f)

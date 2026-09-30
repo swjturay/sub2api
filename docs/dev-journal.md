@@ -1,5 +1,25 @@
 # Development Journal
 
+## Upstream v0.2.11 intake (2026-09-30)
+
+Merge the official v0.2.11 tag (96f4c115c9749078f90cbf210a01d39baf3f53b6)
+into cce-deploy, including the intervening v0.2.10 changes. Preserve the CPR
+quota retry repair in a preceding independent commit (d7685f2c7). Retain CCE
+Insights wiring, client setup and inline credentials, OS selection, shared-ai
+OpenCode providers, native CPR forwarding, cancellation and measured billing.
+Integrate upstream remote/local Codex model catalogs and new model metadata;
+set the runtime VERSION file to 0.2.11 (the upstream tag still contains 0.2.10).
+
+The upstream balance reservation adds a billing-task reference to the existing
+CCE usage task wrappers, including mandatory fallback. Added regressions verify
+that CPR failure capture preserves the reservation across all three HTTP/SSE
+protocols and that cancellation does not release it before queued billing ends.
+Regenerated Wire agrees with the resolved file, including Insights and the new
+Claude reset service. No schema migration or production configuration changes.
+
+See [the intake report](tasks/upstream-v0.2.11-merge.md) for conflict decisions,
+validation and new default settings that matter at deployment.
+
 ## CPR exhausted-binding retry and cooldown (2026-09-30)
 
 Fix the inherited direct OAuth 120-second retry/deferred-cooldown policy on CPR
