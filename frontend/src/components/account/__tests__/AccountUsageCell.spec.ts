@@ -130,6 +130,32 @@ describe('AccountUsageCell', () => {
     })
   })
 
+  it.each([false, true])('shows CPR refresh failure with cached quota=%s and keeps refresh available', async (cached) => {
+    getUsage.mockResolvedValue({
+      error: 'CPR quota is unavailable: configure the management credentials.',
+      error_code: 'cpr_not_configured',
+      five_hour: cached ? { utilization: 100, resets_at: null } : null,
+      seven_day: cached ? { utilization: 76, resets_at: null } : null
+    })
+    const wrapper = mount(AccountUsageCell, {
+      props: { account: makeAccount({ platform: 'openai', type: 'cpr' }) },
+      global: { stubs: {
+        UsageProgressBar: { props: ['utilization'], template: '<span data-test="quota-bar">{{ utilization }}</span>' },
+        OpenAIQuotaResetCell: true
+      } }
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.accounts.usageError')
+    expect(wrapper.find('[role="status"]').attributes('title')).toContain('management credentials')
+    expect(wrapper.findAll('[data-test="quota-bar"]').map(node => node.text())).toEqual(cached ? ['100', '76'] : [])
+    const refresh = wrapper.findAll('button').find(button => button.text().includes('admin.accounts.usageWindow.activeQuery'))
+    expect(refresh).toBeDefined()
+    await refresh!.trigger('click')
+    await flushPromises()
+    expect(getUsage).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
   it('renders eligible Ollama Cloud state and forwards query updates', async () => {
     const wrapper = mount(AccountUsageCell, {
       props: {

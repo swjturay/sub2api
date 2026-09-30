@@ -342,27 +342,55 @@ func convertCPRWindow(window cprQuotaWindow, now time.Time) *OpenAIRateLimitWind
 // 被误读成"这个账号没额度了"。
 func (s *AccountUsageService) refreshCPRCodexSnapshot(ctx context.Context, account *Account, usage *UsageInfo, now time.Time) {
 	if s == nil || s.cprQuotaService == nil || account == nil {
+		setCPRQuotaRefreshError(usage, ErrCPRNotConfigured)
 		return
 	}
 	state, err := s.cprQuotaService.FetchAccountState(ctx, account)
 	if err != nil {
 		slog.Warn("cpr_account_state_query_failed", "account_id", account.ID, "error", err)
+		setCPRQuotaRefreshError(usage, err)
 		return
 	}
 	if state != nil && state.RateLimit == nil && len(state.LimitIDs) > 0 {
 		warnCPRQuotaNoUsableWindow(account.ID, state.LimitIDs)
 	}
 	updates := buildCPRCodexExtraUpdates(account, state)
-	if len(updates) == 0 {
+	if len(updates) > 0 {
+		mergeAccountExtra(account, updates)
+		s.persistOpenAICodexProbeSnapshot(account.ID, updates)
+	}
+	if state == nil || state.RateLimit == nil {
+		if usage != nil {
+			usage.ErrorCode = "cpr_quota_unknown"
+			usage.Error = "CPR did not provide a usable quota window."
+		}
 		return
 	}
-	mergeAccountExtra(account, updates)
-	s.persistOpenAICodexProbeSnapshot(account.ID, updates)
-	if usage != nil && state.RateLimit != nil {
-		if usage.UpdatedAt == nil {
-			usage.UpdatedAt = &now
-		}
+	if usage != nil {
+		usage.Error, usage.ErrorCode = "", ""
+		usage.UpdatedAt = &state.FetchedAt
 		applyExtraToUsage(usage, account.Extra, now)
+	}
+}
+
+// Admin transport errors can contain private endpoints or response bodies. Only
+// stable, actionable descriptions belong in the usage response.
+func setCPRQuotaRefreshError(usage *UsageInfo, err error) {
+	if usage == nil {
+		return
+	}
+	usage.ErrorCode = "cpr_quota_unavailable"
+	usage.Error = "CPR quota refresh failed; check the management connection and retry."
+	switch {
+	case errors.Is(err, ErrCPRNotConfigured):
+		usage.ErrorCode = "cpr_not_configured"
+		usage.Error = "CPR quota is unavailable: configure the admin URL, admin API key and bound account ID."
+	case errors.Is(err, ErrCPRAdminKeyInvalid):
+		usage.ErrorCode = "cpr_admin_key_invalid"
+		usage.Error = "CPR rejected the management API key."
+	case errors.Is(err, ErrCPRAccountMissing):
+		usage.ErrorCode = "cpr_account_missing"
+		usage.Error = "The bound CPR account was not found."
 	}
 }
 

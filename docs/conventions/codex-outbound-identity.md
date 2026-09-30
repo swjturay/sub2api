@@ -68,6 +68,11 @@ retain precedence. The internal CPR hop does not determine public egress.
 CPR quota snapshots come only from the CPR Admin API. Sub2API still owns quota,
 scheduling, model, and rate-limit policy, but must not query OpenAI directly on
 behalf of a CPR account or silently fall back to a direct OAuth path.
+An admin refresh failure must expose a sanitized error, retain the last valid
+quota and its observation time, and leave missing windows unknown. Local usage
+statistics cannot create a zero-percent CPR quota. Proxy/plan observations do
+not make an unavailable quota fresh. Keep the refresh action available beside
+the error and any retained quota bars.
 
 ## CPR Native Relay And Accounting
 

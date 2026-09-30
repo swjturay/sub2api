@@ -118,6 +118,14 @@
 
     <!-- OpenAI OAuth accounts: single source from /usage API -->
     <template v-else-if="isOpenAICodexUsageAccount">
+      <div
+        v-if="usageInfo?.error || error"
+        role="status"
+        class="mb-1 text-xs text-amber-600 dark:text-amber-400"
+        :title="usageInfo?.error || error || undefined"
+      >
+        {{ usageInfo?.error ? usageErrorLabel : error }}
+      </div>
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
           v-if="usageInfo?.five_hour"

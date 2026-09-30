@@ -369,7 +369,7 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 	// 管理面探测可以清理 CPR 自身的可恢复错误，不代表任何本地 OAuth 凭据恢复。
 	if account.Platform == PlatformOpenAI && account.IsCPR() {
 		usage, err := s.getOpenAIUsage(ctx, account, forceProbe)
-		if err == nil {
+		if err == nil && usage != nil && usage.Error == "" {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
 		return usage, err
@@ -725,6 +725,13 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 		return usage, nil
 	}
 	account = snapshotOpenAIOutboundAccount(account)
+	if account.IsCPR() {
+		// A failed admin refresh must not make an old quota snapshot look fresh.
+		usage.UpdatedAt = nil
+		if updatedAt, err := parseTime(fmt.Sprint(account.Extra["codex_usage_updated_at"])); err == nil {
+			usage.UpdatedAt = &updatedAt
+		}
+	}
 
 	applyExtraToUsage(usage, account.Extra, now)
 
@@ -779,17 +786,21 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 	}
 
 	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.FiveHour, 5*time.Hour, now)); err == nil {
-		if usage.FiveHour == nil {
+		if usage.FiveHour == nil && !account.IsCPR() {
 			usage.FiveHour = &UsageProgress{Utilization: 0}
 		}
-		usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats)
+		if usage.FiveHour != nil {
+			usage.FiveHour.WindowStats = windowStatsFromAccountStats(stats)
+		}
 	}
 
 	if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, codexWindowStatsStart(usage.SevenDay, 7*24*time.Hour, now)); err == nil {
-		if usage.SevenDay == nil {
+		if usage.SevenDay == nil && !account.IsCPR() {
 			usage.SevenDay = &UsageProgress{Utilization: 0}
 		}
-		usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
+		if usage.SevenDay != nil {
+			usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
+		}
 	}
 
 	return usage, nil

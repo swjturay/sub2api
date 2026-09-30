@@ -1,5 +1,31 @@
 # Development Journal
 
+## CPR quota refresh failures (2026-09-30)
+
+Production account 40 lacked its CPR management key. The quota API swallowed
+that configuration error, stamped the query time as fresh, and created zero
+quota bars while attaching local accounting statistics. Preserve actual quota
+freshness and missing windows, return sanitized admin error codes/messages,
+and display the warning alongside cached values and the refresh button. A
+failed refresh must not clear an account's recoverable error. The missing key
+was repaired through the admin API after validating the exact bound account;
+the account remains manually paused. Both displayed windows now match CPR.
+
+The real failure reproduced before the patch, as did the backend regression
+and two UI tests. Targeted CPR/account-usage tests and all 56 account usage
+component tests pass; frontend production build and changed-file lint pass.
+No billing, generation transport, retry policy or database migration changes.
+
+Separate log diagnosis found 416 CPR routing rejections with `not_sent` from
+14:18 to 14:58 CST. One converted request retried 230 times in 120 seconds
+despite logging a limit of 3: CPR inherits the direct OAuth transient-429
+deadline, which intentionally overrides the pool count and delays cooldown.
+CPR quota failures are masked as generic capacity errors on this path. This
+is inappropriate for an exhausted one-to-one binding. Recommended follow-up:
+apply the configured retry count to CPR, switch bindings promptly and use
+confirmed quota/reset information for cooldown. Keep direct OAuth policy and
+no-replay-after-output/cancellation rules. Retry policy is unchanged here.
+
 ## CPR publication and database-test isolation (2026-09-30)
 
 Published the native-relay implementation as `fb61caa11` on `cce-deploy`.
