@@ -332,3 +332,13 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 func f64Ptr(value float64) *float64 {
 	return &value
 }
+
+func TestUsageLogCodexObservationAdminOnly(t *testing.T) {
+	log := &service.UsageLog{CodexObservation: &service.CodexObservation{Transport: "websocket_unobserved"}}
+	admin, err := json.Marshal(UsageLogFromServiceAdmin(log))
+	require.NoError(t, err)
+	user, err := json.Marshal(UsageLogFromService(log))
+	require.NoError(t, err)
+	require.Contains(t, string(admin), "codex_observation")
+	require.NotContains(t, string(user), "codex_observation")
+}

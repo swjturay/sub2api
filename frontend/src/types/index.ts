@@ -1808,7 +1808,23 @@ export interface UsageLogAccountSummary {
   name: string
 }
 
+export interface CodexObservation {
+  transport: 'http' | 'websocket_unobserved'
+  safety?: {
+    enabled_present: boolean
+    faster_model_present: boolean
+    enabled: boolean | null
+    faster_model?: string
+  }
+  route?: {
+    outbound_digest?: string
+    response_digest?: string
+    response_gateway_hint?: string
+  }
+}
+
 export interface AdminUsageLog extends UsageLog {
+  codex_observation?: CodexObservation | null
   upstream_model?: string | null
   upstream_reasoning_effort?: string | null
   upstream_response_model?: string | null

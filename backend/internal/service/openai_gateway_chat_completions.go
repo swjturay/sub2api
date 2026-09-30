@@ -629,12 +629,14 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 	// text/event-stream，会经 WriteFilteredHeaders 透传进来；而 c.JSON 走 Gin 的
 	// writeContentType 仅在头不存在时才设置，无法覆盖。这里显式 Set 强制改回 JSON，
 	// 否则下游"看头判流式"的中间层（如 new-api）会把本应聚合的 JSON 当成 SSE 处理。
+	relayOpenAICodexSafetyBufferingHeaders(c.Writer.Header(), resp.Header)
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	c.JSON(http.StatusOK, chatResp)
 
 	result := &OpenAIForwardResult{
 		RequestID:                     requestID,
 		UpstreamHeaders:               resp.Header,
+		CodexObservation:              codexObservationFromResponse(resp),
 		Usage:                         usage,
 		Model:                         originalModel,
 		BillingModel:                  billingModel,
@@ -757,6 +759,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		out := &OpenAIForwardResult{
 			RequestID:                     requestID,
 			UpstreamHeaders:               resp.Header,
+			CodexObservation:              codexObservationFromResponse(resp),
 			Usage:                         usage,
 			Model:                         originalModel,
 			BillingModel:                  billingModel,

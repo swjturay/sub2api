@@ -232,8 +232,14 @@ func applyCodexAlphaSearchWireProfile(c *gin.Context, account *Account, headers 
 // 出站值为空时同样跳过，宁可留着客户端原值也不写一个空串。
 func alignCodexTurnMetadataFields(headers http.Header, values map[string]string) {
 	raw := headers.Get(openAIWSTurnMetadataHeader)
+	if next := alignCodexTurnMetadataJSON(raw, values); next != raw {
+		headers.Set(openAIWSTurnMetadataHeader, next)
+	}
+}
+
+func alignCodexTurnMetadataJSON(raw string, values map[string]string) string {
 	if !gjson.Valid(raw) || !gjson.Parse(raw).IsObject() {
-		return
+		return raw
 	}
 	next := rewriteCodexTurnMetadataJSON(raw, false, func(metadata map[string]any) map[string]any {
 		updates := make(map[string]any, len(values))
@@ -247,9 +253,7 @@ func alignCodexTurnMetadataFields(headers http.Header, values map[string]string)
 		}
 		return updates
 	})
-	if next != raw {
-		headers.Set(openAIWSTurnMetadataHeader, next)
-	}
+	return next
 }
 
 func stripCodexTurnMetadataFields(headers http.Header, fields ...string) {

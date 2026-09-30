@@ -533,6 +533,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	forwardResult := &OpenAIForwardResult{
 		RequestID:                     resp.Header.Get("x-request-id"),
 		UpstreamHeaders:               resp.Header,
+		CodexObservation:              codexObservationFromResponse(resp),
 		ResponseID:                    responseID,
 		Usage:                         *usage,
 		Model:                         reqModel,
@@ -641,6 +642,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 
 	// 与非透传路径同一条规则。透传的入站若本就是真客户端形态，这一步是恒等变换。
+	body = alignCodexTurnMetadataExecutionBody(c, account, targetURL, body)
 	body = applyCodexBodyFieldOrder(c, account, targetURL, body)
 
 	// 双开出站时区收口：真客户端把本机时区与当天日期写进 environment_context，客户端在国内、
@@ -781,6 +783,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	applyCodexDeviceWireProfile(c, account, req.Header, false)
+	alignCodexTurnMetadataExecutionHeader(c, account, targetURL, req.Header, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 
 	// 侧信道：按真客户端节奏补一条只读 GET settings/user（openai_codex_side_calls.go）。
@@ -2498,6 +2501,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 }
 
 func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {
+	relayOpenAICodexSafetyBufferingHeaders(dst, src)
 	if dst == nil || src == nil {
 		return
 	}

@@ -6,13 +6,78 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func TestMappedGPT55LiteCompressedBuildersOnWire(t *testing.T) {
+	for _, passthrough := range []bool{false, true} {
+		name := "normal"
+		if passthrough {
+			name = "passthrough"
+		}
+		t.Run(name, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-5.5","stream":false,"input":[],"client_metadata":{"ws_request_header_x_openai_internal_codex_responses_lite":"true","keep":"yes","x-codex-turn-metadata":"{\"model\":\"gpt-6-astra\",\"reasoning_effort\":\"ultra\"}"}}`)
+			c := newConvTestContext(t, body)
+			c.Request.Header.Set(responsesLiteHeader, "true")
+			account := wireProfileTestAccount(true)
+			svc := &OpenAIGatewayService{cfg: &config.Config{}}
+			var request *http.Request
+			var err error
+			if passthrough {
+				request, err = svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "test-token")
+			} else {
+				request, err = svc.buildUpstreamRequest(context.Background(), c, account, body, "test-token", true, "", false)
+			}
+			require.NoError(t, err)
+			// WS-to-HTTP invokes compatibility once more with the pre-builder body.
+			require.NoError(t, applyMappedGPT55LiteCompatibility(request, account, body))
+			var received []byte
+			var readErr error
+			var encoding, lite string
+			var contentLength int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				received, readErr = io.ReadAll(r.Body)
+				encoding, lite, contentLength = r.Header.Get("Content-Encoding"), r.Header.Get(responsesLiteHeader), r.ContentLength
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			request.URL, err = url.Parse(server.URL)
+			require.NoError(t, err)
+			response, err := server.Client().Do(request)
+			require.NoError(t, err)
+			require.NoError(t, response.Body.Close())
+			require.NoError(t, readErr)
+			require.Equal(t, "zstd", encoding)
+			require.Empty(t, lite)
+			require.Equal(t, int64(len(received)), contentLength)
+			decoder, err := zstd.NewReader(nil)
+			require.NoError(t, err)
+			defer decoder.Close()
+			decoded, err := decoder.DecodeAll(received, nil)
+			require.NoError(t, err)
+			require.False(t, isOpenAIResponsesLiteWebSocketPayload(decoded))
+			require.Equal(t, "yes", gjson.GetBytes(decoded, "client_metadata.keep").String())
+			metadata := gjson.GetBytes(decoded, "client_metadata.x-codex-turn-metadata").String()
+			require.Equal(t, "gpt-5.5", gjson.Get(metadata, "model").String())
+			require.Equal(t, "ultra", gjson.Get(metadata, "reasoning_effort").String())
+			require.True(t, isOpenAIResponsesLiteWebSocketPayload(body), "failover must retain the ingress body")
+			require.Equal(t, "true", c.GetHeader(responsesLiteHeader))
+			replay, err := request.GetBody()
+			require.NoError(t, err)
+			again, err := io.ReadAll(replay)
+			require.NoError(t, err)
+			require.NoError(t, replay.Close())
+			require.Equal(t, received, again)
+		})
+	}
+}
 
 func TestMappedGPT55LiteCompatibility(t *testing.T) {
 	for _, tc := range []struct {

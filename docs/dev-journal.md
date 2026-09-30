@@ -1,5 +1,98 @@
 # Development Journal
 
+## OAuth local token counting (2026-09-30)
+
+OAuth and OpenAI setup-token accounts now estimate both Responses input_tokens
+and Anthropic count_tokens locally before credential retrieval or refresh.
+Model mapping, Anthropic conversion, tiktoken estimation and minimum fallback
+are reused. Logs mark direct estimates with reason=oauth_local and upstream
+status zero. API-key policy and CPR's distinct native/Anthropic paths stay as-is.
+
+Production read-only evidence motivated this optimization: the retained ingress
+window (2026-09-29 19:24 through 2026-09-30 08:37 +08:00) contained 28 Claude Code
+count requests and no Responses input_tokens requests. In the shorter retained
+application window, 11 OAuth requests received upstream 401 before local fallback
+(0.55–5.78 seconds); 15 CPR requests returned upstream 405. This patch avoids the
+OAuth round trip; it does not address CPR 405 or alter inference usage/billing.
+
+Regression coverage exercises both endpoints for OAuth/setup-token accounts
+without credentials, malformed input, zero transport calls and no account error
+or temporary-unschedulable mutations; API-key and CPR transport boundaries remain
+covered. Changes are local and have not been deployed.
+
+Validation: full service and handler suites passed with
+`go test -p 2 -tags=unit ./internal/service ./internal/handler -count=1`
+(206.488s / 39.404s); `go build -p 2 ./...`, the operations repository validator
+and diff whitespace checks passed. Local HEADs match remote main/cce-deploy;
+existing unrelated working-tree changes were preserved. No commit or push.
+
+## Codex protocol fidelity and passive observations (2026-09-29)
+
+Selected intake from KLNO d75d6b8 onto CCE 6f23460, preserving the earlier proxy,
+OAuth exchange-cookie isolation and Lite/compression changes:
+
+- Preserve native `call_*` IDs and align existing turn metadata model values
+  after mapping, in HTTP normal/passthrough bodies/headers and WS final frames.
+  Preserve CCE ASCII handling, unknown metadata and reasoning selection.
+- Relay safety hints through Responses and Chat/Anthropic bridges; persist
+  presence separately from parsed enabled values. Native WS coverage remains
+  explicitly unknown; WS-to-HTTP carries actual HTTP observations.
+- Replace donor raw-cookie/shared-jar route logging with immutable per-attempt
+  account-scoped HMAC digests. Separate sent and received values; only a bounded
+  unverified gateway hint is decoded. No Cookie replay or routing-policy change.
+- Add nullable JSONB migration 243 and adapt single/batch inserts, scan and
+  admin-only DTO. Admin usage has an optional expandable observation column,
+  including migration of existing column preferences.
+- Review caught and fixed bridge observation/header omissions and Lite's second
+  pass reverting finalized metadata. Regression tests cover these compositions.
+
+OAuth local token estimation is intentionally unchanged. It is a count-endpoint
+compatibility optimization, not inference acceleration or billing accuracy.
+The research report in the operations repository records the value assessment.
+
+Validation: `go test -p 2 -tags=unit ./...` passed; after review fixes, the full
+service package passed again (198 seconds), followed by `go build -p 2 ./...`.
+SQL mock roundtrip covers NULL/HTTP/WS observations, single insert shape and
+batch argument wiring; admin-only JSON exposure and concurrent snapshot
+regressions passed. Frontend table/view/i18n suites passed (49 tests), as did
+typecheck, changed-file ESLint and production build. Existing bundle-size and
+Browserslist-age warnings remain. The root operations validator and whitespace
+checks passed. Standards review has no remaining blocker; Spec review's three
+findings were fixed and re-reviewed successfully.
+
+The real PostgreSQL integration test was compiled but explicitly skipped by
+the harness because Docker remains unavailable, even after attempting to start
+Docker Desktop. Migration 243 and database roundtrips still require execution
+before release; local Go lint is unavailable. No production deployment,
+commit, push, Cookie replay or Guardian injection is included.
+
+## Selective KLNO reliability intake (2026-09-29)
+
+Compared CCE `6f23460cff9ef2aff144a11654457b842c01c286` with KLNO
+`d75d6b870697e6380f9f81765b73c0f36a9ea4f9`. The user selected three changes:
+
+- Refresh-token import fails before network access on proxy lookup errors or
+  missing proxy objects.
+- OpenAI token exchange/refresh disables cookie storage and replay while keeping
+  pooled connections. Cookie policy separates cache entries. Browser and Codex
+  management-plane factories retain their existing behavior.
+- Lite payload edits retain valid zstd encoding, length and replay bytes. Native
+  Lite requests omit synthesized instructions only within the existing device
+  profile and unchanged-model boundary. All three compact fallback paths restore
+  missing instructions; explicit client instructions remain authoritative.
+
+Adapted selected code and Lite regressions from KLNO, without taking its raw
+relay, turn-state, cookie replay, Guardian, token-estimation or database changes.
+Added proxy nil/error tests, a two-account cookie replay test, and real HTTP
+captures for compressed builders and native OAuth/setup-token Lite requests.
+
+Validation: targeted regressions passed, followed by `go test -tags=unit ./...`
+and `go build ./...`. Additional HTTP capture tests for native OAuth/setup-token
+Lite requests passed after review. The operations repository validator and
+whitespace checks passed. Local Go lint is unavailable; container-backed
+integration and exact-source CI remain release gates. No commit, push, image
+publication or production deployment is part of this intake.
+
 ## Insights release validation correction (2026-09-29)
 
 The release CI caught unchecked type assertions in the department bucket regression helper. Added explicit response/bucket type checks with test failures and helper attribution, preserving the existing regression coverage and production behavior. The release remains gated on all exact-source CI checks; no lint rules were weakened.

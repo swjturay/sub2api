@@ -275,6 +275,7 @@ func applyCodexWSFrameWireProfile(c *gin.Context, account *Account, payload []by
 		}
 		payload = setCodexWSClientMetadataString(payload, codexWSStreamRequestStartKey,
 			strconv.FormatInt(time.Now().UnixMilli(), 10))
+		payload = alignCodexEmbeddedTurnMetadata(payload, codexTurnMetadataExecutionValues(payload))
 	}
 	timezone := codexWireTimezoneName(account)
 	payload = rewriteCodexEnvironmentTimezoneWithName(timezone, payload)

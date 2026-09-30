@@ -296,6 +296,22 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-codex_observation="{ row }">
+          <details v-if="row.codex_observation?.transport === 'http'" class="max-w-xs text-xs text-gray-700 dark:text-gray-200">
+            <summary class="cursor-pointer rounded py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500">
+              {{ t('admin.usage.codexObservation') }}
+            </summary>
+            <dl class="space-y-2 whitespace-normal py-2">
+              <div><dt>{{ t('admin.usage.safetyHeader') }}</dt><dd>{{ safetyObservationLabel(row) }}</dd></div>
+              <div><dt>{{ t('admin.usage.safetyFallbackModel') }}</dt><dd>{{ row.codex_observation.safety?.faster_model || (row.codex_observation.safety?.faster_model_present ? t('admin.usage.observationInvalid') : t('admin.usage.observationAbsent')) }}</dd></div>
+              <div><dt>{{ t('admin.usage.routeOutboundDigest') }}</dt><dd class="break-all font-mono">{{ row.codex_observation.route?.outbound_digest || t('admin.usage.observationNoDigest') }}</dd></div>
+              <div><dt>{{ t('admin.usage.routeResponseDigest') }}</dt><dd class="break-all font-mono">{{ row.codex_observation.route?.response_digest || t('admin.usage.observationNoDigest') }}</dd></div>
+              <div><dt>{{ t('admin.usage.routeGatewayHint') }}</dt><dd>{{ row.codex_observation.route?.response_gateway_hint || t('admin.usage.observationAbsent') }}</dd></div>
+            </dl>
+          </details>
+          <span v-else class="text-xs text-gray-500 dark:text-gray-400">{{ row.codex_observation?.transport === 'websocket_unobserved' ? t('admin.usage.observationWS') : t('admin.usage.observationMissing') }}</span>
+        </template>
+
         <template #cell-ip_address="{ row }">
           <div v-if="row.ip_address">
             <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
@@ -685,6 +701,14 @@ const copyIdentifier = async (value: string, copiedMessage: string) => {
 }
 
 const copyRequestId = (requestId: string) => copyIdentifier(requestId, t('admin.usage.requestIdCopied'))
+const safetyObservationLabel = (row: AdminUsageLog): string => {
+  const safety = row.codex_observation?.safety
+  if (!safety) return t('admin.usage.observationMissing')
+  if (!safety.enabled_present) return t('admin.usage.observationAbsent')
+  if (safety.enabled === null) return t('admin.usage.observationInvalid')
+  return String(safety.enabled)
+}
+
 const copyUpstreamRequestId = (upstreamRequestId: string) =>
   copyIdentifier(upstreamRequestId, t('admin.usage.upstreamRequestIdCopied'))
 

@@ -95,6 +95,7 @@ const DataTableStub = {
         <slot name="cell-cost" :row="row" />
         <slot name="cell-request_id" :row="row" />
         <slot name="cell-upstream_request_id" :row="row" />
+        <slot name="cell-codex_observation" :row="row" />
       </div>
     </div>
   `,
@@ -852,5 +853,33 @@ describe('admin UsageTable deleted-user badge', () => {
 
     expect(wrapper.text()).not.toContain('Deleted')
     expect(wrapper.text()).toContain('active@test.com')
+  })
+})
+
+describe('Codex passive observations', () => {
+  it('distinguishes false, invalid, absent and unobserved without exposing cookies', () => {
+    const observations = [
+      { transport: 'http', safety: { enabled_present: true, enabled: false, faster_model_present: true, faster_model: 'retry-only' }, route: { outbound_digest: 'v1:outbound', response_digest: 'v1:response', response_gateway_hint: 'unified-123' } },
+      { transport: 'http', safety: { enabled_present: true, enabled: null, faster_model_present: false } },
+      { transport: 'http', safety: { enabled_present: false, enabled: null, faster_model_present: false } },
+      { transport: 'websocket_unobserved' },
+      null,
+    ]
+    const wrapper = mount(UsageTable, {
+      props: { data: observations.map((o, i) => ({ ...baseImageRow, request_id: `observation-${i}`, codex_observation: o })), loading: false, columns: [] },
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+    })
+    expect(wrapper.findAll('details')).toHaveLength(3)
+    expect(wrapper.findAll('summary')).toHaveLength(3)
+    expect(wrapper.text()).toContain('false')
+    expect(wrapper.text()).toContain('admin.usage.observationInvalid')
+    expect(wrapper.text()).toContain('admin.usage.observationAbsent')
+    expect(wrapper.text()).toContain('admin.usage.observationWS')
+    expect(wrapper.text()).toContain('admin.usage.observationMissing')
+    expect(wrapper.text()).toContain('v1:outbound')
+    expect(wrapper.text()).toContain('v1:response')
+    expect(wrapper.text()).toContain('retry-only')
+    expect(wrapper.text()).toContain('unified-123')
+    expect(wrapper.text()).not.toContain('__oailb=')
   })
 })

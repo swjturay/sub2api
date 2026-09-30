@@ -63,7 +63,11 @@ func (s *OpenAIGatewayService) ForwardResponsesInputTokens(
 	}
 
 	if shouldEstimateOpenAIInputTokensLocally(account) {
-		writeOpenAIResponsesInputTokensFallback(c, account, prepared, 0, "custom_relay")
+		reason := "custom_relay"
+		if account.UsesOpenAICodexProtocol() {
+			reason = "oauth_local"
+		}
+		writeOpenAIResponsesInputTokensFallback(c, account, prepared, 0, reason)
 		return nil
 	}
 
@@ -151,12 +155,16 @@ func prepareNativeOpenAIInputTokensCountRequest(body []byte, account *Account) (
 }
 
 func shouldEstimateOpenAIInputTokensLocally(account *Account) bool {
+	// Direct OAuth/setup-token credentials do not support the platform counting
+	// endpoint. Estimate before token refresh or any upstream network request.
+	if account.UsesOpenAICodexProtocol() {
+		return true
+	}
 	if account == nil || account.IsGrok() || account.IsCNProvider() || account.Type == AccountTypeUpstream {
 		return true
 	}
-	// CPR 中继：它的路由表（openai/router.rs:21-27）只有 responses / alpha_search /
-	// images / models，**没有 input_tokens**。原来的 `Type != apikey → false` 本意是
-	// "OAuth 走官方端点"，对中继账号是错的——会把 CPR 的 client key 发给 api.openai.com。
+	// CPR 中继：它的路由表只有 responses / alpha_search / images / models，
+	// 没有 input_tokens；原生 Responses 计数继续本地估算。
 	// 用 Type 而非 IsCPR()：IsCPR() 还要求 platform==openai，平台错配的脏数据
 	// 不该从这里漏回官方端点（下游 buildInputTokensUpstreamRequest 同样按 Type 分流）。
 	if account.Type == AccountTypeCPR {
@@ -300,6 +308,11 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	if err != nil {
 		writeAnthropicCountTokensError(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
 		return err
+	}
+
+	if account.UsesOpenAICodexProtocol() {
+		writeOpenAIOAuthInputTokensFallback(c, account, prepared, 0)
+		return nil
 	}
 
 	upstreamBody, err := marshalOpenAIUpstreamJSON(prepared.Request)
@@ -527,6 +540,10 @@ func isOpenAIInputTokensUnsupported(statusCode int, body []byte) bool {
 }
 
 func writeOpenAIOAuthInputTokensFallback(c *gin.Context, account *Account, prepared *openAIInputTokensCountPrepared, statusCode int) {
+	reason := "upstream_unsupported"
+	if statusCode == 0 {
+		reason = "oauth_local"
+	}
 	estimated := openAIInputTokensFallbackMinimum
 	if got, err := estimateOpenAIInputTokens(prepared.Request); err == nil {
 		if got > 0 {
@@ -534,6 +551,7 @@ func writeOpenAIOAuthInputTokensFallback(c *gin.Context, account *Account, prepa
 		}
 		logger.L().Info("openai count_tokens: oauth fallback to local tiktoken estimate",
 			zap.Int64("account_id", account.ID),
+			zap.String("reason", reason),
 			zap.Int("upstream_status", statusCode),
 			zap.Int("estimated_input_tokens", estimated),
 			zap.String("upstream_model", prepared.UpstreamModel),
@@ -541,6 +559,7 @@ func writeOpenAIOAuthInputTokensFallback(c *gin.Context, account *Account, prepa
 	} else {
 		logger.L().Warn("openai count_tokens: oauth local tiktoken fallback failed, using minimum estimate",
 			zap.Int64("account_id", account.ID),
+			zap.String("reason", reason),
 			zap.Int("upstream_status", statusCode),
 			zap.Int("estimated_input_tokens", estimated),
 			zap.String("upstream_model", prepared.UpstreamModel),

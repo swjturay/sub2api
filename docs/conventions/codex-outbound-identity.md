@@ -10,6 +10,52 @@ account UA on inference, alpha search, and token-counting requests.
 Regression tests must call production request builders and inspect what an
 HTTP test server receives, including compatibility bridges and setup tokens.
 
+OAuth/setup-token Responses input_tokens and Anthropic count_tokens requests
+estimate locally after model mapping/conversion, before credential retrieval,
+refresh or upstream dispatch. Reuse the existing estimator and minimum fallback;
+these are approximate preflight counts, never billing usage. Logs identify the
+direct estimate with reason=oauth_local and upstream_status=0. Preserve API-key
+counting policy and CPR's separate native/Anthropic behavior.
+
+Token import must stop if an explicitly selected proxy cannot be resolved,
+including an empty lookup result. Token exchange and refresh reuse connections
+but disable the shared cookie jar; cookie policy participates in the pool key.
+
+Native Lite requests with the device wire profile keep their existing developer
+instructions without synthesizing a second top-level prompt. This exception
+requires an unchanged model and the native additional-tools shape. Compact
+fallback restores the omitted default prompt when switching models, without
+overwriting supplied instructions. Modifying an already compressed Lite body
+must recompress it and update its length and replay body together.
+
+Native device-profile requests preserve upstream-shaped `call_*` IDs across
+calls, outputs and references. Keep legacy/third-party normalization separate.
+After model mapping, align existing turn-metadata model fields with the final
+HTTP body or WS frame. Preserve missing/invalid metadata, unknown fields and
+the user's reasoning-effort selection. Lite compatibility must edit the
+finalized request body so a repeated bridge pass cannot undo model alignment.
+
+## Passive Codex Observations
+
+Capture HTTP observations per attempt at transport dispatch/response, and carry
+the immutable snapshot into usage recording. Never reread shared cookie state.
+Safety header presence is independent of its parsed Boolean value. The retry
+model hint is not evidence of the model serving the request. Preserve those
+headers on HTTP Responses and compatibility-bridge responses, subject to the
+existing first-output/keepalive response-commit boundary.
+
+Persist only account-scoped HMAC-SHA256 route digests, with separate outbound
+and response observations. The configured JWT secret is domain-separated for
+this purpose; changing it resets digest correlation, and missing configuration
+disables digests. A bounded, unverified response gateway hint is diagnostic
+only. Never persist raw cookies or use observations for billing/scheduling.
+
+Only administrators receive `codex_observation`. Historical/unobserved rows
+remain NULL. Native WS turns explicitly report `websocket_unobserved`; pooled
+handshake headers are not per-turn evidence. A WS-to-HTTP bridge reports its
+actual HTTP observation. This feature introduces no Cookie storage or replay,
+so an absent outbound route digest is expected when no cookie was sent.
+
 ## CPR And API-Key Destinations
 
 CPR owns the external OpenAI transport and identity. Do not classify CPR as a

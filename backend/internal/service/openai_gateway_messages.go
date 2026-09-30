@@ -699,12 +699,14 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
+	relayOpenAICodexSafetyBufferingHeaders(c.Writer.Header(), resp.Header)
 	c.Header("Content-Type", "application/json; charset=utf-8")
 	c.JSON(http.StatusOK, anthropicResp)
 
 	result := &OpenAIForwardResult{
 		RequestID:                     requestID,
 		UpstreamHeaders:               resp.Header,
+		CodexObservation:              codexObservationFromResponse(resp),
 		ResponseID:                    finalResponse.ID,
 		Usage:                         usage,
 		Model:                         originalModel,
@@ -1012,6 +1014,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		out := &OpenAIForwardResult{
 			RequestID:                     requestID,
 			UpstreamHeaders:               resp.Header,
+			CodexObservation:              codexObservationFromResponse(resp),
 			ResponseID:                    responseID,
 			Usage:                         usage,
 			Model:                         originalModel,

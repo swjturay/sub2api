@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,88 +86,76 @@ func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesI
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
 }
 
-func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_OAuthFallsBackWhenPlatformEndpointUnsupported(t *testing.T) {
+// No credentials are supplied: counting must not refresh a token or dispatch HTTP.
+func TestOpenAIGatewayService_OAuthCountsLocallyWithoutCredentials(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-
-	body := []byte(`{"model":"claude-opus-4-1","messages":[{"role":"user","content":"hello"}]}`)
-	account := &Account{
-		ID:          202,
-		Name:        "openai-oauth",
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Concurrency: 1,
-		Credentials: map[string]any{
-			"access_token":  "oauth-token",
-			"refresh_token": "oauth-refresh-token",
-		},
-		Status:      StatusActive,
-		Schedulable: true,
+	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
+		for _, native := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/native=%t", accountType, native), func(t *testing.T) {
+				account := &Account{ID: 202, Platform: PlatformOpenAI, Type: accountType}
+				upstream := &httpUpstreamRecorder{}
+				repo := &countTokensRuntimeStateRepo{}
+				svc := &OpenAIGatewayService{
+					httpUpstream:     upstream,
+					rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+				}
+				for _, invalid := range []bool{false, true} {
+					rec := httptest.NewRecorder()
+					c, _ := gin.CreateTestContext(rec)
+					body := []byte(`{"model":"claude-sonnet-4-5","system":"Be concise.","messages":[{"role":"user","content":"hello world"}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}]}`)
+					path := "/v1/messages/count_tokens"
+					if native {
+						path = "/v1/responses/input_tokens"
+						body = []byte(`{"model":"gpt-5.4","instructions":"Be concise.","input":"hello world","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`)
+					}
+					if invalid {
+						body = []byte(`{"model":`)
+					}
+					c.Request = httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+					var err error
+					if native {
+						err = svc.ForwardResponsesInputTokens(context.Background(), c, account, body)
+					} else {
+						err = svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "gpt-5.4")
+					}
+					if invalid {
+						require.Error(t, err)
+						require.Equal(t, http.StatusBadRequest, rec.Code)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, http.StatusOK, rec.Code)
+						require.Greater(t, gjson.Get(rec.Body.String(), "input_tokens").Int(), int64(1))
+						if native {
+							require.Equal(t, "response.input_tokens", gjson.Get(rec.Body.String(), "object").String())
+						}
+					}
+					require.Nil(t, upstream.lastReq)
+					require.Zero(t, repo.tempUnschedCalls)
+					require.Zero(t, repo.setErrorCalls)
+				}
+			})
+		}
 	}
+}
 
-	prepared, err := prepareOpenAIInputTokensCountRequest(body, account, "gpt-5.4")
+func TestOpenAIGatewayService_CPRAnthropicCountStillUsesRelay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(body))
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK, Header: make(http.Header),
+		Body: io.NopCloser(strings.NewReader(`{"input_tokens":4242}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, cfg: &config.Config{}}
+	account := &Account{ID: 203, Platform: PlatformOpenAI, Type: AccountTypeCPR,
+		Credentials: map[string]any{"api_key": "relay-test", "base_url": "https://relay.example"}}
+	err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "")
 	require.NoError(t, err)
-	expectedEstimate, err := estimateOpenAIInputTokens(prepared.Request)
-	require.NoError(t, err)
-
-	cases := []struct {
-		name       string
-		statusCode int
-		body       string
-	}{
-		{
-			name:       "401_missing_responses_write_scope",
-			statusCode: http.StatusUnauthorized,
-			body:       `{"error":{"type":"invalid_request_error","code":"missing_scope","message":"You have insufficient permissions for this operation. Missing scopes: api.responses.write."}}`,
-		},
-		{
-			name:       "403_missing_responses_write_scope",
-			statusCode: http.StatusForbidden,
-			body:       `{"error":{"type":"invalid_request_error","code":"missing_scope","message":"Missing scopes: api.responses.write"}}`,
-		},
-		{
-			name:       "403_html_proxy_page",
-			statusCode: http.StatusForbidden,
-			body:       "<!doctype html><html><body>Forbidden</body></html>",
-		},
-		{
-			name:       "404_input_tokens_unsupported",
-			statusCode: http.StatusNotFound,
-			body:       `{"error":{"type":"invalid_request_error","message":"The /v1/responses/input_tokens endpoint was not found"}}`,
-		},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(body))
-			c.Request.Header.Set("Content-Type", "application/json")
-			c.Request.Header.Set("User-Agent", "Claude-Code/1.0")
-
-			upstream := &httpUpstreamRecorder{resp: &http.Response{
-				StatusCode: tt.statusCode,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(strings.NewReader(tt.body)),
-			}}
-			repo := &countTokensRuntimeStateRepo{}
-			svc := &OpenAIGatewayService{
-				cfg:              &config.Config{},
-				httpUpstream:     upstream,
-				rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
-			}
-
-			err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, account, body, "gpt-5.4")
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, rec.Code)
-			require.JSONEq(t, `{"input_tokens":`+strconv.Itoa(expectedEstimate)+`}`, rec.Body.String())
-			require.NotNil(t, upstream.lastReq)
-			require.Equal(t, "https://api.openai.com/v1/responses/input_tokens", upstream.lastReq.URL.String())
-			require.Equal(t, "Bearer oauth-token", upstream.lastReq.Header.Get("authorization"))
-			require.Empty(t, upstream.lastReq.Header.Get("Chatgpt-Account-Id"))
-			require.Zero(t, repo.tempUnschedCalls, "OAuth input_tokens unsupported errors must not temp-unschedule the account")
-			require.Zero(t, repo.setErrorCalls, "OAuth input_tokens unsupported errors must not mark the account error")
-		})
-	}
+	require.JSONEq(t, `{"input_tokens":4242}`, rec.Body.String())
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "relay.example", upstream.lastReq.URL.Host)
 }
 
 func TestOpenAIGatewayService_OpenAIOAuthInputTokensFallbackUsesMinimumWhenEstimateFails(t *testing.T) {
