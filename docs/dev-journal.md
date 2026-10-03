@@ -1,5 +1,25 @@
 # Development Journal
 
+## Upstream v0.2.13 intake (2026-10-03)
+
+Merge upstream/main `b8dece9000c68815a5b867ca5a1e6f236e173905` onto the
+latest cce-deploy `88c23e57030f2eb07e233e615ffc616897f1c529`, including 40
+upstream commits after the previous intake. Resolve account validation by
+retaining both CPR platform restrictions and TypeSafe API-key-only behavior.
+Preserve CCE Codex defaults and automatic OS selection; TypeSafe uses its native
+System One example without the local Codex installer. Keep both TypeSafe and
+CPR in frontend account types and set VERSION to 0.2.13.
+
+Wire the new System One route into Insights, carrying one explicit statistical
+time into both terminal call facts and usage billing. Add regression coverage
+for mixed account validation, native client instructions, transport recognition
+and identical call/usage timestamps. Include UseKeyModal in critical frontend CI.
+All 294 existing SQL migrations remain byte-identical; the two new upstream
+migrations use distinct full filenames and require no renumbering.
+
+Source integration only. Validation and migration details are in
+[the intake report](tasks/upstream-v0.2.13-merge.md).
+
 ## Upstream v0.2.11 intake (2026-09-30)
 
 Merge the official v0.2.11 tag (96f4c115c9749078f90cbf210a01d39baf3f53b6)

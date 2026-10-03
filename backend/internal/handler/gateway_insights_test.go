@@ -118,9 +118,11 @@ func TestInsightsKnownUninstrumentedGenerationInventory(t *testing.T) {
 }
 
 func TestInsightsHTTPTransportIncludesCompactButExcludesTokenCounting(t *testing.T) {
-	transport, ok := insightsHTTPTransport(http.MethodPost, "/v1/responses/compact")
-	require.True(t, ok)
-	require.Equal(t, insights.TransportHTTPSync, transport)
+	for _, path := range []string{"/v1/responses/compact", "/v1/systemone"} {
+		transport, ok := insightsHTTPTransport(http.MethodPost, path)
+		require.True(t, ok, path)
+		require.Equal(t, insights.TransportHTTPSync, transport)
+	}
 
 	for _, path := range []string{"/v1/responses/input_tokens", "/v1/messages/count_tokens"} {
 		_, ok := insightsHTTPTransport(http.MethodPost, path)

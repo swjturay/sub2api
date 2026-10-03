@@ -163,6 +163,33 @@ describe('UseKeyModal', () => {
     }
   )
 
+  it.each(['Linux x86_64', 'Win32'])(
+    'uses the native System One example without Codex setup for TypeSafe on %s',
+    (platform) => {
+      vi.stubGlobal('navigator', { platform, userAgent: platform })
+      const wrapper = mount(UseKeyModal, {
+        props: { show: true, apiKey: 'sk-typesafe-test', baseUrl: 'https://example.com/v1', platform: 'typesafe' },
+        global: {
+          stubs: {
+            BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+            Icon: { template: '<span />' }
+          }
+        }
+      })
+      const clients = wrapper.get('nav[aria-label="Client"]').findAll('button')
+      expect(clients).toHaveLength(1)
+      expect(clients[0].text()).toContain('keys.useKeyModal.cliTabs.systemOne')
+      expect(clients[0].classes()).toContain('border-primary-500')
+      expect(wrapper.find('[data-testid="local-setup"]').exists()).toBe(false)
+      const example = wrapper.get('pre code').text()
+      expect(example).toContain('https://example.com/v1/systemone')
+      expect(example).toContain('jev-latest')
+      expect(example).toContain('Bearer sk-typesafe-test')
+      expect(example).not.toContain('/v1/v1/')
+      expect(example).toContain(platform === 'Win32' ? 'Invoke-RestMethod' : 'curl -X POST')
+    }
+  )
+
   it('shows only Claude Code for Claude Code-only groups', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {

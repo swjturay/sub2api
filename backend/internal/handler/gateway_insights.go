@@ -65,7 +65,7 @@ func insightsHTTPTransport(method, path string) (insights.Transport, bool) {
 	if method != http.MethodPost || strings.HasSuffix(path, "/count_tokens") || strings.HasSuffix(path, "/input_tokens") {
 		return insights.TransportUnknown, false
 	}
-	generationSuffixes := []string{"/messages", "/responses", "/responses/compact", "/chat/completions", "/embeddings", "/alpha/search", "/web_search", "/x_search", "/images/generations", "/images/edits", "/videos", "/videos/generations", "/videos/edits", "/videos/extensions", "/tts", "/stt"}
+	generationSuffixes := []string{"/systemone", "/messages", "/responses", "/responses/compact", "/chat/completions", "/embeddings", "/alpha/search", "/web_search", "/x_search", "/images/generations", "/images/edits", "/videos", "/videos/generations", "/videos/edits", "/videos/extensions", "/tts", "/stt"}
 	for _, suffix := range generationSuffixes {
 		if strings.HasSuffix(path, suffix) {
 			return insights.TransportHTTPSync, true
