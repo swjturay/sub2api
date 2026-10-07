@@ -1223,7 +1223,7 @@ supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
 
 [features]
-remote_compaction_v2 = true
+${codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}remote_compaction_v2 = true
 image_generation = true
 goals = true`
 
@@ -1453,7 +1453,7 @@ supports_standalone_web_search = true
 http_headers = { "x-openai-actor-authorization" = "local-image-extension" }
 
 [features]
-remote_compaction_v2 = true
+${codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}remote_compaction_v2 = true
 image_generation = true
 goals = true`
 
@@ -1520,7 +1520,7 @@ supports_standalone_web_search = true
 http_headers = { "x-openai-actor-authorization" = "local-image-extension" }
 
 [features]
-remote_compaction_v2 = true
+${codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}remote_compaction_v2 = true
 image_generation = true
 goals = true`
 
@@ -1559,7 +1559,7 @@ supports_standalone_web_search = true
 ${generateCodexProviderAuthConfig(apiKey)}
 
 [features]
-responses_websockets_v2 = true
+${codexModelCatalogMode.value === 'remote' ? 'api_key_model_discovery = true\n' : ''}responses_websockets_v2 = true
 remote_compaction_v2 = true
 image_generation = true
 goals = true`

@@ -1,5 +1,33 @@
 # Development Journal
 
+## Upstream v0.2.14 intake (2026-10-07)
+
+Merge upstream/main `3f1a2ea0a760730e3bc528105c00b4ee4f23e469` into
+cce-deploy based on `24eca2f43d63d382660aeaea1f6bf3428c152827`. The eight
+upstream commits include fresh-install admin credential hardening, EasyPay
+callback/return-URL fixes, remote Codex catalog discovery and frontend dependency
+and audit-policy updates. VERSION is 0.2.14. All 296 SQL migrations remain
+byte-identical; Go dependencies, CPR transport/billing, Insights and CCE release
+workflows are unchanged.
+
+Resolve the four UseKeyModal conflict regions by adding remote-mode
+`api_key_model_discovery` to the existing single features table in every Codex
+configuration. Preserve CCE remote compaction, image generation, goals, standalone
+web search, inline API-key headers, WS selection, OS defaults and OpenCode
+provider names. Keep native Grok CLI settings separate. Local-file catalogs,
+including the oversized-catalog fallback, omit remote discovery.
+
+Expand generated-configuration regressions across routed providers, Windows and
+Unix, HTTP/WS, legacy/API-key authentication and remote/file modes. The original
+feature-preservation checks remain and now also verify discovery-table scope.
+The full frontend run also exposed stale pre-existing five-platform auth-default
+fixtures; include TypeSafe in their expected platform set and verify that its
+configured quotas survive normalization and sanitization, without changing
+production quota logic.
+Validation and upgrade boundaries are recorded in
+[the intake report](tasks/upstream-v0.2.14-merge.md). Source merge only; no image
+release or production operation is part of this task.
+
 ## Upstream v0.2.13 intake (2026-10-03)
 
 Merge upstream/main `b8dece9000c68815a5b867ca5a1e6f236e173905` onto the

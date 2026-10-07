@@ -9,13 +9,14 @@ import {
   type DefaultPlatformQuotasMap,
 } from "@/api/admin/settings";
 
-/** 全 null 的 5 平台 map，用于断言归一化默认值 */
+/** 全 null 的 6 平台 map，用于断言归一化默认值 */
 const allNullQuotas: DefaultPlatformQuotasMap = {
   anthropic: { daily: null, weekly: null, monthly: null },
   openai:    { daily: null, weekly: null, monthly: null },
   gemini:    { daily: null, weekly: null, monthly: null },
   antigravity: { daily: null, weekly: null, monthly: null },
   grok: { daily: null, weekly: null, monthly: null },
+  typesafe: { daily: null, weekly: null, monthly: null },
 }
 
 describe("admin settings auth source defaults helpers", () => {
@@ -85,11 +86,13 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_email_platform_quotas: {
         anthropic: { daily: 10, weekly: 50, monthly: 200 },
         openai:    { daily: null, weekly: null, monthly: null },
+        typesafe:  { daily: 2, weekly: 10, monthly: null },
       } as DefaultPlatformQuotasMap,
     });
 
     // anthropic 填写的值应被保留
     expect(state.email.platform_quotas.anthropic).toEqual({ daily: 10, weekly: 50, monthly: 200 });
+    expect(state.email.platform_quotas.typesafe).toEqual({ daily: 2, weekly: 10, monthly: null });
     // openai 全 null 应被保留
     expect(state.email.platform_quotas.openai).toEqual({ daily: null, weekly: null, monthly: null });
     // 未出现的平台（gemini/antigravity）归一化为 null
@@ -240,9 +243,9 @@ describe("normalizePlatformQuotasMap", () => {
     expect(result.grok).toEqual({ daily: null, weekly: null, monthly: null });
   });
 
-  it("无参数时返回全 5 平台全 null", () => {
+  it("无参数时返回全 6 平台全 null", () => {
     const result = normalizePlatformQuotasMap();
-    expect(Object.keys(result)).toHaveLength(5);
+    expect(Object.keys(result).sort()).toEqual(["anthropic", "antigravity", "gemini", "grok", "openai", "typesafe"]);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
@@ -260,10 +263,12 @@ describe("sanitizePlatformQuotasMap", () => {
   it("保留合法的正数和零值", () => {
     const result = sanitizePlatformQuotasMap({
       anthropic: { daily: 10.5, weekly: 0, monthly: null },
+      typesafe: { daily: 0, weekly: 5, monthly: 20 },
     });
     expect(result.anthropic?.daily).toBe(10.5);
     expect(result.anthropic?.weekly).toBe(0);
     expect(result.anthropic?.monthly).toBe(null);
+    expect(result.typesafe).toEqual({ daily: 0, weekly: 5, monthly: 20 });
   });
 
   it("空字符串（v-model.number 空输入）清洗为 null", () => {
@@ -290,7 +295,7 @@ describe("sanitizePlatformQuotasMap", () => {
 
   it("缺失平台填充为全 null", () => {
     const result = sanitizePlatformQuotasMap({});
-    expect(Object.keys(result)).toHaveLength(5);
+    expect(Object.keys(result).sort()).toEqual(["anthropic", "antigravity", "gemini", "grok", "openai", "typesafe"]);
     for (const v of Object.values(result)) {
       expect(v).toEqual({ daily: null, weekly: null, monthly: null });
     }
