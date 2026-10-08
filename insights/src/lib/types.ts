@@ -2,7 +2,7 @@ export type CoverageState = "complete" | "partial" | "uncollected" | "unavailabl
 export type Granularity = "hour" | "day" | "week" | "month";
 export type ChartMode = "line" | "bar";
 export type Capability = "supported" | "unsupported" | "unknown";
-export interface User { id:number; username?:string; email?:string; role?:string; is_admin?:boolean }
+export interface User { id:number; username?:string; email?:string; role?:string; is_admin?:boolean; can_view_insights?:boolean }
 export interface ApiEnvelope<T> { code:number; message?:string; data:T }
 export interface Coverage { state:CoverageState; message?:string }
 export interface TokenBreakdown { input:number|null; cacheWrite:number|null; cacheRead:number|null; output:number|null; total:number|null }

@@ -1026,6 +1026,9 @@ func dingTalkStaffFromClaims(claims map[string]any) *DingTalkStaffInfo {
 // definition 不存在时记 warn 日志跳过（admin 在 settings 保存时已按需 upsert
 // 对应 def；缺失意味着 admin 改了 attr key 但未保存 settings，或 def 被手工删除）。
 func (h *AuthHandler) setUserAttributeByKey(ctx context.Context, userID int64, key, value string) error {
+	if service.IsInsightsAccessKey(key) {
+		return service.ErrAttributeValidationFailed
+	}
 	def, err := h.userAttributeService.GetDefinitionByKey(ctx, key)
 	if err != nil {
 		slog.Warn("dingtalk sync: attribute definition not found, skipping", "key", key, "err", err.Error())

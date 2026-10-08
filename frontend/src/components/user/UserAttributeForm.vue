@@ -6,9 +6,20 @@
         <span v-if="attr.required" class="text-red-500">*</span>
       </label>
 
+      <!-- Fixed system authorization; storage remains the existing select attribute. -->
+      <input
+        v-if="attr.key === 'insights_access'"
+        type="checkbox"
+        role="switch"
+        :aria-label="attr.name"
+        :checked="localValues[attr.id] === 'enabled'"
+        class="h-5 w-5 rounded border-gray-300 text-primary-600"
+        @change="localValues[attr.id] = ($event.target as HTMLInputElement).checked ? 'enabled' : 'disabled'; emitChange()"
+      />
+
       <!-- Text Input -->
       <input
-        v-if="attr.type === 'text' || attr.type === 'email' || attr.type === 'url'"
+        v-else-if="attr.type === 'text' || attr.type === 'email' || attr.type === 'url'"
         v-model="localValues[attr.id]"
         :type="attr.type === 'text' ? 'text' : attr.type"
         :required="attr.required"

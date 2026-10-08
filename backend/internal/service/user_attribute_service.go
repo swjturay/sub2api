@@ -30,6 +30,9 @@ func NewUserAttributeService(
 
 // CreateDefinition creates a new attribute definition
 func (s *UserAttributeService) CreateDefinition(ctx context.Context, input CreateAttributeDefinitionInput) (*UserAttributeDefinition, error) {
+	if IsInsightsAccessKey(input.Key) {
+		return nil, validationError("Insights access is a reserved system attribute")
+	}
 	// Validate type
 	if !isValidAttributeType(input.Type) {
 		return nil, ErrInvalidAttributeType
@@ -89,6 +92,10 @@ func (s *UserAttributeService) UpdateDefinition(ctx context.Context, id int64, i
 		return nil, err
 	}
 
+	if IsInsightsAccessKey(def.Key) {
+		return nil, validationError("Insights access definition is managed by the system; edit user access instead")
+	}
+
 	if input.Name != nil {
 		def.Name = *input.Name
 	}
@@ -131,9 +138,13 @@ func (s *UserAttributeService) UpdateDefinition(ctx context.Context, id int64, i
 // DeleteDefinition soft-deletes a definition and hard-deletes associated values
 func (s *UserAttributeService) DeleteDefinition(ctx context.Context, id int64) error {
 	// Check if definition exists
-	_, err := s.defRepo.GetByID(ctx, id)
+	def, err := s.defRepo.GetByID(ctx, id)
 	if err != nil {
 		return err
+	}
+
+	if IsInsightsAccessKey(def.Key) {
+		return validationError("Insights access definition cannot be deleted; revoke user access instead")
 	}
 
 	// First delete all values (hard delete)
@@ -197,6 +208,9 @@ func (s *UserAttributeService) UpdateUserAttributes(ctx context.Context, userID 
 			return ErrAttributeDefinitionNotFound
 		}
 
+		if IsInsightsAccessKey(def.Key) && (!validInsightsAccessDefinition(def) || (input.Value != "" && input.Value != "enabled" && input.Value != "disabled")) {
+			return validationError("Invalid Insights access attribute")
+		}
 		if err := s.validateValue(def, input.Value); err != nil {
 			return err
 		}

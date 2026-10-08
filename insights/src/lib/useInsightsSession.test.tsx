@@ -1,0 +1,37 @@
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useInsightsSession } from "./useInsightsSession";
+import { verifySession } from "./auth";
+import type { User } from "./types";
+vi.mock("./auth", async (load) => ({...(await load<typeof import('./auth')>()),verifySession: vi.fn(),sessionSnapshot:()=>"session"}));
+const viewer:User={id:7,role:"user",can_view_insights:true};
+beforeEach(()=>{vi.mocked(verifySession).mockReset();Object.defineProperty(document,"hidden",{configurable:true,value:false});});
+afterEach(()=>{cleanup();vi.useRealTimers();});
+it("rechecks access every 60 seconds independently of chart refresh",async()=>{
+ vi.useFakeTimers();vi.mocked(verifySession).mockResolvedValue(viewer);
+ const hook=renderHook(()=>useInsightsSession("/costs"));
+ await act(async()=>{});expect(hook.result.current.user?.can_view_insights).toBe(true);
+ vi.mocked(verifySession).mockResolvedValue({...viewer,can_view_insights:false});
+ await act(async()=>{await vi.advanceTimersByTimeAsync(60_000)});
+ expect(hook.result.current.user?.can_view_insights).toBe(false);
+});
+it("hides protected content until foreground revalidation and fails closed on errors",async()=>{
+ vi.mocked(verifySession).mockResolvedValue(viewer);
+ const hook=renderHook(()=>useInsightsSession("/costs"));
+ await waitFor(()=>expect(hook.result.current.checking).toBe(false));
+ Object.defineProperty(document,"hidden",{configurable:true,value:true});
+ act(()=>document.dispatchEvent(new Event("visibilitychange")));
+ expect(hook.result.current.checking).toBe(true);
+ let resolve!:(u:User)=>void;
+ vi.mocked(verifySession).mockImplementationOnce(()=>new Promise<User>(r=>{resolve=r}));
+ Object.defineProperty(document,"hidden",{configurable:true,value:false});
+ act(()=>document.dispatchEvent(new Event("visibilitychange")));
+ expect(hook.result.current.checking).toBe(true);
+ await act(async()=>resolve({...viewer,can_view_insights:false}));
+ expect(hook.result.current.checking).toBe(false);
+ expect(hook.result.current.user?.can_view_insights).toBe(false);
+ vi.mocked(verifySession).mockRejectedValueOnce(new Error("offline"));
+ act(()=>window.dispatchEvent(new Event("insights-auth-revalidate")));
+ await waitFor(()=>expect(hook.result.current.user).toBeNull());
+ expect(hook.result.current.error).toBe("offline");
+});

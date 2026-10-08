@@ -198,9 +198,9 @@ export const insightsApi = {
       u = JSON.parse(localStorage.getItem("auth_user") || "{}");
     let departments: T.DepartmentOption[] = [];
     let retention = { usageDays: 365, errorDays: 30 };
-    if (u.is_admin || u.role === "admin") {
+    if (u.is_admin || u.role === "admin" || u.can_view_insights) {
       const d = await apiFetch<Wire<any>>(
-        "/admin/insights/dimensions",
+        "/insights/dimensions",
         {},
         signal,
       );
@@ -386,7 +386,7 @@ export const insightsApi = {
     signal?: AbortSignal,
   ) => {
     const r = await apiFetch<Wire<any>>(
-        `/admin/insights/departments${q({ ...fq(f), performance_model: performanceModel || undefined })}`,
+        `/insights/departments${q({ ...fq(f), performance_model: performanceModel || undefined })}`,
         {},
         signal,
       ),
@@ -441,22 +441,22 @@ export const insightsApi = {
     const query = q({ ...fq(f), model: undefined }),
       [quality, users, retention, prefs] = await Promise.all([
         apiFetch<Wire<any>>(
-          `/admin/insights/gateway/quality${query}`,
+          `/insights/gateway/quality${query}`,
           {},
           signal,
         ),
         apiFetch<Wire<any>>(
-          `/admin/insights/gateway/users${query}`,
+          `/insights/gateway/users${query}`,
           {},
           signal,
         ),
         apiFetch<Wire<any>>(
-          `/admin/insights/gateway/retention${q({ to: f.to, department: f.departments })}`,
+          `/insights/gateway/retention${q({ to: f.to, department: f.departments })}`,
           {},
           signal,
         ),
         apiFetch<Wire<any>>(
-          `/admin/insights/gateway/model-preferences${query}`,
+          `/insights/gateway/model-preferences${query}`,
           {},
           signal,
         ),
@@ -509,7 +509,7 @@ coverage: cov(users.meta),
     } as T.GatewayAnalytics;
   },
   costs: async (filters: T.CostFilters, signal?: AbortSignal): Promise<T.CostDashboard> => {
-    const r = await apiFetch<Wire<any>>(`/admin/insights/costs${q({
+    const r = await apiFetch<Wire<any>>(`/insights/costs${q({
       month: filters.month,
       department: filters.department,
       platform: filters.platform,

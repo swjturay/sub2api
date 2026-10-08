@@ -442,7 +442,8 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 
 	type UserResponse struct {
 		userProfileResponse
-		RunMode string `json:"run_mode"`
+		RunMode         string `json:"run_mode"`
+		CanViewInsights bool   `json:"can_view_insights"`
 	}
 
 	runMode := config.RunModeStandard
@@ -450,9 +451,15 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 		runMode = h.cfg.RunMode
 	}
 
+	canViewInsights, err := h.userAttributeService.CanViewInsights(c.Request.Context(), user.ID, user.IsAdmin())
+	if err != nil {
+		response.InternalError(c, "Failed to resolve Insights access")
+		return
+	}
 	response.Success(c, UserResponse{
 		userProfileResponse: userProfileResponseFromService(user, identities),
 		RunMode:             runMode,
+		CanViewInsights:     canViewInsights,
 	})
 }
 

@@ -22,7 +22,7 @@ import { useRemote } from "../lib/useRemote";
 const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const amountPattern = /^\d+(?:\.\d{1,2})?$/;
 
-export function CostPage({ auto }: { auto: boolean }) {
+export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: boolean }) {
   const boot = useBootstrap();
   const currentMonth = platformDateParts(boot.generatedAt, boot.timezone).date.slice(0, 7);
   const [filters, setFilters] = useState<CostFilters>({
@@ -56,6 +56,7 @@ export function CostPage({ auto }: { auto: boolean }) {
   const setFilter = <K extends keyof CostFilters>(key: K, value: CostFilters[K]) => setFilters((current) => ({ ...current, [key]: value, page: key === "page" ? Number(value) : 1 }));
 
   const openEditor = (account: CostAccount) => {
+    if (!canEdit) return;
     setEditing(account);
     setContributorID(account.contributor ? String(account.contributor.id) : "");
     setPaymentMethod(account.paymentMethod || "subscription");
@@ -65,6 +66,7 @@ export function CostPage({ auto }: { auto: boolean }) {
   };
 
   const save = async () => {
+    if (!canEdit) return;
     if (!editing || !contributorID) {
       setMutationError("请选择贡献人。");
       return;
@@ -93,6 +95,7 @@ export function CostPage({ auto }: { auto: boolean }) {
   };
 
   const stopAfterMonth = async () => {
+    if (!canEdit) return;
     if (!editing || !window.confirm(`确认让账号“${editing.name}”在 ${filters.month} 之后停止计入成本数据？`)) return;
     setMutating(true);
     setMutationError("");
@@ -187,7 +190,7 @@ export function CostPage({ auto }: { auto: boolean }) {
             </div>
             <div className="max-h-[620px] overflow-auto scrollbar-thin">
               <table className="cost-table cost-account-table min-w-[1740px] w-full">
-                <thead className="sticky top-0 z-10 bg-[var(--surface)]"><tr><th>账号</th><th>平台/类型</th><th>状态</th><th>贡献人</th><th>当前部门</th><th>付费方式</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th><th>真实支出</th><th>成本节省</th><th>备注</th><th>最后修改</th><th><span className="sr-only">操作</span></th></tr></thead>
+                <thead className="sticky top-0 z-10 bg-[var(--surface)]"><tr><th>账号</th><th>平台/类型</th><th>状态</th><th>贡献人</th><th>当前部门</th><th>付费方式</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th><th>真实支出</th><th>成本节省</th><th>备注</th><th>最后修改</th>{canEdit && <th><span className="sr-only">操作</span></th>}</tr></thead>
                 <tbody>{data.accounts.items.map((account) => {
                   const cannotEdit = Boolean(account.deletedAt && account.deletedAt.slice(0, 7) < filters.month);
                   return <tr key={account.id}>
@@ -202,7 +205,7 @@ export function CostPage({ auto }: { auto: boolean }) {
                     <td className={moneyClass(account.savings)}>{account.savings === null ? "—" : money(account.savings)}</td>
                     <td className="max-w-56 truncate" title={account.notes}>{account.notes || "—"}</td>
                     <td>{account.updatedAt ? <><div>{account.updatedBy?.name || "管理员"}</div><div className="text-xs muted">{dateTime(account.updatedAt, boot.timezone)}</div></> : "—"}</td>
-                    <td><Button type="button" variant="ghost" className="icon-button" onClick={() => openEditor(account)} disabled={cannotEdit} aria-label={`编辑 ${account.name}`} title={cannotEdit ? "软删除账号不能新增后续月份" : "编辑月记录"}><Pencil /></Button></td>
+                    {canEdit && <td><Button type="button" variant="ghost" className="icon-button" onClick={() => openEditor(account)} disabled={cannotEdit} aria-label={`编辑 ${account.name}`} title={cannotEdit ? "软删除账号不能新增后续月份" : "编辑月记录"}><Pencil /></Button></td>}
                   </tr>;
                 })}</tbody>
               </table>
@@ -215,7 +218,7 @@ export function CostPage({ auto }: { auto: boolean }) {
         </>
       )}
 
-      <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !mutating) setEditing(null); }}>
+      <Dialog open={canEdit && Boolean(editing)} onOpenChange={(open) => { if (!open && !mutating) setEditing(null); }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{editing?.registered ? "编辑账号月记录" : "登记贡献账号"}</DialogTitle><DialogDescription>{editing ? `${editing.name} · ${editing.platform} · ${filters.month}` : ""}</DialogDescription></DialogHeader>
           {editing && <div className="mt-5 grid gap-4">

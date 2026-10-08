@@ -4,6 +4,30 @@
 
 The separately built React application is served at the original origin under /insights/. The original site entry is labelled AI基础设施看板. Sub2API continues to own user identity, session refresh, roles, billing and model-call authorization. Public model catalogue responses are explicit projections; they must not expose group/account configuration or other users' request detail. The confirmed v1 contract is docs/INSIGHTS_V1.md.
 
+## Read access and administration
+
+Keep the existing admin/user identity roles. The reserved `insights_access`
+select attribute in the existing user attribute tables grants company-wide
+read access when its current value is exactly `enabled`; missing or invalid
+attributes grant nothing. Its system definition is initialized by migration
+244 and cannot be recreated, edited or deleted through generic attribute APIs.
+User values remain administrator-managed and audited. Never allow identity
+synchronization to target this key, including legacy DingTalk mappings.
+
+JWT-protected `/insights/` organization read endpoints check current database
+attributes on each request. Existing `/admin/insights/` routes and all cost
+mutations remain admin-only. `/auth/me` returns the effective
+`can_view_insights` capability. Viewers see the same department, gateway and
+cost data and filters as admins, with no editing controls. Personal data and
+model-call authorization retain their existing scopes.
+
+Revalidate browser permissions every 60 seconds independently of chart refresh,
+and before showing content after foregrounding. Clear protected page state on
+revocation or verification failure; discard results belonging to unmounted
+pages. Use existing session machinery rather than new roles, permission caches
+or a revocation service. Persist a viewer grant before downgrading an admin;
+existing users are never automatically downgraded.
+
 ## Statistical facts
 
 All request-derived analytics filter and bucket by statistical record generation time. Existing usage.created_at remains the historical source. New usage, one client-call final result and any related final error share one explicitly assigned value; storage queues and retries must not assign different values. This time is not a precise start or completion timestamp, and cannot be recovered by subtracting duration.

@@ -501,6 +501,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	for _, key := range []string{req.DingTalkConnectSyncCorpEmailAttrKey, req.DingTalkConnectSyncDisplayNameAttrKey, req.DingTalkConnectSyncDeptAttrKey} {
+		if service.IsInsightsAccessKey(key) {
+			response.BadRequest(c, "Insights access cannot be an identity synchronization target")
+			return
+		}
+	}
 	auditReq := settingsAuditRequest(req)
 	omitted := omittedSettingKeys(sentFields)
 
@@ -2526,7 +2532,7 @@ func (h *SettingHandler) ensureDingTalkSyncAttributes(ctx context.Context, setti
 
 func (h *SettingHandler) ensureUserAttributeDefinition(ctx context.Context, key, name, description string, attrType service.UserAttributeType) {
 	key = strings.TrimSpace(key)
-	if key == "" {
+	if key == "" || service.IsInsightsAccessKey(key) {
 		return
 	}
 	existing, err := h.userAttributeService.GetDefinitionByKey(ctx, key)

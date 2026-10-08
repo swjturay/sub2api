@@ -1,5 +1,20 @@
 # Development Journal
 
+## Insights read access without system administration (2026-10-08)
+
+Use the existing user attribute tables for a protected `insights_access`
+select value. Migration 244 seeds its definition without changing `users` or
+granting existing users access; conflicting definitions stop migration.
+Administrator-managed user values grant read access to department, gateway
+and cost data together. Preserve the existing display, personal-data scope
+and admin-only cost mutations.
+
+Expose effective access through `/auth/me`, adapt React routes and bootstrap,
+and hide editing for viewers. Recheck permissions independently of chart
+refresh and on foregrounding. Protect the attribute from generic definition
+changes and DingTalk synchronization; persist grants before role downgrades.
+See [the implementation record](tasks/insights-read-access.md) for validation.
+
 ## Local setup system Python compatibility (2026-10-08)
 
 Lower the Unix/Windows bootstrap minimum from Python 3.11 to 3.8. Preserve

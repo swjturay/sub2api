@@ -87,4 +87,18 @@ describe('UserEditModal concurrency', () => {
     expect(showError).toHaveBeenCalledWith('admin.users.concurrencyNonNegative')
     expect(update).not.toHaveBeenCalled()
   })
+  it('saves access before downgrading the role, and leaves the role unchanged on grant failure', async () => {
+    const wrapper = mountModal(1)
+    wrapper.findComponent({name: 'UserAttributeForm'}).vm.$emit('update:modelValue', {41: 'enabled'})
+    updateUserAttributeValues.mockRejectedValueOnce(new Error('grant failed'))
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(update).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('grant failed')
+    updateUserAttributeValues.mockResolvedValueOnce({})
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(updateUserAttributeValues.mock.invocationCallOrder.at(-1)).toBeLessThan(update.mock.invocationCallOrder[0])
+  })
+
 })

@@ -11,7 +11,7 @@ vi.mock("../lib/useRemote", () => ({ useRemote: () => ({ data: {
     { month: "2026-08", platformCost: 30, actualCost: 0, savings: 30, completedAccounts: 1, totalAccounts: 2 },
   ],
   contributionDepartments: [{ id: "eng", name: "研发", contributorCount: 1, accountCount: 3, requestCount: 3, tokens: 10, platformCost: 30, actualCost: 20, savings: 10, completedAccounts: 1, totalAccounts: 2 }],
-  usageDepartments: [], flows: [], accounts: { items: [], total: 0, page: 1, pages: 1, pageSize: 20 },
+  usageDepartments: [], flows: [], accounts: { items: [{id: 7, name: "shared-account", platform: "openai", type: "oauth", status: "active", registered: true, notes: "visible note", tokens: 10, requestCount: 1, platformCost: 10, actualCost: 2, savings: 8, contributor: {id: 7, name: "Contributor", email: "person@example.test", department: "研发"}}], total: 0, page: 1, pages: 1, pageSize: 20 },
   dimensions: { departments: [], platforms: [], contributors: [], statuses: [], paymentMethods: [] }, coverage: { state: "complete" },
 } }) }));
 vi.mock("../components/charts/Chart", () => ({ Chart: ({ option, label }: { option: unknown; label: string }) => <div data-testid={label}>{JSON.stringify(option)}</div> }));
@@ -29,3 +29,12 @@ it("shows only monetary series and a single monetary axis in the cost trend", ()
   expect(screen.getByText("1/2")).toBeInTheDocument();
   expect(screen.getByText("50")).toBeInTheDocument();
 });
+
+ it('keeps account details visible to viewers while editing is exclusive to administrators', () => {
+  const view = render(<TooltipProvider><CostPage auto={false} canEdit={false}/></TooltipProvider>);
+  expect(screen.getByText('shared-account')).toBeInTheDocument();
+  expect(screen.getByText('visible note')).toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'编辑 shared-account'})).not.toBeInTheDocument();
+  view.rerender(<TooltipProvider><CostPage auto={false} canEdit={true}/></TooltipProvider>);
+  expect(screen.getByRole('button',{name:'编辑 shared-account'})).toBeInTheDocument();
+ });

@@ -22,13 +22,17 @@ func RegisterInsightsRoutes(v1 *gin.RouterGroup, h *handler.Handlers, jwtAuth mi
 		h.InsightsModels.RegisterRoutes(user)
 	}
 
-	admin.GET("/dimensions", h.Insights.Dimensions)
-	admin.GET("/departments", h.Insights.Departments)
-	admin.GET("/gateway/quality", h.Insights.GatewayQuality)
-	admin.GET("/gateway/model-preferences", h.Insights.GatewayModelPreferences)
-	admin.GET("/gateway/users", h.Insights.GatewayUsers)
-	admin.GET("/gateway/retention", h.Insights.GatewayRetention)
-	admin.GET("/costs", h.Insights.CostData)
+	read := v1.Group("/insights")
+	read.Use(gin.HandlerFunc(jwtAuth), middleware.BackendModeUserGuard(settingService), h.Auth.RequireInsightsAccess, limiter.Heavy())
+	for _, group := range []*gin.RouterGroup{read, admin} {
+		group.GET("/dimensions", h.Insights.Dimensions)
+		group.GET("/departments", h.Insights.Departments)
+		group.GET("/gateway/quality", h.Insights.GatewayQuality)
+		group.GET("/gateway/model-preferences", h.Insights.GatewayModelPreferences)
+		group.GET("/gateway/users", h.Insights.GatewayUsers)
+		group.GET("/gateway/retention", h.Insights.GatewayRetention)
+		group.GET("/costs", h.Insights.CostData)
+	}
 	admin.PUT("/costs/accounts/:account_id/months/:month", h.Insights.SaveCostMonth)
 	admin.POST("/costs/accounts/:account_id/stop", h.Insights.StopCostAccount)
 }

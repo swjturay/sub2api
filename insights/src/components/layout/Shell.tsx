@@ -5,6 +5,7 @@ import type { User } from "../../lib/types";
 import { Button } from "../ui/Button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/DropdownMenu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/Tooltip";
+import { canViewInsights } from "../../lib/dataScope";
 import { logout } from "../../lib/auth";
 import { cn } from "../../lib/cn";
 import { REFRESH_INTERVAL_SECONDS } from "../../lib/config";
@@ -54,7 +55,7 @@ export function Shell({ user, children, autoRefresh, setAutoRefresh, updatedAt, 
               <span className="brand-mark__icon"><BarChart3 aria-hidden="true" /></span>
               <span className="brand-mark__name">AI基础设施看板</span>
             </a>
-            <ModuleTabs admin={admin} />
+            <ModuleTabs admin={canViewInsights(user)} />
             <div className="header-actions">
               <Tooltip>
                 <TooltipTrigger asChild><Button type="button" variant="ghost" className="icon-button" onClick={onRefresh} disabled={refreshing} aria-label="刷新数据"><RefreshCw className={cn(refreshing && "animate-spin")} /></Button></TooltipTrigger>
@@ -73,7 +74,7 @@ export function Shell({ user, children, autoRefresh, setAutoRefresh, updatedAt, 
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
-                  <DropdownMenuLabel><span className="block truncate text-sm text-[var(--ink)]">{identity}</span><span className="mt-0.5 block font-normal">{admin ? "管理员" : "用户"}</span></DropdownMenuLabel>
+                  <DropdownMenuLabel><span className="block truncate text-sm text-[var(--ink)]">{identity}</span><span className="mt-0.5 block font-normal">{admin ? "管理员" : canViewInsights(user) ? "看板查看者" : "用户"}</span></DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem checked={autoRefresh} onCheckedChange={(checked) => setAutoRefresh(checked === true)} onSelect={(event) => event.preventDefault()}>{REFRESH_INTERVAL_SECONDS} 秒自动刷新</DropdownMenuCheckboxItem>
                   <p className="m-0 px-2.5 pb-2 pt-1 text-xs text-[var(--muted)] tabular-nums">{updatedAt ? `更新于 ${dateTime(updatedAt, timezone)}` : "尚未刷新"}</p>

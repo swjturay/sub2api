@@ -33,3 +33,15 @@ describe('UserAttributeForm numeric values', () => {
     expect(input.attributes()).toMatchObject({ min: '-10', max: '100', type: 'number' })
   })
 })
+
+ it('uses a single switch for Insights access without changing generic attribute types', async () => {
+  mocks.listEnabledDefinitions.mockResolvedValue([{ id: 41, key: 'insights_access', name: '允许查看 AI基础设施看板', type: 'select' }])
+  const wrapper = mount(UserAttributeForm, { props: { modelValue: {} }, global: { stubs: { Select: true } } })
+  await flushPromises()
+  const toggle = wrapper.get('input[role="switch"]')
+  expect((toggle.element as HTMLInputElement).checked).toBe(false)
+  await toggle.setValue(true)
+  expect(wrapper.emitted('update:modelValue')!.at(-1)).toEqual([{41: 'enabled'}])
+  await toggle.setValue(false)
+  expect(wrapper.emitted('update:modelValue')!.at(-1)).toEqual([{41: 'disabled'}])
+ })
