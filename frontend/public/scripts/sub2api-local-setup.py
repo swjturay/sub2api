@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Apply Sub2API client configuration without third-party Python packages."""
+"""Apply Sub2API client configuration on Python 3.8+ without pip installs."""
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -20,7 +21,9 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-SCRIPT_VERSION = "2026.09.05"
+SCRIPT_VERSION = "2026.10.08"
+TOMLI_WHEEL = "tomli-2.2.1-py3-none-any.whl"
+TOMLI_SHA256 = "cb55c73c5f4408779d0cf3eef9f762b9c9f147a77de7b258bef0a5628adc85cc"
 DEFAULT_OPENCODE_MODEL_IDS = {
     "openai": [
         "gpt-5.6-sol", "gpt-5.6", "gpt-5.6-terra", "gpt-5.6-luna",
@@ -143,7 +146,9 @@ def discover_opencode_models(endpoint: str, api_key: str, platform: str) -> dict
 
 
 def model_family(model: str, platform: str) -> str:
-    normalized = model.strip().lower().removeprefix("models/")
+    normalized = model.strip().lower()
+    if normalized.startswith("models/"):
+        normalized = normalized[len("models/"):]
     qualified, separator, value = normalized.partition("/")
     if not separator:
         value = qualified
@@ -324,12 +329,28 @@ def validate_json(text: str, path: Path) -> None:
         fail(f"{path} 写入后不是有效 JSON: {exc}")
 
 
-def validate_toml(text: str, path: Path) -> None:
+def toml_loads(text: str) -> dict[str, Any]:
+    """Use stdlib TOML on 3.11+, or our checksum-pinned pure Python wheel."""
     try:
         import tomllib
+    except ModuleNotFoundError:
+        wheel = Path(__file__).with_name(TOMLI_WHEEL)
+        if not wheel.is_file():
+            fail("缺少随脚本分发的 TOML 解析库，请重新运行一键配置命令")
+        if hashlib.sha256(wheel.read_bytes()).hexdigest() != TOMLI_SHA256:
+            fail("TOML 解析库 SHA-256 校验失败，请重新运行一键配置命令")
+        sys.path.insert(0, str(wheel))
+        try:
+            import tomli as tomllib
+        finally:
+            sys.path.pop(0)
+    return tomllib.loads(text)
 
-        tomllib.loads(text)
-    except Exception as exc:  # tomllib raises TOMLDecodeError, Python 3.11+ only.
+
+def validate_toml(text: str, path: Path) -> None:
+    try:
+        toml_loads(text)
+    except Exception as exc:
         fail(f"{path} 写入后不是有效 TOML: {exc}")
 
 

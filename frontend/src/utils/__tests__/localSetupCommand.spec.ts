@@ -16,6 +16,7 @@ describe('local setup command', () => {
     expect(command).toContain("bash -s -- 'https://api.example.com' 'sk-test' 'opencode' 'openai' --yes")
     expect(command).toContain('sk-test')
     expect(command).toContain('https://console.example.com/scripts/sub2api-local-setup.sh')
+    expect(command).toContain('--connect-timeout 10 --max-time 60')
     expect(command).not.toContain("--proto '=https'")
     expect(command).not.toContain('--tlsv1.2')
     expect(command).not.toContain('SUB2API_SETUP_PY_URL=')

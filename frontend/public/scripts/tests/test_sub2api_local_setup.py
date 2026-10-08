@@ -211,7 +211,7 @@ class LocalSetupTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = MODULE.codex_update(path, "https://api.example.test/v1", "sk-new", "composite", "api-key", False)
-        parsed = __import__("tomllib").loads(result)
+        parsed = MODULE.toml_loads(result)
         self.assertEqual(parsed["model_provider"], "OpenAI")
         self.assertNotIn("model_catalog_json", parsed)
         self.assertEqual(parsed["model"], "gpt-5.6-terra")
@@ -241,7 +241,7 @@ class LocalSetupTests(unittest.TestCase):
                 False,
             )
 
-        parsed = __import__("tomllib").loads(result)
+        parsed = MODULE.toml_loads(result)
         provider = parsed["model_providers"]["OpenAI"]
         self.assertEqual(provider["experimental_bearer_token"], "sk-routed")
         self.assertFalse(provider["requires_openai_auth"])
@@ -270,7 +270,7 @@ class LocalSetupTests(unittest.TestCase):
                     "SUB2API_SETUP_API_KEY": "sk-new",
                 })
                 MODULE.apply_setup(type("Args", (), {"yes": True, "dry_run": False, "skip_doctor": True})())
-                parsed = __import__("tomllib").loads((Path(root) / ".codex/config.toml").read_text())
+                parsed = MODULE.toml_loads((Path(root) / ".codex/config.toml").read_text())
                 self.assertEqual(parsed["model_provider"], "OpenAI")
                 self.assertNotIn("model_catalog_json", parsed)
                 self.assertFalse(parsed["model_providers"]["OpenAI"]["requires_openai_auth"])

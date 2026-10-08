@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-SCRIPT_VERSION="2026.09.05"
+SCRIPT_VERSION="2026.10.08"
+TOMLI_WHEEL="tomli-2.2.1-py3-none-any.whl"
 PYTHON_VERSION="3.14.7+20260825"
 PYTHON_CACHE_ROOT="${XDG_CACHE_HOME:-${HOME:-.}/.cache}/sub2api/python/${PYTHON_VERSION}"
 
@@ -12,9 +13,26 @@ die() {
 
 command -v curl >/dev/null 2>&1 || die "需要 curl 才能下载配置解析器"
 
+download() {
+  printf '%s\n' "[sub2api] 正在下载 $3（单次超时 $4 秒，失败最多重试 2 次）" >&2
+  if ! curl -fSL --proto '=https' --tlsv1.2 --connect-timeout 10 \
+    --max-time "$4" --retry 2 --retry-delay 1 --retry-max-time "$4" \
+    "$1" -o "$2.part"; then
+    rm -f "$2.part"
+    return 1
+  fi
+  [ -s "$2.part" ] || { rm -f "$2.part"; return 1; }
+  mv "$2.part" "$2"
+}
+
+usable_python() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1
+}
+
 find_python() {
   for candidate in python3 python; do
-    if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+    if command -v "$candidate" >/dev/null 2>&1 && usable_python "$candidate"; then
+      printf '%s\n' "[sub2api] 使用系统 Python: $(command -v "$candidate")" >&2
       command -v "$candidate"
       return 0
     fi
@@ -49,11 +67,13 @@ runtime_spec() {
 download_python() {
   runtime_spec
   mkdir -p "$PYTHON_CACHE_ROOT"
-  archive="$PYTHON_CACHE_ROOT/python.tar.gz"
-  python_path=$(find "$PYTHON_CACHE_ROOT" -type f -name python3 -perm -u+x -print -quit 2>/dev/null || true)
-  if [ -z "$python_path" ]; then
+  archive="$temp_dir/python.tar.gz"
+  # python3 is normally a symlink in python-build-standalone archives.
+  python_path="$PYTHON_CACHE_ROOT/python/bin/python3"
+  if ! usable_python "$python_path"; then
+    printf '%s\n' "[sub2api] 未找到可用的 Python 3.8+，准备便携运行时" >&2
     url="https://github.com/astral-sh/python-build-standalone/releases/download/20260825/${PYTHON_ASSET}"
-    curl -fsSL --proto '=https' --tlsv1.2 "$url" -o "$archive" || die "便携 Python 下载失败"
+    download "$url" "$archive" "便携 Python（首次运行需要）" 180 || die "便携 Python 下载失败；请检查网络，或安装 Python 3.8+ 后重试"
     if command -v sha256sum >/dev/null 2>&1; then
       actual=$(sha256sum "$archive" | awk '{print $1}')
     elif command -v shasum >/dev/null 2>&1; then
@@ -64,9 +84,8 @@ download_python() {
     [ "$actual" = "$PYTHON_SHA256" ] || die "便携 Python SHA-256 校验失败"
     tar -xzf "$archive" -C "$PYTHON_CACHE_ROOT" || die "便携 Python 解压失败"
     chmod -R u+rwX,go-rwx "$PYTHON_CACHE_ROOT"
-    python_path=$(find "$PYTHON_CACHE_ROOT" -type f -name python3 -perm -u+x -print -quit 2>/dev/null || true)
   fi
-  [ -n "$python_path" ] || die "便携 Python 解压后找不到 python3"
+  usable_python "$python_path" || die "便携 Python 解压后不可执行或版本不兼容"
   printf '%s\n' "$python_path"
 }
 
@@ -100,16 +119,19 @@ if [ "${1:-}" != "" ] && [ "${1#-}" = "$1" ]; then
   shift
 fi
 
-python_cmd=$(find_python || download_python)
 endpoint=${SUB2API_SETUP_ENDPOINT:-}
 [ -n "$endpoint" ] || die "缺少 SUB2API_SETUP_ENDPOINT"
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-setup.XXXXXX")
+trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
+python_cmd=$(find_python || download_python)
 helper_url=${SUB2API_SETUP_PY_URL:-${endpoint%/v1}/scripts/sub2api-local-setup.py}
 printf '%s\n' "[sub2api] 客户端: ${SUB2API_SETUP_CLIENT}; Endpoint: ${endpoint}" >&2
 printf '%s\n' "[sub2api] 正在准备配置解析器: ${helper_url}" >&2
-temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/sub2api-setup.XXXXXX")
-trap 'rm -rf "$temp_dir"' EXIT HUP INT TERM
 helper="$temp_dir/sub2api-local-setup.py"
-curl -fsSL --proto '=https' --tlsv1.2 "$helper_url" -o "$helper" || die "配置解析器下载失败"
+download "$helper_url" "$helper" "配置解析器" 60 || die "配置解析器下载失败"
+if [ "$SUB2API_SETUP_CLIENT" = codex ] && ! "$python_cmd" -c 'import tomllib' >/dev/null 2>&1; then
+  download "${helper_url%/*}/$TOMLI_WHEEL" "$temp_dir/$TOMLI_WHEEL" "TOML 解析库（约 14 KiB，无需安装）" 60 || die "TOML 解析库下载失败"
+fi
 printf '%s\n' "[sub2api] 配置解析器已下载，开始执行" >&2
 
-exec "$python_cmd" "$helper" "$@"
+"$python_cmd" "$helper" "$@"

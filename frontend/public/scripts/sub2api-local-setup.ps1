@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$scriptVersion = '2026.09.07'
+$scriptVersion = '2026.10.08'
+$tomliWheel = 'tomli-2.2.1-py3-none-any.whl'
 $pythonVersion = '3.13.15'
 $pythonAsset = 'python-3.13.15-embed-amd64.zip'
 $pythonSha256 = 'd1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf'
@@ -66,8 +67,11 @@ function Find-Python {
     $command = Get-Command $candidate -ErrorAction SilentlyContinue
     if ($null -eq $command) { continue }
     try {
-      & $command.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" 2>$null
-      if ($LASTEXITCODE -eq 0) { return $command.Source }
+      & $command.Source -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)" 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "[sub2api] 使用系统 Python: $($command.Source)"
+        return $command.Source
+      }
     } catch { }
   }
   return $null
@@ -96,7 +100,7 @@ function Get-PortablePython([string]$Endpoint) {
         Write-Host "[sub2api] $($source.Label)不可用，尝试下一个下载源"
       }
     }
-    if (-not $downloaded) { Fail "便携 Python 获取失败。请检查网络，或先安装 Python 3.11+ 后重试。详情: $lastDownloadError" }
+    if (-not $downloaded) { Fail "便携 Python 获取失败。请检查网络，或先安装 Python 3.8+ 后重试。详情: $lastDownloadError" }
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     if ($actual -ne $pythonSha256) { Remove-Item -LiteralPath $archive -Force; Fail '便携 Python SHA-256 校验失败' }
     try {
@@ -156,6 +160,13 @@ New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 try {
   $helper = Join-Path $tempRoot 'sub2api-local-setup.py'
   Invoke-SetupDownload -Uri $helperUrl -OutFile $helper -Label '配置解析器' -TimeoutSec 60
+  if ($env:SUB2API_SETUP_CLIENT -eq 'codex') {
+    & $python -c "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('tomllib') else 1)"
+    if ($LASTEXITCODE -ne 0) {
+      $tomliUrl = $helperUrl.Substring(0, $helperUrl.LastIndexOf('/') + 1) + $tomliWheel
+      Invoke-SetupDownload -Uri $tomliUrl -OutFile (Join-Path $tempRoot $tomliWheel) -Label 'TOML 解析库（约 14 KiB，无需安装）' -TimeoutSec 60
+    }
+  }
   Write-Host '[sub2api] 配置解析器已下载，开始执行'
   & $python $helper @args
   if ($LASTEXITCODE -ne 0) { Fail "配置解析器执行失败，退出码: $LASTEXITCODE" }

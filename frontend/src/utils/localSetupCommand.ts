@@ -71,7 +71,7 @@ export function buildLocalSetupCommand(input: LocalSetupCommandInput): string {
     : ''
 
   if (input.os === 'unix') {
-    return `curl -fsSL ${shellQuote(scriptUrl)} | bash -s -- ${endpointArg} ${apiKeyArg} ${shellQuote(clientArg)}${platformArg}${modelArg} --yes`
+    return `curl -fsSL --connect-timeout 10 --max-time 60 ${shellQuote(scriptUrl)} | bash -s -- ${endpointArg} ${apiKeyArg} ${shellQuote(clientArg)}${platformArg}${modelArg} --yes`
   }
 
   const args = [endpointArg, apiKeyArg, powerShellQuote(clientArg)]

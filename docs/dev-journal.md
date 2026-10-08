@@ -1,5 +1,26 @@
 # Development Journal
 
+## Local setup system Python compatibility (2026-10-08)
+
+Lower the Unix/Windows bootstrap minimum from Python 3.11 to 3.8. Preserve
+full TOML validation using the unmodified, checksum-pinned Tomli 2.2.1 pure
+Python wheel served beside the helper. Python 3.11+ retains stdlib tomllib;
+JSON-only clients do not download the wheel. Remove the helper's remaining
+3.9-only string API. No pip install or global Python/configuration change is
+needed to run the setup tool.
+
+Bound Unix downloads and the copied bootstrap command with connection/request
+timeouts. Display runtime selection and download progress, reuse executable
+symlinked portable Python, and clean temporary helpers and partial files after
+both successful and failed execution. Authentication-mode behavior is unchanged.
+
+Exercise the actual piped bootstrap with real Python and isolated fixture
+downloads, including malformed TOML preservation and corrupt parser rejection.
+Add CI coverage on Python 3.8, 3.9 and 3.11. See the
+[setup README](../frontend/public/scripts/README.md) for dependency provenance
+and validation. This is a source fix; a new application release is required
+before the public one-click command serves it.
+
 ## Upstream v0.2.14 intake (2026-10-07)
 
 Merge upstream/main `3f1a2ea0a760730e3bc528105c00b4ee4f23e469` into
