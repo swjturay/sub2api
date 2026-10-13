@@ -6,6 +6,20 @@ to the operations host.
 
 ## 1. Build and archive
 
+If the source commit has no CI runs (for example after restoring Actions on a
+disabled fork), run all three validation workflows against `cce-deploy` before
+building the release:
+
+```sh
+gh workflow run backend-ci.yml --ref cce-deploy
+gh workflow run insights-ci.yml --ref cce-deploy
+gh workflow run security-scan.yml --ref cce-deploy
+```
+
+Verify each run's full source SHA matches the intended branch head and that
+all three succeed. Manual validation preserves the same jobs and permissions
+as push validation; it does not bypass the image workflow's CI gate.
+
 `.github/workflows/cce-clean-image.yml` builds the backend and Insights images
 in parallel and pushes only immutable linux/amd64 images to Alibaba ACR.
 

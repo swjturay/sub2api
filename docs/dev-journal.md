@@ -1,5 +1,15 @@
 # Development Journal
 
+## Manual CCE source validation (2026-10-13)
+
+Allow manual dispatch of CI, Insights CI and Security Scan with unchanged jobs
+and permissions. GitHub paused this fork's workflows with a usage-scale notice;
+the maintainer re-enabled them before the v0.2.16 deployment. Explicit dispatch
+lets operators validate a branch head whose original push did not run, without
+creating an empty commit or weakening the release image's exact-source CI gate.
+Document the recovery commands in the CCE release README. Runtime code remains
+identical to `c35f17db2c830e01346c1b609356ebaa80dba32f`.
+
 ## Upstream v0.2.16 intake (2026-10-13)
 
 Merge the official v0.2.16 tag `01842576b3d5c1e2545b5a99ad555d36e28ed306`
