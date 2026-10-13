@@ -1,5 +1,27 @@
 # Development Journal
 
+## Upstream v0.2.15 intake (2026-10-13)
+
+Merge the official v0.2.15 tag `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`
+into cce-deploy `9a1800821fb8cc4e1c4d39a3a6dcb21e2647c837`, bringing in
+145 upstream commits. Adopt the shared platform/provider catalogs, Cline and
+Command Code, current-group WebSocket pricing, protocol fixes, UI race fixes,
+Go 1.27.2 and golangci-lint 2.14.0. Correct the runtime VERSION to 0.2.15;
+the upstream tag still contains 0.2.14.
+
+Keep direct OAuth/setup-token and CPR local token estimates alongside the new
+profile-driven provider routing. Preserve Insights imports and statistics,
+CPR account types and filters, and all CCE client setup features. Retain the
+fork's complete lint diagnostics. Extend generated client configuration tests
+to the two new platforms and include CPR in the upstream compact-filter test.
+
+All 297 previously committed SQL migrations remain byte-identical. The new
+upstream platform-constraint migration has a distinct full filename from the
+existing Insights migration with the same numeric prefix. CCE release tooling,
+Insights source, read-access rules and the Python setup helper are unchanged.
+See [the intake report](tasks/upstream-v0.2.15-merge.md) for validation and
+upgrade boundaries. This is source integration only.
+
 ## Insights read access without system administration (2026-10-08)
 
 Use the existing user attribute tables for a protected `insights_access`

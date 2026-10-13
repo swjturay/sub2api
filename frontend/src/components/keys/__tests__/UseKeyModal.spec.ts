@@ -142,7 +142,7 @@ describe('UseKeyModal', () => {
     expect(wrapper.text()).toContain('~/.codex/config.toml')
   })
 
-  it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'composite'] as const)(
+  it.each(['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'deepseek', 'command_code', 'cline', 'composite'] as const)(
     'shows Codex first and shares one OS selector across setup modes for %s groups',
     (platform) => {
       const wrapper = mount(UseKeyModal, {
@@ -615,6 +615,8 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('supports_websockets = false')
     expect(configToml).not.toContain('responses_websockets_v2')
     expectCodexDiscoveryMode(configToml, true)
+    const features = configToml?.split('[features]\n')[1]?.split('\n[')[0]
+    expect(features).toContain('goals = true')
     expect(configToml).not.toContain('model_reasoning_effort = "xhigh"')
     expect(codeBlocks).toContain('{\n  "OPENAI_API_KEY": "sk-test"\n}')
     expect(wrapper.text()).toContain('auth.json')
@@ -806,7 +808,9 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('image_generation = true')
     expect(configToml).toContain('supports_websockets = true')
     expectCodexDiscoveryMode(configToml, true)
-    expect(configToml?.split('[features]')[1]).toContain('responses_websockets_v2 = true')
+    const features = configToml?.split('[features]\n')[1]?.split('\n[')[0]
+    expect(features).toContain('responses_websockets_v2 = true')
+    expect(features).toContain('goals = true')
     expect(codeBlocks).toContain('{\n  "OPENAI_API_KEY": "sk-test"\n}')
     expect(wrapper.text()).toContain('auth.json')
   })
@@ -855,7 +859,9 @@ describe('UseKeyModal', () => {
     expect(configToml).toContain('image_generation = true')
     expect(configToml).toContain('supports_websockets = true')
     expectCodexDiscoveryMode(configToml, true)
-    expect(configToml?.split('[features]')[1]).toContain('responses_websockets_v2 = true')
+    const features = configToml?.split('[features]\n')[1]?.split('\n[')[0]
+    expect(features).toContain('responses_websockets_v2 = true')
+    expect(features).toContain('goals = true')
     expect(codeBlocks).not.toContain('{\n  "OPENAI_API_KEY": "sk-test"\n}')
     expect(wrapper.text()).not.toContain('auth.json')
   })
@@ -1227,7 +1233,7 @@ describe('UseKeyModal', () => {
       .toContain('%userprofile%\\.codex\\codex-models.json')
   })
 
-  it.each(['anthropic', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go'] as const)(
+  it.each(['anthropic', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'command_code', 'cline'] as const)(
     'offers Codex catalog configuration for the %s routed group',
     async (platform) => {
       const wrapper = mount(UseKeyModal, {
