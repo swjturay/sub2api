@@ -1,5 +1,27 @@
 # Development Journal
 
+## Upstream v0.2.16 intake (2026-10-13)
+
+Merge the official v0.2.16 tag `01842576b3d5c1e2545b5a99ad555d36e28ed306`
+into cce-deploy `f5e50c18e21da5ac53c2ccfbea62d495cfc7a8c6`, bringing in
+79 upstream commits. Include Gemini explicit cache management and storage
+billing, Vertex/API-key support, Claude Haiku 5.5, group translations,
+model-scoped temporary scheduling rules, and protocol/UI fixes.
+
+Resolve the AccountUsageCell conflict by retaining the shared CPR/OpenAI usage
+predicate alongside the new Gemini third-party/Vertex predicates. Preserve
+Insights recording on cached inference; cache management remains outside
+inference success/latency metrics, with middleware regression coverage.
+Regenerated Wire matches the merge, including Insights and cache-service
+construction/shutdown. All 298 existing SQL migrations remain byte-identical;
+the four new upstream migrations have distinct full filenames.
+
+Correct the runtime VERSION to 0.2.16 in a follow-up commit because the release
+tag still contains 0.2.15. Push that correction separately from the upstream
+merge to give CI a push without upstream's skip-CI version housekeeping.
+See [the intake report](tasks/upstream-v0.2.16-merge.md) for validation and
+upgrade boundaries. This is source integration only.
+
 ## Upstream v0.2.15 intake (2026-10-13)
 
 Merge the official v0.2.15 tag `f2669c8cf62555cd92389b3f55920e9e6e7c6ff2`

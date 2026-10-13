@@ -130,6 +130,37 @@ func TestInsightsHTTPTransportIncludesCompactButExcludesTokenCounting(t *testing
 	}
 }
 
+func TestInsightsGeminiCacheControlsAreNotInferenceCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, "/v1beta/cachedContents"},
+		{http.MethodGet, "/v1beta/cachedContents"},
+		{http.MethodGet, "/v1beta/cachedContents/cache-id"},
+		{http.MethodPatch, "/v1beta/cachedContents/cache-id"},
+		{http.MethodDelete, "/v1beta/cachedContents/cache-id"},
+	} {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			r := gin.New()
+			r.Use(InsightsCallMiddleware())
+			r.Handle(tc.method, tc.path, func(c *gin.Context) {
+				_, observed := insights.CallFromContext(c.Request.Context())
+				require.False(t, observed, "cache management must not affect inference success or latency metrics")
+				c.Status(http.StatusOK)
+			})
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+			require.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+	for _, path := range []string{
+		"/v1beta/models/gemini-3.6-flash:generateContent",
+		"/v1beta/models/gemini-3.6-flash:streamGenerateContent",
+	} {
+		_, observed := insightsHTTPTransport(http.MethodPost, path)
+		require.True(t, observed, "inference using an explicit cache must still be measured")
+	}
+}
+
 func TestInsightsIngressRecordsBodyLimitAndAuthRejections(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cases := []struct {
