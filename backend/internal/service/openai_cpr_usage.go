@@ -38,6 +38,8 @@ type cprUsageCapture struct {
 	requestBody   []byte
 	header        http.Header
 	observation   *CodexObservation
+	healthFailure bool
+	healthHandled bool
 	quotaFailure  bool
 	quotaHandled  bool
 	quotaReset    time.Time
@@ -47,6 +49,9 @@ func (o *cprUsageCapture) observe(payload []byte, event string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	event = effectiveOpenAISSEEventType(payload, event)
+	if isCPRHealthError(payload) {
+		o.healthFailure = true
+	}
 	if isCPRQuotaError(payload) {
 		o.quotaFailure = true
 		headers := o.header
@@ -126,7 +131,9 @@ func (s *OpenAIGatewayService) beginCPRForward(ctx context.Context, c *gin.Conte
 	c.Request = c.Request.WithContext(ctx)
 	return ctx, func(result **OpenAIForwardResult, returnErr *error) {
 		defer func() { c.Request = originalRequest }()
-		if s.applyCapturedCPRQuota(ctx, account, capture) {
+		healthFailure := s.applyCapturedCPRHealth(ctx, account, capture)
+		quotaFailure := s.applyCapturedCPRQuota(ctx, account, capture)
+		if healthFailure || quotaFailure {
 			var failure *UpstreamFailoverError
 			if errors.As(*returnErr, &failure) {
 				failure.RetryableOnSameAccount = false

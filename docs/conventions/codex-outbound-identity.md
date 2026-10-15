@@ -115,7 +115,7 @@ limitReached and fetch timestamps are not authority or fresh quota evidence.
 Use the existing configured fallback when no future time is available. Extend
 the existing rate-limit field atomically with SetRateLimitedIfLater and notify
 the existing runtime blocker; generic concurrent CPR 429s must not shorten it.
-Do not add disabled/error state, recovery timers, probes or database fields.
+Quota handling does not add disabled/error state, recovery timers, probes or database fields.
 Streaming quota updates run after writing the received failure frame; upstream
 teardown still cancels immediately. The management query can delay local
 settlement/release by up to its timeout. A reset is permission to try again,
@@ -125,6 +125,33 @@ Do not replay after generated output or cancellation. Retry before response
 can still duplicate remote execution; incomplete usage is not reconciled
 or estimated automatically. HTTP CPR observations contain safety/completeness
 but no route digest of the internal hop. No new Cookie replay is introduced.
+
+## CPR Credential Health
+
+A structured no_available_provider or credential failure triggers a bounded
+query of the bound CPR management account. HTTP/SSE, converted Chat/Messages,
+WS turns/handshakes and non-captured endpoints share this rule. Preserve wire
+bytes, received usage, cancellation and the existing no-replay boundary.
+
+Only a confirmed error state with a known credential reason, or an explicitly
+disabled management account, authorizes quarantine. Generic 503s, unsupported
+models, capacity, key budgets and management failures are not credential facts.
+Unknown management state receives only a short runtime cooldown after a failed
+request and a sanitized diagnostic. Never expose credentials or raw management
+errors. Coalesce concurrent binding queries; do not cache terminal health state
+because CPR can be reauthorized without changing the Sub2API binding.
+
+Quarantine uses the existing status=error and schedulable=false fields and a
+stable reason. Match the current credentials, row version, active state and
+scheduling flag atomically with the scheduler outbox insertion. Refresh the
+scheduler snapshot and bridge local stale snapshots under the same lock used by
+administrative recovery. Stale observations must not overwrite rebinding,
+reauthorization, recovery or manual suspension.
+
+A lifecycle-owned worker checks active, schedulable CPR bindings every minute
+through management only. It never sends inference probes, refreshes OAuth,
+clears blocks or enables accounts. Recovery remains an explicit operator action
+after upstream reauthorization and verification. No database migration is needed.
 
 ## Codex Management-Plane Clients
 

@@ -362,6 +362,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketRawRelay(
 				}
 				if openAIRawRelayWSTurnEnded(payload) {
 					if writeErr == nil {
+						s.applyCapturedCPRHealth(ctx, account, captured.Load())
 						s.applyCapturedCPRQuota(ctx, account, captured.Load())
 					}
 					turns.finishTerminalWrite(writeErr == nil, nil)
@@ -370,6 +371,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketRawRelay(
 		},
 	})
 
+	s.applyCapturedCPRHealth(ctx, account, captured.Load())
 	s.applyCapturedCPRQuota(ctx, account, captured.Load())
 	var closeErr *OpenAIWSClientCloseError
 	policyClose := relayExit != nil && errors.As(relayExit.Err, &closeErr)
@@ -498,6 +500,9 @@ func (s *OpenAIGatewayService) acceptOpenAIRawRelayWSTurn(
 ) ([]byte, error) {
 	if err := rejectOpenAIRawRelayWSDuplicateKeys(frame); err != nil {
 		return nil, err
+	}
+	if !s.cprWSTurnAvailable(ctx, account, meta.requestModelForFrame(frame)) {
+		return nil, NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "CPR account unavailable; reconnect to select a healthy account", nil)
 	}
 	if hooks.BeforeRequest != nil {
 		if err := hooks.BeforeRequest(turn, frame, meta.requestModelForFrame(frame)); err != nil {

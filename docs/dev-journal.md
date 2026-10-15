@@ -1,5 +1,15 @@
 # Development Journal
 
+## CPR credential quarantine (2026-10-15)
+
+Stop routing to a CPR binding after management confirms its credential is
+invalid or its upstream account is disabled. The production failure was a
+revoked OAuth token reported to Sub2API as no_available_provider; the native
+relay only failed over and never synchronized credential health. Share the
+check across HTTP/SSE/WS and a periodic management-only scan. Preserve manual
+suspension and concurrent recovery with a conditional write plus atomic outbox.
+See [the repair record](tasks/cpr-credential-health-fix.md).
+
 ## Manual CCE source validation (2026-10-13)
 
 Allow manual dispatch of CI, Insights CI and Security Scan with unchanged jobs

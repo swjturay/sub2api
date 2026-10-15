@@ -104,6 +104,7 @@ func (s *CPRAccountState) Schedulable() bool {
 type CPRQuotaService struct {
 	client           *http.Client
 	cfg              *config.Config
+	healthQueries    singleflight.Group
 	rateLimitQueries singleflight.Group
 	rateLimitCache   sync.Map
 }

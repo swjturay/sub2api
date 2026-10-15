@@ -67,6 +67,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		schedulerSnapshotSvc,
 		tokenRefreshSvc,
 		accountExpirySvc,
+		nil, // CPR health worker
 		nil, // cnProviderBalanceCheck
 		codexVersionSyncSvc,
 		claudeCodeVersionSyncSvc,

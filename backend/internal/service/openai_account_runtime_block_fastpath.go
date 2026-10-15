@@ -114,6 +114,12 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 		return false
 	}
+	if account != nil && account.IsCPR() && isCPRHealthError(responseBody) && s != nil && s.rateLimitService != nil {
+		if capture, _ := ctx.Value(cprUsageContextKey{}).(*cprUsageCapture); capture == nil {
+			s.rateLimitService.checkCPRAccountHealth(ctx, account, true)
+		}
+		return false
+	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) {
@@ -404,6 +410,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	mu := s.openAIAccountRuntimeBlockLock(accountID)
 	mu.Lock()
 	defer mu.Unlock()
+	s.cprHealthRuntimeBlocks.Delete(accountID)
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.openaiOAuth429RetryStartedAt.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
@@ -574,6 +581,9 @@ func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(account
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
 	if s == nil {
 		return false
+	}
+	if s.isCPRHealthRuntimeBlocked(account) {
+		return true
 	}
 	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
 	if snapshot.blocked {

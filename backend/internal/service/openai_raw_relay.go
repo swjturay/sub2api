@@ -366,6 +366,11 @@ func (s *OpenAIGatewayService) handleOpenAIRawRelayErrorResponse(c *gin.Context,
 
 // recordOpenAIRawRelayUpstreamError 记上游错误到运维；整体不可用时返回可换号错误，否则返回 nil。
 func (s *OpenAIGatewayService) recordOpenAIRawRelayUpstreamError(c *gin.Context, account *Account, status int, header http.Header, body []byte) *UpstreamFailoverError {
+	if isCPRHealthError(body) && s.rateLimitService != nil {
+		if capture, _ := c.Request.Context().Value(cprUsageContextKey{}).(*cprUsageCapture); capture == nil {
+			s.rateLimitService.checkCPRAccountHealth(c.Request.Context(), account, true)
+		}
+	}
 	message := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	detail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
