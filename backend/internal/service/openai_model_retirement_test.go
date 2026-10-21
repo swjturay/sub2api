@@ -192,6 +192,8 @@ func TestGPT55RetirementCompactFallbackKeepsSelectedModel(t *testing.T) {
 		require.Equal(t, "gpt-6.1-sol", gjson.GetBytes(upstream.lastBody, "model").String())
 		account.Type = AccountTypeAPIKey
 		require.Equal(t, "gpt-5.5", svc.resolveOpenAICompactFallbackModel(account, "gpt-6.1-sol"))
+		account.Type = AccountTypeCPR
+		require.Equal(t, "gpt-5.5", svc.resolveOpenAICompactFallbackModel(account, "gpt-6.1-sol"))
 	}
 }
 
@@ -200,14 +202,14 @@ func TestGPT55RetirementSchedulerAndDiagnosis(t *testing.T) {
 	groupID := int64(1)
 	oauth := Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
 	api := Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true}
-	for _, typ := range []string{AccountTypeOAuth, AccountTypeSetupToken, AccountTypeAPIKey} {
+	for _, typ := range []string{AccountTypeOAuth, AccountTypeSetupToken, AccountTypeAPIKey, AccountTypeCPR} {
 		account := oauth
 		account.Type = typ
 		scheduler := &defaultOpenAIAccountScheduler{}
 		ok, _ := scheduler.isAccountRequestCompatibleReason(ctx, &account, OpenAIAccountScheduleRequest{RequestedModel: "gpt-5.5"})
-		require.Equal(t, typ == AccountTypeAPIKey, ok)
+		require.Equal(t, typ == AccountTypeAPIKey || typ == AccountTypeCPR, ok)
 		reason := openAICompatibleAccountEligibilityFailureReasonBeforeProfit(ctx, &account, PlatformOpenAI, "gpt-5.5", false, "")
-		require.Equal(t, typ == AccountTypeAPIKey, reason == "")
+		require.Equal(t, typ == AccountTypeAPIKey || typ == AccountTypeCPR, reason == "")
 	}
 	oauth.Credentials = map[string]any{"compact_model_mapping": map[string]any{"gpt-6.1-sol": "gpt-5.5"}}
 	scheduler := &defaultOpenAIAccountScheduler{}

@@ -162,8 +162,9 @@ func TestForwardRealCodexLiteOmitsInstructions(t *testing.T) {
 
 // 原生 v2 压缩回合（普通 /responses + compaction_trigger）与普通 Lite 轮次同形：首发照真客户端不带
 // instructions（整个会话形态不切换、前缀缓存不断）。上游报上下文超限时换兜底模型重试，兜底落到
-// gpt-5.5 时出站摘掉 Lite 头，重试体必须补回 instructions。三条兜底分支（HTTP 4xx、非流式与流式
-// 的 SSE 失败终态）各走一遍。
+// 未退役的 gpt-5.4 时保留 Lite 头，模型改变后重试体必须补回 instructions。三条兜底分支
+// （HTTP 4xx、非流式与流式的 SSE 失败终态）各走一遍；退役的 gpt-5.5 则不得发起兜底请求。
+// GPT-5.5 专属的去 Lite 头兼容行为仍由 openai_lite_mapped_gpt55_test.go 独立覆盖。
 func TestForwardRealCodexLiteCompactionFallbackKeepsInstructions(t *testing.T) {
 	sseFailed := "event: response.failed\n" +
 		`data: {"type":"response.failed","response":{"status":"failed","error":{"code":"context_length_exceeded","message":"context window exceeded"}}}` + "\n\n"
@@ -179,35 +180,43 @@ func TestForwardRealCodexLiteCompactionFallbackKeepsInstructions(t *testing.T) {
 		{name: "sse failure non-stream", status: http.StatusOK, contentType: "text/event-stream", payload: sseFailed},
 		{name: "sse failure stream", stream: true, status: http.StatusOK, contentType: "text/event-stream", payload: sseFailed},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			body, err := sjson.SetRawBytes(realCodexLiteRequestBody(t, "gpt-6-astra"), "input.-1", []byte(`{"type":"compaction_trigger"}`))
-			require.NoError(t, err)
-			body, err = sjson.SetBytes(body, "stream", tc.stream)
-			require.NoError(t, err)
-			c := newConvTestContext(t, body)
-			c.Request.Header.Set(responsesLiteHeader, "true")
-			MarkOpenAINativeCompactionV2(c)
-			svc, up := wireProfileTestService()
-			svc.cfg.Gateway.OpenAICompactModel = "gpt-5.5"
-			up.responses = []*http.Response{{
-				StatusCode: tc.status,
-				Header:     http.Header{"Content-Type": []string{tc.contentType}},
-				Body:       io.NopCloser(strings.NewReader(tc.payload)),
-			}}
-			_, _ = svc.Forward(context.Background(), c, wireProfileTestAccount(true), body)
-			require.Len(t, up.bodies, 2)
-			require.False(t, gjson.GetBytes(up.bodies[0], "instructions").Exists(), string(up.bodies[0]))
-			require.Equal(t, "true", up.requests[0].Header.Get(responsesLiteHeader))
-			require.Equal(t, "gpt-5.5", gjson.GetBytes(up.bodies[1], "model").String())
-			require.Empty(t, up.requests[1].Header.Get(responsesLiteHeader))
-			retryInstructions := gjson.GetBytes(up.bodies[1], "instructions")
-			require.Equal(t, defaultCodexSynthInstructions("gpt-6-astra"), retryInstructions.String(),
-				"补回的是首发模型那份，不是兜底模型的")
-			require.Contains(t, retryInstructions.Raw, "<")
-			wantRaw, err := marshalOpenAIUpstreamJSON(defaultCodexSynthInstructions("gpt-6-astra"))
-			require.NoError(t, err)
-			require.Equal(t, string(wantRaw), retryInstructions.Raw, "注入值按原字节写入，不做 HTML 转义（真客户端 serde_json 不转义）")
-		})
+		for _, fallbackModel := range []string{"gpt-5.4", "gpt-5.5"} {
+			t.Run(tc.name+"/"+fallbackModel, func(t *testing.T) {
+				body, err := sjson.SetRawBytes(realCodexLiteRequestBody(t, "gpt-6-astra"), "input.-1", []byte(`{"type":"compaction_trigger"}`))
+				require.NoError(t, err)
+				body, err = sjson.SetBytes(body, "stream", tc.stream)
+				require.NoError(t, err)
+				c := newConvTestContext(t, body)
+				c.Request.Header.Set(responsesLiteHeader, "true")
+				MarkOpenAINativeCompactionV2(c)
+				svc, up := wireProfileTestService()
+				svc.cfg.Gateway.OpenAICompactModel = fallbackModel
+				up.responses = []*http.Response{{
+					StatusCode: tc.status,
+					Header:     http.Header{"Content-Type": []string{tc.contentType}},
+					Body:       io.NopCloser(strings.NewReader(tc.payload)),
+				}}
+				_, _ = svc.Forward(context.Background(), c, wireProfileTestAccount(true), body)
+				if fallbackModel == "gpt-5.5" {
+					require.Len(t, up.bodies, 1, "retired subscription fallback must not be dispatched")
+					require.False(t, gjson.GetBytes(up.bodies[0], "instructions").Exists())
+					require.Equal(t, "true", up.requests[0].Header.Get(responsesLiteHeader))
+					return
+				}
+				require.Len(t, up.bodies, 2)
+				require.False(t, gjson.GetBytes(up.bodies[0], "instructions").Exists(), string(up.bodies[0]))
+				require.Equal(t, "true", up.requests[0].Header.Get(responsesLiteHeader))
+				require.Equal(t, fallbackModel, gjson.GetBytes(up.bodies[1], "model").String())
+				require.Equal(t, "true", up.requests[1].Header.Get(responsesLiteHeader), "non-retired fallback keeps its existing Lite capability header")
+				retryInstructions := gjson.GetBytes(up.bodies[1], "instructions")
+				require.Equal(t, defaultCodexSynthInstructions("gpt-6-astra"), retryInstructions.String(),
+					"补回的是首发模型那份，不是兜底模型的")
+				require.Contains(t, retryInstructions.Raw, "<")
+				wantRaw, err := marshalOpenAIUpstreamJSON(defaultCodexSynthInstructions("gpt-6-astra"))
+				require.NoError(t, err)
+				require.Equal(t, string(wantRaw), retryInstructions.Raw, "注入值按原字节写入，不做 HTML 转义（真客户端 serde_json 不转义）")
+			})
+		}
 	}
 }
 

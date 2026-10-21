@@ -36,9 +36,17 @@ Four files required conflict resolution:
   test in critical frontend CI.
 
 Retirement regressions now also exercise CPR accounts and mixed OAuth/CPR
-groups through model support, account projection and client-visible catalogs.
+groups through model support, account projection, client-visible catalogs,
+scheduler eligibility and compact-fallback selection.
 This prevents direct-credential policy from being imposed on the CPR account
 type; it does not assert that an actual CPR upstream serves every requested model.
+
+The full backend suite found one stale fork test with three failing cases: it
+expected a Lite compaction retry to GPT-5.5 after that model's retirement. Keep
+all original instruction-preservation assertions using GPT-5.4, and additionally
+assert that retired GPT-5.5 receives no retry across HTTP errors and non-stream/
+stream SSE failure terminals. This corrects the fixture without changing or
+weakening production retirement policy.
 
 The credential-health observer, management-only scan and conditional quarantine
 implementation remain unchanged, as do Insights source/access rules, local

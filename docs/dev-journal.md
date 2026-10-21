@@ -17,6 +17,11 @@ include it in critical CI.
 Extend GPT-5.5 retirement regressions across CPR support, account projection,
 and mixed OAuth/CPR catalogs. Retirement applies to direct ChatGPT credentials;
 CPR model availability remains governed by its existing mapping/provider rules.
+The full backend suite exposed a stale Lite compaction fixture that expected a
+retry to retired GPT-5.5. Exercise the original instruction-preservation checks
+with GPT-5.4 and require no retry to GPT-5.5 across HTTP and both SSE paths.
+Keep production retirement behavior unchanged and cover CPR scheduler and
+compact-fallback decisions separately.
 All 302 SQL migrations and Go dependency files are unchanged. Set VERSION to
 0.2.17 because the upstream tag still stores 0.2.16. Source integration only;
 see [the intake report](tasks/upstream-v0.2.17-merge.md).
