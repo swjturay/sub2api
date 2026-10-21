@@ -54,7 +54,21 @@ setup scripts, CCE deployment tooling and manual CI triggers. Native CPR relay,
 usage evidence and cancellation continue through the existing fork paths.
 
 All 302 SQL migration files are byte-identical to the branch baseline. No new
-SQL migration or Go dependency change is introduced.
+SQL migration or Go module dependency-version change is introduced.
+
+## Security validation follow-up
+
+The first exact-source Security Scan identified fixes newer than the release's
+locked build inputs. Upgrade Go from 1.27.2 to 1.27.3 for
+[GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809), synchronizing `go.mod`, all
+three compiler Dockerfiles, CI/release assertions and the development guide.
+
+Pin the frontend's transitive `follow-redirects` dependency to 1.16.1 and update
+the lockfile for
+[GHSA-q3jh-wrc6-jgq8](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-q3jh-wrc6-jgq8)
+and [GHSA-8r9p-f939-6h3c](https://github.com/follow-redirects/follow-redirects/security/advisories/GHSA-8r9p-f939-6h3c).
+These are patch-level fixes, with no new exception or reduced security check.
+The existing SheetJS exceptions and their expiry remain unchanged.
 
 ## Upgrade boundaries
 
@@ -72,13 +86,16 @@ the existing schema.
 
 ## Validation
 
-Local tools: Go 1.27.2, golangci-lint 2.14.0, Node 22.21.1 and pnpm 10.
-Frontend dependencies use the frozen lockfile.
+Initial local checks used Go 1.27.2; final security validation uses Go 1.27.3.
+Other tools are golangci-lint 2.14.0, Node 22.21.1 and pnpm 10. Frontend
+dependencies use the frozen lockfile.
 
 - Frontend lint/typecheck and critical tests: 40 files / 687 tests passed.
 - Full frontend suite: 377 files / 2,938 tests and production build passed.
 - Insights lint/typecheck, 27 files / 109 tests and production build passed.
 - Go lint reported zero issues.
+- Go 1.27.3 vulnerability scanning found no reachable vulnerability; the
+  frontend audit passed the unchanged exception policy after the patch update.
 - Targeted GPT-5.5 retirement/CPR boundary regressions and the backend build
   with embedded frontend assets passed.
 - Local setup and CCE release-helper tests passed; setup shell syntax passed.

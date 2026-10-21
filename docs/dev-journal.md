@@ -22,9 +22,15 @@ retry to retired GPT-5.5. Exercise the original instruction-preservation checks
 with GPT-5.4 and require no retry to GPT-5.5 across HTTP and both SSE paths.
 Keep production retirement behavior unchanged and cover CPR scheduler and
 compact-fallback decisions separately.
-All 302 SQL migrations and Go dependency files are unchanged. Set VERSION to
+All 302 SQL migrations and Go module dependency versions are unchanged. Set VERSION to
 0.2.17 because the upstream tag still stores 0.2.16. Source integration only;
 see [the intake report](tasks/upstream-v0.2.17-merge.md).
+
+The exact-source security scan found GO-2026-6809 in Go 1.27.2 and two
+follow-redirects advisories. Update the Go toolchain, all compiler image defaults
+and CI assertions to 1.27.3, and pin follow-redirects 1.16.1 with the locked
+frontend override. Preserve the existing audit-exception policy without adding
+waivers. Update the development guide to the actual Go/lint versions.
 
 ## CPR credential quarantine (2026-10-15)
 
