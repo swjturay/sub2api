@@ -1,5 +1,26 @@
 # Development Journal
 
+## Upstream v0.2.17 intake (2026-10-21)
+
+Merge official v0.2.17 `060d0160417782cd962a0c7f460f6cd4565d4916`
+into cce-deploy `87676430f40713cbe7fddbd46426fc4b84a288f3`, including
+48 upstream commits. Preserve the CPR credential quarantine repair, native
+relay and measured accounting, Insights access, and local setup features.
+
+Keep Insights date validation alongside the new minimum-output-token setting.
+Both WS forwarding paths still project the configured timezone before request
+normalization removes message metadata, while passing the gateway config into
+the new normalization entry point. Adopt upstream's inline account filters;
+replace the obsolete compact-panel tests with a CPR selection regression and
+include it in critical CI.
+
+Extend GPT-5.5 retirement regressions across CPR support, account projection,
+and mixed OAuth/CPR catalogs. Retirement applies to direct ChatGPT credentials;
+CPR model availability remains governed by its existing mapping/provider rules.
+All 302 SQL migrations and Go dependency files are unchanged. Set VERSION to
+0.2.17 because the upstream tag still stores 0.2.16. Source integration only;
+see [the intake report](tasks/upstream-v0.2.17-merge.md).
+
 ## CPR credential quarantine (2026-10-15)
 
 Stop routing to a CPR binding after management confirms its credential is

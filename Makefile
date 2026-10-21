@@ -5,6 +5,7 @@ FRONTEND_CRITICAL_VITEST := \
 	src/i18n/__tests__/localesMessageCompile.spec.ts \
 	src/components/account/__tests__/AccountStatusIndicator.spec.ts \
 	src/components/account/__tests__/CPROutboundProxy.spec.ts \
+	src/components/admin/account/__tests__/AccountTableFilters.spec.ts \
 	src/components/account/__tests__/EditAccountModal.spec.ts \
 	src/views/admin/__tests__/AccountsView.usageWindowsHint.spec.ts \
 	src/utils/__tests__/cprOutboundProxy.spec.ts \
