@@ -156,6 +156,11 @@ func insightsFinishForwardSuccess(c *gin.Context, result *service.ForwardResult)
 	if call, ok := insights.CallFromContext(c.Request.Context()); ok {
 		call.UpdateIdentity(insights.Identity{RequestID: service.ResolveUsageFactRequestID(c.Request.Context(), result.RequestID)})
 	}
+	// A disconnected stream may still return collected usage for billing.
+	// That does not make the client call successful.
+	if result.ClientDisconnect {
+		return insightsFinishFailure(c, insights.OutcomeCancelled, "client_cancelled")
+	}
 	return insightsFinishSuccess(c, result.Model, result.Usage.OutputTokens, result.FirstTokenMs)
 }
 

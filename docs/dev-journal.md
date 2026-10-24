@@ -1,5 +1,32 @@
 # Development Journal
 
+## Upstream v0.2.18 intake (2026-10-24)
+
+Merge official v0.2.18 `ac1b8f1271be0d674fa6f074403c1410f30a3a81`
+into cce-deploy `768b8ecf893ea8aaf8a0dbcbab07b83e2c0c78b9`, including
+45 upstream commits. Preserve CPR raw relay, received-usage accounting,
+cancellation, management-only quota/credential checks, Insights permissions
+and statistics, client setup, and independent CCE release automation.
+
+Combine the upstream Chat/Responses compatibility usage submission with the
+fork's explicit statistical timestamp. Interrupted streams retain their failure
+outcome, and disconnected results with billable usage finalize as cancelled,
+including Gemini's newly billable disconnect path. Handler regressions verify
+one settlement, the final outcome, and identical usage/client-call timestamps.
+A scheduler regression exercises actual in-process cache hits for CPR plan/model
+policy and immediate invalidation on quarantine and explicit recovery.
+
+Adopt upstream's paired TUI-to-CLI outbound identity normalization, including
+removing the TUI trailer from the canonical CLI UA. Retain missing-originator
+normalization, account/ForceCodex precedence, and the separate CPR transport.
+Keep Go 1.27.3 and the fixed follow-redirects 1.16.1 override, while accepting
+upstream DOMPurify 3.4.17. Set VERSION to 0.2.18; the release tag stores 0.2.17.
+
+All 302 existing SQL migrations remain byte-identical. New migration 246 enables
+Gemini/Antigravity image generation for existing groups; composite groups need
+an explicitly enabled image switch. This is source integration only. See
+[the intake report](tasks/upstream-v0.2.18-merge.md).
+
 ## Upstream v0.2.17 intake (2026-10-21)
 
 Merge official v0.2.17 `060d0160417782cd962a0c7f460f6cd4565d4916`
