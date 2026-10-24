@@ -35,6 +35,8 @@ constants and version-sync test, and the frontend package/lock files.
   canonical CLI constants and builders together. Keep the fork's missing-
   originator normalization, ForceCodex/account precedence, separate browser and
   Codex management clients, and CPR identity boundary.
+  The first full service test run found one stale canonical-UA builder assertion
+  requiring the old trailer; align that fixture with upstream's CLI format.
 - Keep the exact follow-redirects 1.16.1 security override and accept DOMPurify
   3.4.17. Go 1.27.3, compiler image defaults, manual validation triggers and
   security exception policy remain unchanged.

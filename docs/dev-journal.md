@@ -19,6 +19,8 @@ policy and immediate invalidation on quarantine and explicit recovery.
 Adopt upstream's paired TUI-to-CLI outbound identity normalization, including
 removing the TUI trailer from the canonical CLI UA. Retain missing-originator
 normalization, account/ForceCodex precedence, and the separate CPR transport.
+Align the old canonical-UA builder assertion with the new CLI format; the first
+full service test run caught its stale requirement for a TUI-style trailer.
 Keep Go 1.27.3 and the fixed follow-redirects 1.16.1 override, while accepting
 upstream DOMPurify 3.4.17. Set VERSION to 0.2.18; the release tag stores 0.2.17.
 
