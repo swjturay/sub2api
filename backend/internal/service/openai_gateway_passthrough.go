@@ -496,6 +496,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			imageOutputSizes = result.imageOutputSizes
 		} else {
 			result, handleErr := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
+			if handleErr == nil && !reqStream && account.IsOpenAIOAuthLike() && !openAICompactClientWantsStream(c) {
+				c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			}
 			if handleErr != nil {
 				if retryBody, fallbackModel, retry := s.applyOpenAIPassthroughCompactFallbackFromSignal(
 					c, account, requestedModel, body, handleErr, compactModelFallbackRetried, resp,
@@ -2441,8 +2444,16 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI Responses client tools: %w", err)
 	}
-	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+	// Header forwarding may have copied text/event-stream from the upstream;
+	// set the aggregated response type before writing. The compact SSE bridge,
+	// when active, replaces it with its own event-stream headers.
+	c.Writer.Header().Set("Content-Type", contentType)
+	bridged := writeOpenAICompactSSEBridge(c, resp.StatusCode, body)
+	if !bridged {
 		c.Data(resp.StatusCode, contentType, body)
+	}
+	if account != nil && account.Type == AccountTypeOAuth && !openAICompactClientWantsStream(c) {
+		c.Writer.Header().Set("Content-Type", contentType)
 	}
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
@@ -2474,6 +2485,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if !ok && terminalOK {
+		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
+	}
 
 	usage := s.parseSSEUsageFromBody(bodyText)
 	if ok {
@@ -2513,7 +2527,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 
 	contentType := "application/json; charset=utf-8"
-	if !ok {
+	if !ok && !(account != nil && account.Type == AccountTypeOAuth) {
 		contentType = resp.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "text/event-stream"

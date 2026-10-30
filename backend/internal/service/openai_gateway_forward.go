@@ -22,6 +22,10 @@ import (
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
+	// Preserve the client's response-shape choice before compatibility
+	// normalization forces stream=true for ChatGPT's upstream transport.
+	clientStreamValue := gjson.GetBytes(body, "stream")
+	clientStreamExplicit := clientStreamValue.Exists()
 	if account.UsesOpenAIRawRelay() {
 		return s.forwardOpenAIRawRelay(ctx, c, account, body)
 	}
@@ -165,6 +169,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	rememberOpenCodeInboundBody(c, originalBody)
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
+	if passthroughEnabled && account.IsOpenAIOAuthLike() && clientStreamExplicit {
+		reqStream = clientStreamValue.Bool()
+	}
 	originalModel := reqModel
 
 	if account.Platform == PlatformGrok {
@@ -1324,6 +1331,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			searchCount = streamResult.searchCount
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
+			if err == nil && !reqStream && account.IsOpenAIOAuthLike() && !openAICompactClientWantsStream(c) {
+				c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+			}
 			if err != nil {
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(

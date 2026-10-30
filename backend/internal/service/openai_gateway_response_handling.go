@@ -1695,6 +1695,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
+	if account != nil && account.Type == AccountTypeOAuth && !openAICompactClientWantsStream(c) {
+		c.Writer.Header().Set("Content-Type", contentType)
+	}
 
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,
@@ -1744,6 +1747,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
+	if !ok && terminalOK {
+		finalResponse, ok = extractOpenAINonCompletedTerminalResponse(terminalType, terminalPayload)
+	}
 
 	usage := s.parseSSEUsageFromBody(bodyText)
 	if ok {
@@ -1794,7 +1800,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	relayOpenAICodexSafetyBufferingHeaders(c.Writer.Header(), resp.Header)
 
 	contentType := "application/json; charset=utf-8"
-	if !ok {
+	if !ok && !(account != nil && account.Type == AccountTypeOAuth) {
 		contentType = resp.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "text/event-stream"
@@ -2004,6 +2010,21 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 	})
 	if finalResponse != nil {
 		return finalResponse, true
+	}
+	return nil, false
+}
+
+// extractOpenAINonCompletedTerminalResponse lets non-stream callers receive the
+// terminal Responses object when the upstream ends with incomplete/cancelled
+// instead of response.completed.
+func extractOpenAINonCompletedTerminalResponse(terminalType string, payload []byte) ([]byte, bool) {
+	switch terminalType {
+	case "response.incomplete", "response.cancelled", "response.canceled":
+	default:
+		return nil, false
+	}
+	if response := gjson.GetBytes(payload, "response"); response.Exists() && response.IsObject() {
+		return []byte(response.Raw), true
 	}
 	return nil, false
 }
