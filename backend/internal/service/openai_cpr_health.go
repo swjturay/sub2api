@@ -22,6 +22,56 @@ type cprHealthMutationBlocker interface {
 	CooldownCPRAccount(context.Context, *Account, AccountRepository)
 }
 
+// CPR quota states are temporary scheduling facts, not credential failures.
+// Keep a missing/expired management reset bounded but longer than the five
+// second request fallback so the minute health scan can refresh the state
+// before the account is admitted again.
+const cprManagementStateFallbackCooldown = 2 * time.Minute
+
+func cprManagementStateResetAt(state *CPRAccountState, now time.Time) (time.Time, bool) {
+	if state == nil {
+		return time.Time{}, false
+	}
+	var reset *time.Time
+	switch state.Status {
+	case CPRAccountStatusRateLimited:
+		reset = state.RateLimitedUntil
+	case CPRAccountStatusQuotaExhausted:
+		reset = state.QuotaResetAt
+	default:
+		return time.Time{}, false
+	}
+	if reset != nil && reset.After(now) {
+		return *reset, true
+	}
+	return now.Add(cprManagementStateFallbackCooldown), true
+}
+
+// Project a CPR management quota state into the existing account cooldown.
+// This is deliberately separate from credential quarantine: a quota state must
+// stop routing immediately without turning a recoverable account into status
+// error or changing its manual schedulable setting.
+func (s *RateLimitService) projectCPRManagementCooldown(ctx context.Context, account *Account, state *CPRAccountState) error {
+	if s == nil || account == nil || state == nil || s.accountRepo == nil {
+		return nil
+	}
+	now := time.Now()
+	until, ok := cprManagementStateResetAt(state, now)
+	if !ok {
+		return nil
+	}
+	if account.RateLimitResetAt != nil && account.RateLimitResetAt.After(until) {
+		until = *account.RateLimitResetAt
+	}
+	account.RateLimitResetAt = &until
+	s.notifyAccountSchedulingBlocked(account, until, "cpr_management_quota")
+	if err := s.setRateLimitedPreservingCPR(ctx, account, until); err != nil {
+		return err
+	}
+	slog.Info("cpr_management_quota_cooldown", "account_id", account.ID, "status", state.Status, "until", until.UTC())
+	return nil
+}
+
 func isCPRHealthError(body []byte) bool {
 	if !gjson.ValidBytes(body) {
 		return false
@@ -89,7 +139,12 @@ func (s *RateLimitService) checkCPRAccountHealth(ctx context.Context, account *A
 		reason := cprCredentialFailureReason(state)
 		if reason == "" {
 			switch state.Status {
-			case CPRAccountStatusNormal, CPRAccountStatusQuotaExhausted, CPRAccountStatusRateLimited:
+			case CPRAccountStatusNormal:
+				return nil, nil
+			case CPRAccountStatusQuotaExhausted, CPRAccountStatusRateLimited:
+				if err := s.projectCPRManagementCooldown(stateCtx, latest, state); err != nil {
+					return latest, err
+				}
 				return nil, nil
 			}
 			return latest, fmt.Errorf("CPR management returned unrecognized health state")

@@ -26,6 +26,23 @@ type cprHealthRepo struct {
 	writes  int
 }
 
+func (r *cprHealthRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
+	return r.SetRateLimitedIfLater(context.Background(), id, resetAt)
+}
+
+func (r *cprHealthRepo) SetRateLimitedIfLater(_ context.Context, _ int64, resetAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.account.RateLimitResetAt != nil && !resetAt.After(*r.account.RateLimitResetAt) {
+		return nil
+	}
+	now := time.Now()
+	r.account.RateLimitedAt = &now
+	r.account.RateLimitResetAt = &resetAt
+	r.writes++
+	return nil
+}
+
 func (r *cprHealthRepo) GetByID(context.Context, int64) (*Account, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -184,18 +201,20 @@ func cprHealthFixture(t *testing.T, status, reason string) (*RateLimitService, *
 func TestCPRHealthOnlyConfirmedCredentialFailuresQuarantine(t *testing.T) {
 	for _, tc := range []struct {
 		status, reason string
-		want           bool
+		wantQuarantine bool
+		wantCooldown   bool
 	}{
-		{"error", "access_token_expired", true}, {"error", "credential_invalid", true}, {"disabled", "", true},
-		{"normal", "access_token_expired", false}, {"error", "upstream_capacity_unavailable", false},
-		{"error", "", false}, {"quota_exhausted", "", false}, {"rate_limited", "", false},
+		{"error", "access_token_expired", true, false}, {"error", "credential_invalid", true, false}, {"disabled", "", true, false},
+		{"normal", "access_token_expired", false, false}, {"error", "upstream_capacity_unavailable", false, false},
+		{"error", "", false, false}, {"quota_exhausted", "", false, true}, {"rate_limited", "", false, true},
 	} {
 		t.Run(tc.status+"/"+tc.reason, func(t *testing.T) {
 			limits, repo, _ := cprHealthFixture(t, tc.status, tc.reason)
 			account, _ := repo.GetByID(context.Background(), 0)
 			limits.checkCPRAccountHealth(context.Background(), account, true)
 			got, _ := repo.GetByID(context.Background(), 0)
-			require.Equal(t, tc.want, !got.IsSchedulable())
+			require.Equal(t, tc.wantQuarantine, got.Status == StatusError)
+			require.Equal(t, tc.wantCooldown, got.RateLimitResetAt != nil)
 		})
 	}
 }
@@ -207,6 +226,47 @@ func TestCPRHealthBackgroundScanStopsWithoutInference(t *testing.T) {
 	worker.Start()
 	defer worker.Stop()
 	require.Eventually(t, func() bool { a, _ := repo.GetByID(context.Background(), 0); return !a.IsSchedulable() }, time.Second, 10*time.Millisecond)
+}
+
+func TestCPRHealthBackgroundScanProjectsTemporaryQuotaState(t *testing.T) {
+	future := time.Now().Add(time.Hour).Truncate(time.Second)
+	detail := strings.Replace(
+		cprTestDetailJSON("rate_limited", "free", ""),
+		`"rateLimitedUntil":null`,
+		fmt.Sprintf(`"rateLimitedUntil":%q`, future.In(time.FixedZone("CST", 8*3600)).Format(cprDisplayTimeLayout)),
+		1,
+	)
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, detail) }))
+	defer admin.Close()
+	account := newCPRTestAccount()
+	account.Credentials["admin_base_url"] = admin.URL
+	repo := &cprHealthRepo{account: account}
+	limits := NewRateLimitService(repo, nil, cprTestConfig(), nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: limits}
+	limits.SetAccountRuntimeBlocker(svc)
+	worker := NewCPRAccountHealthService(limits)
+	worker.reconcile()
+
+	got, err := repo.GetByID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.RateLimitResetAt)
+	require.WithinDuration(t, future, *got.RateLimitResetAt, time.Second)
+	require.False(t, got.IsSchedulable(), "a CPR management rate limit must remove the binding from scheduling")
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(got))
+	require.Equal(t, 1, repo.writes)
+}
+
+func TestCPRHealthQuotaStateWithoutResetUsesBoundedProjection(t *testing.T) {
+	limits, repo, svc := cprHealthFixture(t, "quota_exhausted", "")
+	before := time.Now()
+	limits.checkCPRAccountHealth(context.Background(), repo.account, false)
+
+	got, err := repo.GetByID(context.Background(), repo.account.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.RateLimitResetAt)
+	require.GreaterOrEqual(t, got.RateLimitResetAt.Sub(before), cprManagementStateFallbackCooldown-time.Second)
+	require.False(t, got.IsSchedulable())
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(got))
 }
 
 func TestCPRHealthNeverRestoresManualSuspension(t *testing.T) {
