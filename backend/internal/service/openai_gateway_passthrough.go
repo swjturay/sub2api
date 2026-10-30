@@ -2527,7 +2527,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 
 	contentType := "application/json; charset=utf-8"
-	if !ok && !(account != nil && account.Type == AccountTypeOAuth) {
+	if !ok && (account == nil || account.Type != AccountTypeOAuth) {
 		contentType = resp.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "text/event-stream"

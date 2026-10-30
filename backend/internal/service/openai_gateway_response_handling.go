@@ -1800,7 +1800,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	relayOpenAICodexSafetyBufferingHeaders(c.Writer.Header(), resp.Header)
 
 	contentType := "application/json; charset=utf-8"
-	if !ok && !(account != nil && account.Type == AccountTypeOAuth) {
+	if !ok && (account == nil || account.Type != AccountTypeOAuth) {
 		contentType = resp.Header.Get("Content-Type")
 		if contentType == "" {
 			contentType = "text/event-stream"
