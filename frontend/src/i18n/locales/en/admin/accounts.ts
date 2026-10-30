@@ -1246,7 +1246,8 @@ export default {
         selectAccount: 'Select a CPR account',
         noAccounts: 'No OpenAI accounts were returned',
         connectFailed: 'CPR discovery failed',
-        autoSetupHint: 'Saving automatically creates or reuses a single-account CPR group and client key.'
+        autoSetupHint: 'Saving automatically creates or reuses a single-account CPR group and client key.',
+        concurrency: 'Concurrency'
       },
       // OAuth flow
       oauth: {

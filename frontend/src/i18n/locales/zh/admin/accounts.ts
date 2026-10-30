@@ -1347,7 +1347,8 @@ export default {
         selectAccount: '选择 CPR 账号',
         noAccounts: '没有发现 OpenAI 账号',
         connectFailed: 'CPR 发现失败',
-        autoSetupHint: '保存时会自动创建或复用单账号分组和专属 Client Key。'
+        autoSetupHint: '保存时会自动创建或复用单账号分组和专属 Client Key。',
+        concurrency: '并发限制'
       },
       // OAuth flow
       oauth: {

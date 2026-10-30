@@ -1196,12 +1196,12 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		if req.Type == "" && !existing.IsCPR() {
 			// No account-type change: leave non-CPR credentials untouched.
 		} else {
-		configured, setupErr := h.configureCPR(c.Request.Context(), service.PlatformOpenAI, service.AccountTypeCPR, credentials, existing)
-		if setupErr != nil {
-			response.ErrorFrom(c, setupErr)
-			return
-		}
-		credentials = configured
+			configured, setupErr := h.configureCPR(c.Request.Context(), service.PlatformOpenAI, service.AccountTypeCPR, credentials, existing)
+			if setupErr != nil {
+				response.ErrorFrom(c, setupErr)
+				return
+			}
+			credentials = configured
 		}
 	}
 

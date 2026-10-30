@@ -181,6 +181,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// normalizeOpenAIPassthroughOAuthBody forces stream=true for the ChatGPT
 		// upstream. Keep reqStream as the caller's original response-shape choice;
 		// stream=false must still aggregate the upstream SSE into one JSON object.
+		// Compact requests are always non-streaming regardless of their body flag.
+		if isOpenAIResponsesCompactPath(c) {
+			reqStream = false
+		}
 
 		// compact 形态只跳过请求体侧：真实 Codex 的 compact 请求体同样没有
 		// client_metadata，但出站头照发 x-codex-installation-id 与 session-id /
