@@ -42,3 +42,24 @@ exceptions:
     mitigation: "No zero-size custom generators in codebase; upgrade when nanoid releases fix"
     expires_on: "2026-10-13"
     owner: "security@your-domain"
+  - package: vue-i18n
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "The maintained Vue I18n 9 line has no patched release; the admin UI does not render translation messages into iframe srcdoc and locale messages are repository-controlled."
+    mitigation: "Do not pass user-controlled HTML or translation messages to srcdoc; keep locale files reviewed and migrate to a patched Vue I18n major before expiry."
+    expires_on: "2027-01-28"
+    owner: "security@your-domain"
+  - package: "@intlify/core-base"
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "Transitive Vue I18n 9 dependency; the maintained Vue I18n 9 line has no patched release and locale messages are repository-controlled."
+    mitigation: "Do not pass user-controlled HTML or translation messages to srcdoc; migrate the Vue I18n stack before expiry."
+    expires_on: "2027-01-28"
+    owner: "security@your-domain"
+  - package: "@intlify/shared"
+    advisory: "GHSA-83rm-6c8r-g728"
+    severity: high
+    reason: "Transitive Vue I18n 9 dependency; no patched release exists for the maintained Vue I18n 9 line."
+    mitigation: "Locale messages are repository-controlled and never supplied to iframe srcdoc; migrate the Vue I18n stack before expiry."
+    expires_on: "2027-01-28"
+    owner: "security@your-domain"

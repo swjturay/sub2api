@@ -850,9 +850,17 @@ func (s *AntigravityGatewayService) collectClaudeStreamResponse(c *gin.Context, 
 				continue
 			}
 
+			// 最后的错误帧可能没有 parts，必须在聚合选择前保留失败原因。
 			if extractGeminiFinishReason(parsed) == "MALFORMED_FUNCTION_CALL" {
 				recordAntigravityMalformedFunctionCall(c, originalModel)
-				return nil, nil, antigravityMalformedFunctionCallError()
+				// Preserve the fork's retryable accounting path when the terminal
+				// frame already carries usage. Upstream's sentinel is required for
+				// malformed frames without usage so the compatibility mapper emits
+				// the protocol error response instead of a successful 200.
+				if _, hasUsage := parsed["usageMetadata"]; hasUsage {
+					return nil, nil, antigravityMalformedFunctionCallError()
+				}
+				return nil, nil, antigravity.ErrMalformedFunctionCall
 			}
 
 			last = parsed
@@ -1174,7 +1182,7 @@ func (s *AntigravityGatewayService) extractImageInputSize(body []byte) string {
 }
 
 // isImageGenerationModel 判断模型是否为图片生成模型
-// 支持的模型：gemini-3.1-flash-image, gemini-3-pro-image, gemini-2.5-flash-image 等
+// 支持的模型：gemini-3.1-flash-image, gemini-3.1-flash-lite-image, gemini-3-pro-image, gemini-2.5-flash-image 等
 func isImageGenerationModel(model string) bool {
 	modelLower := strings.ToLower(model)
 	// 移除 models/ 前缀
@@ -1184,6 +1192,8 @@ func isImageGenerationModel(model string) bool {
 	return modelLower == "gemini-3.1-flash-image" ||
 		modelLower == "gemini-3.1-flash-image-preview" ||
 		strings.HasPrefix(modelLower, "gemini-3.1-flash-image-") ||
+		modelLower == "gemini-3.1-flash-lite-image" ||
+		strings.HasPrefix(modelLower, "gemini-3.1-flash-lite-image-") ||
 		modelLower == "gemini-3-pro-image" ||
 		modelLower == "gemini-3-pro-image-preview" ||
 		strings.HasPrefix(modelLower, "gemini-3-pro-image-") ||

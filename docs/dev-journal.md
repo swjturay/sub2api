@@ -1,5 +1,32 @@
 # Development Journal
 
+## Upstream v0.2.19 intake (2026-10-30)
+
+Merge official v0.2.19 `dece26153621959ccd7635814f4b2d08304e681a`
+into cce-deploy `fe0858821300143dc98cfcbd72b1f2415750657e`, including 71
+upstream commits. Preserve all cce-deploy-only CPR relay, credential health,
+quota/accounting and Codex wire behavior; Insights source/access/statistics;
+CCE image release tooling; local setup scripts; and their tests/docs/workflows.
+The upstream release removes those fork-owned files, so the merge explicitly
+restores them rather than accepting deletion.
+
+Adopt scoped admin API keys, GPT-6.1 Terra, Gemini same-account retry settings,
+new Gemini model catalogs and mapped model lists, per-image OpenAI/Composite
+billing, Grok model-catalog diagnostics, model-list singleflight, DeepSeek and
+Antigravity compatibility fixes, pagination hardening, and current dependency
+updates. Preserve the malformed Antigravity diagnostic hook while taking the
+upstream terminal-error detection. Set runtime VERSION to 0.2.19; the release
+tag still stores 0.2.18.
+
+Add migrations 247 (scoped admin API keys) and 248 (group image-count billing).
+Existing migration bytes remain unchanged. Verify the full source CI, Insights
+CI and Security Scan on the resulting cce-deploy commit before any image build
+or deployment. This is source integration only; production is unchanged.
+The release's frontend audit surfaced four new advisories: lock
+`decode-uri-component` at 0.5.1, and record time-bounded exceptions for the
+unpatched Vue I18n 9 stack because locale messages are repository-controlled and
+never supplied to iframe srcdoc. Existing SheetJS exceptions remain unchanged.
+
 ## Upstream v0.2.18 intake (2026-10-24)
 
 Merge official v0.2.18 `ac1b8f1271be0d674fa6f074403c1410f30a3a81`

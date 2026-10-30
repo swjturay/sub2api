@@ -70,7 +70,7 @@ func TestAntigravityMalformedFunctionCallStreaming(t *testing.T) {
 	}
 }
 
-func TestAntigravityMalformedFunctionCallNonStreaming(t *testing.T) {
+func TestAntigravityMalformedFunctionCallNonStreamingLegacy(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newAntigravityCompatService(config.GatewayConfig{MaxLineSize: defaultMaxLineSize}, nil)
 	handlers := map[string]func(*gin.Context, *http.Response, time.Time, string) (*antigravityStreamResult, error){
