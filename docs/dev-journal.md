@@ -1,5 +1,29 @@
 # Development Journal
 
+## Adopt selected klno improvements (2026-10-30)
+
+From `KlN-4096/sub2api:klno`, adopt only the safe CCE-scoped pieces. Preserve
+OAuth non-stream response shape when ChatGPT returns SSE without Content-Type;
+keep the caller's original `stream=false` decision while forcing upstream
+transport streaming and add a regression for passthrough and legacy OAuth paths.
+
+Add CPR connection discovery at the admin boundary. Discovery is read-only and
+uses sanitized, bounded CPR Admin API responses. Saving a CPR account now
+idempotently reuses or creates a single-account CPR group and a group-scoped
+client key; an existing admin key is reused only when the configured admin
+address is unchanged. Manual Client Key input remains accepted as a fallback.
+The frontend exposes connect/discover/select and no longer requires operators
+to create the client key manually.
+
+Add CI concurrency cancellation for branch-local runs, unit-runner validation,
+and a scheduled/manual upstream release check. The sync workflow performs a
+non-publishing merge check by default; only an explicit `publish=true` input
+pushes a clean tested merge to cce-deploy. No gateway-pool, turn-state recovery,
+raw recording, or new database migration is included.
+
+Validation: targeted OAuth/CPR tests, backend unit compile, frontend typecheck,
+ESLint, and the existing account modal suite passed. Production was not changed.
+
 ## Upstream v0.2.19 intake (2026-10-30)
 
 Merge official v0.2.19 `dece26153621959ccd7635814f4b2d08304e681a`

@@ -25,6 +25,10 @@ permissions:
   actions: read
   contents: read
 
+concurrency:
+  group: cce-image-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate-source:
     runs-on: ubuntu-latest

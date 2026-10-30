@@ -1240,7 +1240,13 @@ export default {
         baseUrlRequired: 'Please enter the CPR gateway URL',
         clientKeyRequired: 'Please enter the CPR client key',
         accountIdRequired: 'Please enter the CPR account ID',
-        adminApiKeyRequired: 'Please enter the CPR admin API key'
+        adminApiKeyRequired: 'Please enter the CPR admin API key',
+        connect: 'Connect and discover accounts',
+        connecting: 'Connecting…',
+        selectAccount: 'Select a CPR account',
+        noAccounts: 'No OpenAI accounts were returned',
+        connectFailed: 'CPR discovery failed',
+        autoSetupHint: 'Saving automatically creates or reuses a single-account CPR group and client key.'
       },
       // OAuth flow
       oauth: {

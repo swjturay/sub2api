@@ -1341,7 +1341,13 @@ export default {
         baseUrlRequired: '请输入 CPR 网关地址',
         clientKeyRequired: '请输入 CPR Client Key',
         accountIdRequired: '请输入 CPR 账号 ID',
-        adminApiKeyRequired: '请输入 CPR Admin API Key'
+        adminApiKeyRequired: '请输入 CPR Admin API Key',
+        connect: '连接并发现账号',
+        connecting: '连接中…',
+        selectAccount: '选择 CPR 账号',
+        noAccounts: '没有发现 OpenAI 账号',
+        connectFailed: 'CPR 发现失败',
+        autoSetupHint: '保存时会自动创建或复用单账号分组和专属 Client Key。'
       },
       // OAuth flow
       oauth: {

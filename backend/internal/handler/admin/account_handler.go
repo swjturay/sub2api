@@ -1046,12 +1046,20 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	var createdAccount *service.Account
 
 	result, err := executeAdminIdempotent(c, "admin.accounts.create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		credentials := req.Credentials
+		if req.Platform == service.PlatformOpenAI && req.Type == service.AccountTypeCPR {
+			var setupErr error
+			credentials, setupErr = h.configureCPR(ctx, req.Platform, req.Type, req.Credentials, nil)
+			if setupErr != nil {
+				return nil, setupErr
+			}
+		}
 		account, execErr := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
 			Name:                  req.Name,
 			Notes:                 req.Notes,
 			Platform:              req.Platform,
 			Type:                  req.Type,
-			Credentials:           req.Credentials,
+			Credentials:           credentials,
 			Extra:                 req.Extra,
 			ProxyID:               req.ProxyID,
 			Concurrency:           req.Concurrency,
@@ -1178,11 +1186,30 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 确定是否跳过混合渠道检查
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
+	credentials := req.Credentials
+	if len(credentials) > 0 && (req.Type == service.AccountTypeCPR || req.Type == "") {
+		existing, getErr := h.adminService.GetAccount(c.Request.Context(), accountID)
+		if getErr != nil {
+			response.ErrorFrom(c, getErr)
+			return
+		}
+		if req.Type == "" && !existing.IsCPR() {
+			// No account-type change: leave non-CPR credentials untouched.
+		} else {
+		configured, setupErr := h.configureCPR(c.Request.Context(), service.PlatformOpenAI, service.AccountTypeCPR, credentials, existing)
+		if setupErr != nil {
+			response.ErrorFrom(c, setupErr)
+			return
+		}
+		credentials = configured
+		}
+	}
+
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
 		Name:                  req.Name,
 		Notes:                 req.Notes,
 		Type:                  req.Type,
-		Credentials:           req.Credentials,
+		Credentials:           credentials,
 		Extra:                 req.Extra,
 		ProxyID:               req.ProxyID,
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供

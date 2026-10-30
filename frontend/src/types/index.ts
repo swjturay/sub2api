@@ -2575,3 +2575,4 @@ export type {
   PlatformQuotaWindow,
   PlatformQuotasResponse,
 } from '@/api/admin/users'
+export type { CPRConnectAccount } from './cpr'

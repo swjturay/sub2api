@@ -1,0 +1,118 @@
+name: Check upstream release for cce-deploy
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream release tag; blank means the newest vX.Y.Z tag'
+        required: false
+        type: string
+      publish:
+        description: 'Push a clean, tested merge to cce-deploy'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-cce
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cce-deploy
+        uses: actions/checkout@v6
+        with:
+          ref: cce-deploy
+          fetch-depth: 0
+
+      - name: Resolve upstream release
+        id: release
+        env:
+          UPSTREAM_TAG_INPUT: ${{ inputs.upstream_tag || '' }}
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/Wei-Shaw/sub2api.git
+          git fetch --no-tags upstream main
+          git fetch --tags --force upstream
+          if [ -n "$UPSTREAM_TAG_INPUT" ]; then
+            tag="$UPSTREAM_TAG_INPUT"
+          else
+            tag=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '1p')
+          fi
+          test -n "$tag"
+          git rev-parse --verify "$tag^{commit}" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "upstream tag: $tag"
+
+      - name: Prepare merge without publishing
+        id: merge
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name cce-upstream-sync
+          git config user.email cce-upstream-sync@users.noreply.github.com
+          if git merge-base --is-ancestor "$UPSTREAM_TAG" HEAD; then
+            echo "up_to_date=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git merge --no-ff --no-commit "$UPSTREAM_TAG"
+          echo "up_to_date=false" >> "$GITHUB_OUTPUT"
+
+      - name: Backend merge validation
+        if: steps.merge.outputs.up_to_date != 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: backend/go.sum
+
+      - name: Run targeted merge validation
+        if: steps.merge.outputs.up_to_date != 'true'
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          go test -tags=unit ./internal/service ./internal/handler/admin ./internal/server/routes
+          go build ./...
+
+      - name: Frontend lockfile validation
+        if: steps.merge.outputs.up_to_date != 'true'
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Install and typecheck frontend
+        if: steps.merge.outputs.up_to_date != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Check frontend after merge
+        if: steps.merge.outputs.up_to_date != 'true'
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run typecheck
+
+      - name: Publish only when explicitly requested
+        if: steps.merge.outputs.up_to_date != 'true' && inputs.publish == true
+        env:
+          UPSTREAM_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git commit -m "Merge upstream ${UPSTREAM_TAG} into cce-deploy"
+          git push origin HEAD:cce-deploy
+
+      - name: Leave merge uncommitted for review
+        if: steps.merge.outputs.up_to_date != 'true' && inputs.publish != true
+        run: |
+          echo "Clean merge and validation succeeded; publish was not requested."

@@ -481,34 +481,15 @@
         </div>
       </div>
 
-      <!-- CPR 中继：一个账号对应 CPR 里的一个 OpenAI 账号（单账号分组 + 专属 client key）。 -->
-      <div v-if="form.platform === 'openai' && accountCategory === 'cpr'" class="space-y-4">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.cpr.baseUrl') }} <span class="text-red-500">*</span></label>
-          <input v-model="cprBaseUrl" type="text" class="input mt-1" placeholder="http://127.0.0.1:18081" />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cpr.baseUrlHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.cpr.clientKey') }} <span class="text-red-500">*</span></label>
-          <input v-model="cprClientKey" type="password" autocomplete="off" class="input mt-1" placeholder="sk_..." />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cpr.clientKeyHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.cpr.accountId') }} <span class="text-red-500">*</span></label>
-          <input v-model="cprAccountId" type="text" class="input mt-1" placeholder="acct_..." />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cpr.accountIdHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.cpr.adminApiKey') }} <span class="text-red-500">*</span></label>
-          <input v-model="cprAdminApiKey" type="password" autocomplete="off" class="input mt-1" placeholder="admin-..." />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cpr.adminApiKeyHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.cpr.adminBaseUrl') }}</label>
-          <input v-model="cprAdminBaseUrl" type="text" class="input mt-1" :placeholder="cprBaseUrl || 'http://127.0.0.1:18081'" />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cpr.adminBaseUrlHint') }}</p>
-        </div>
-      </div>
+      <!-- CPR 自动发现账号并在保存时幂等创建专属 client key。 -->
+      <CPRConnectionForm
+        v-if="form.platform === 'openai' && accountCategory === 'cpr'"
+        v-model:base-url="cprBaseUrl"
+        v-model:admin-key="cprAdminApiKey"
+        v-model:admin-base-url="cprAdminBaseUrl"
+        v-model:account-id="cprAccountId"
+        @selected="account => { cprAccountId = account.id }"
+      />
 
       <!-- Account Type Selection (Grok) -->
       <div v-if="form.platform === 'grok'">
@@ -4224,6 +4205,7 @@ import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import { applyExplicitCacheUpstreamCredentials, isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import CPRConnectionForm from '@/components/account/CPRConnectionForm.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   applyAntigravityProjectID,
@@ -6055,10 +6037,6 @@ const handleSubmit = async () => {
       appStore.showError(t('admin.accounts.cpr.baseUrlRequired'))
       return
     }
-    if (!cprClientKey.value.trim()) {
-      appStore.showError(t('admin.accounts.cpr.clientKeyRequired'))
-      return
-    }
     if (!cprAccountId.value.trim()) {
       appStore.showError(t('admin.accounts.cpr.accountIdRequired'))
       return
@@ -6070,10 +6048,10 @@ const handleSubmit = async () => {
 
     const credentials: Record<string, unknown> = {
       base_url: cprBaseUrl.value.trim().replace(/\/+$/, ''),
-      api_key: cprClientKey.value.trim(),
       cpr_account_id: cprAccountId.value.trim(),
       admin_api_key: cprAdminApiKey.value.trim()
     }
+    if (cprClientKey.value.trim()) credentials.api_key = cprClientKey.value.trim()
     if (cprAdminBaseUrl.value.trim()) {
       credentials.admin_base_url = cprAdminBaseUrl.value.trim().replace(/\/+$/, '')
     }

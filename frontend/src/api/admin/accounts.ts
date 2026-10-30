@@ -5,6 +5,7 @@
 
 import { apiClient } from '../client'
 import type { OpenAIReferralRefreshResult, OpenAIReferralSendResult } from '@/types/openaiReferrals'
+import type { CPRConnectAccount } from '@/types/cpr'
 import type {
   Account,
   AccountListItem,
@@ -186,6 +187,16 @@ export async function getById(id: number): Promise<Account> {
  */
 export async function create(accountData: CreateAccountRequest): Promise<Account> {
   const { data } = await apiClient.post<Account>('/admin/accounts', accountData)
+  return data
+}
+
+export async function discoverCPR(input: {
+  base_url: string
+  admin_base_url?: string
+  admin_api_key?: string
+  existing_account_id?: number
+}): Promise<CPRConnectAccount[]> {
+  const { data } = await apiClient.post<CPRConnectAccount[]>('/admin/accounts/cpr/discover', input)
   return data
 }
 
