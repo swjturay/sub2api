@@ -61,6 +61,173 @@ type departmentAggregate struct {
 	ttftN, tpotN                int64
 }
 
+type departmentOverviewAggregate struct {
+	bucket     time.Time
+	userID     int64
+	department string
+	requests   int64
+	tokens     Tokens
+}
+
+// DepartmentsOverview returns the summary and department trend needed for the
+// first useful render. Closed days come from the user/model daily rollup and
+// only the current platform day reads usage_logs. Model and member rankings and
+// performance remain on the full endpoint so they cannot block first paint.
+func (q *Query) DepartmentsOverview(ctx context.Context, from, to, currentDay time.Time, granularity string, departments, models []string) (Envelope, error) {
+	if granularity != "day" && granularity != "week" && granularity != "month" {
+		return Envelope{}, fmt.Errorf("%w: granularity", ErrInvalidFilter)
+	}
+	binding, dim, err := q.resolveDepartmentBinding(ctx)
+	if err != nil {
+		return Envelope{}, err
+	}
+	if dim.Status != "configured" {
+		return q.envelope(map[string]any{"summary": DepartmentSummary{}, "buckets": []DepartmentBucket{}}, []CoverageInfo{{Dataset: "department_attribute", Status: dim.Status, Detail: dim.Detail}}), nil
+	}
+	valid := valuesOf(binding.Options)
+	memberCount, err := q.departmentMemberCount(ctx, binding, departments, valid)
+	if err != nil {
+		return Envelope{}, err
+	}
+	aggs := make([]departmentOverviewAggregate, 0)
+	coverage := make([]CoverageInfo, 0, 3)
+	if from.Before(currentDay) {
+		dailyTo := minTime(to, currentDay)
+		if from.Before(dailyTo) {
+			rows, queryErr := q.departmentOverviewDaily(ctx, from, dailyTo, granularity, binding, departments, valid, models)
+			if queryErr != nil {
+				return Envelope{}, queryErr
+			}
+			aggs = append(aggs, rows...)
+			coverage = append(coverage, CoverageInfo{Dataset: "daily_user_model", Status: "partial"})
+		}
+	}
+	if to.After(currentDay) {
+		rawFrom := from
+		if rawFrom.Before(currentDay) {
+			rawFrom = currentDay
+		}
+		if rawFrom.Before(to) {
+			rows, queryErr := q.departmentOverviewRaw(ctx, rawFrom, to, granularity, binding, departments, valid, models)
+			if queryErr != nil {
+				return Envelope{}, queryErr
+			}
+			aggs = append(aggs, rows...)
+			coverage = append(coverage, CoverageInfo{Dataset: "usage_detail", Status: "partial"})
+		}
+	}
+	coverage = append(coverage, CoverageInfo{Dataset: "department_attribute", Status: "complete"})
+	return q.finishDepartmentOverview(from, to, granularity, memberCount, aggs, binding, coverage), nil
+}
+
+func (q *Query) departmentMemberCount(ctx context.Context, binding departmentBinding, departments, valid []string) (int64, error) {
+	var count int64
+	err := q.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users u LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$1 WHERE u.deleted_at IS NULL AND ($2::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($2)) AND ($3::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($3))`, binding.ID, nullableTextArray(departments), nullableTextArray(valid)).Scan(&count)
+	return count, err
+}
+
+func (q *Query) departmentOverviewDaily(ctx context.Context, from, to time.Time, granularity string, binding departmentBinding, departments, valid, models []string) ([]departmentOverviewAggregate, error) {
+	loc := mustLocation(q.timezone)
+	fromDate, toDate := from.In(loc).Format("2006-01-02"), to.In(loc).Format("2006-01-02")
+	rows, err := q.db.QueryContext(ctx, `SELECT date_trunc($6,d.stat_date)::date,d.user_id,COALESCE(NULLIF(v.value,''),'__unassigned__'),SUM(d.usage_count),SUM(d.input_tokens),SUM(d.cache_creation_tokens),SUM(d.cache_read_tokens),SUM(d.output_tokens) FROM insights_user_model_daily d JOIN users u ON u.id=d.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$5 WHERE d.stat_date >= $1::date AND d.stat_date < $2::date AND ($3::text[] IS NULL OR d.platform||':'||d.model=ANY($3)) AND ($4::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($4)) AND ($7::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($7)) GROUP BY 1,2,3 ORDER BY 1`, fromDate, toDate, nullableTextArray(models), nullableTextArray(departments), binding.ID, granularity, nullableTextArray(valid))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]departmentOverviewAggregate, 0)
+	for rows.Next() {
+		var item departmentOverviewAggregate
+		var date time.Time
+		var input, write, read, output int64
+		if err = rows.Scan(&date, &item.userID, &item.department, &item.requests, &input, &write, &read, &output); err != nil {
+			return nil, err
+		}
+		item.bucket = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, loc)
+		item.tokens = NewTokens(input, write, read, output)
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (q *Query) departmentOverviewRaw(ctx context.Context, from, to time.Time, granularity string, binding departmentBinding, departments, valid, models []string) ([]departmentOverviewAggregate, error) {
+	baseSelect := `SELECT date_trunc($6,ul.created_at AT TIME ZONE $4) AT TIME ZONE $4,ul.user_id,COALESCE(NULLIF(v.value,''),'__unassigned__'),COUNT(*),SUM(ul.input_tokens),SUM(ul.cache_creation_tokens),SUM(ul.cache_read_tokens),SUM(ul.output_tokens) FROM usage_logs ul JOIN users u ON u.id=ul.user_id AND u.deleted_at IS NULL LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$5`
+	modelFilter := `($3::text[] IS NULL)`
+	if len(models) > 0 {
+		baseSelect += ` LEFT JOIN accounts a ON a.id=ul.account_id LEFT JOIN LATERAL (SELECT MIN(f0.platform) platform FROM insights_call_facts f0 WHERE f0.request_id=ul.request_id AND f0.user_id=ul.user_id AND f0.api_key_id=ul.api_key_id AND f0.model=COALESCE(NULLIF(ul.requested_model,''),ul.model) HAVING COUNT(DISTINCT f0.call_id)=1) f ON true`
+		modelFilter = `(` + usageProviderSQL("f.platform", "a.platform") + `||':'||COALESCE(NULLIF(ul.requested_model,''),ul.model)=ANY($3))`
+	}
+	query := baseSelect + ` WHERE ul.created_at >= $1 AND ul.created_at < $2 AND ` + modelFilter + ` AND ($7::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($7)) AND ($8::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($8)) GROUP BY 1,2,3 ORDER BY 1`
+	rows, err := q.db.QueryContext(ctx, query, from, to, nullableTextArray(models), q.timezone, binding.ID, granularity, nullableTextArray(departments), nullableTextArray(valid))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]departmentOverviewAggregate, 0)
+	for rows.Next() {
+		var item departmentOverviewAggregate
+		var input, write, read, output int64
+		if err = rows.Scan(&item.bucket, &item.userID, &item.department, &item.requests, &input, &write, &read, &output); err != nil {
+			return nil, err
+		}
+		item.tokens = NewTokens(input, write, read, output)
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (q *Query) finishDepartmentOverview(from, to time.Time, granularity string, memberCount int64, aggs []departmentOverviewAggregate, binding departmentBinding, coverage []CoverageInfo) Envelope {
+	summary := DepartmentSummary{MemberCount: memberCount}
+	active := map[int64]struct{}{}
+	bucketMap := map[time.Time]*DepartmentBucket{}
+	bucketDepartments := map[time.Time]map[string]*DepartmentUsage{}
+	for _, item := range aggs {
+		summary.RequestCount += item.requests
+		addTokens(&summary.Tokens, item.tokens)
+		if item.tokens.Total > 0 {
+			active[item.userID] = struct{}{}
+		}
+		bucket := bucketMap[item.bucket]
+		if bucket == nil {
+			bucket = &DepartmentBucket{Start: item.bucket, End: bucketEnd(item.bucket, granularity), Models: []UsageModel{}, Departments: []DepartmentUsage{}}
+			bucketMap[item.bucket] = bucket
+			bucketDepartments[item.bucket] = map[string]*DepartmentUsage{}
+		}
+		bucket.RequestCount += item.requests
+		addTokens(&bucket.Tokens, item.tokens)
+		department := bucketDepartments[item.bucket][item.department]
+		if department == nil {
+			department = &DepartmentUsage{ID: item.department, Label: departmentLabel(binding, item.department)}
+			bucketDepartments[item.bucket][item.department] = department
+		}
+		department.RequestCount += item.requests
+		addTokens(&department.Tokens, item.tokens)
+	}
+	summary.ActiveMemberCount = int64(len(active))
+	if days := calendarDays(from, to, q.now().In(mustLocation(q.timezone))); days > 0 {
+		daily := float64(summary.Tokens.Total) / float64(days)
+		summary.DailyAverageTokens = &daily
+		if memberCount > 0 {
+			perMember := daily / float64(memberCount)
+			summary.DailyPerMemberTokens = &perMember
+		}
+	}
+	summary.OutputRatio = Ratio(summary.Tokens.Output, summary.Tokens.Total)
+	summary.CacheHitRatio = CacheHitRatio(summary.Tokens)
+	buckets := make([]DepartmentBucket, 0, len(bucketMap))
+	for _, bucket := range bucketMap {
+		bucket.Complete = !bucket.End.After(q.now())
+		bucket.OutputRatio = Ratio(bucket.Tokens.Output, bucket.Tokens.Total)
+		bucket.CacheHitRatio = CacheHitRatio(bucket.Tokens)
+		for _, department := range bucketDepartments[bucket.Start] {
+			bucket.Departments = append(bucket.Departments, *department)
+		}
+		bucket.Departments = mergeDepartmentUsage(bucket.Departments, nil)
+		buckets = append(buckets, *bucket)
+	}
+	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Start.Before(buckets[j].Start) })
+	return q.envelope(map[string]any{"summary": summary, "buckets": buckets}, coverage)
+}
+
 func (q *Query) Departments(ctx context.Context, from, to time.Time, granularity string, departments, models []string, performanceModels []string) (Envelope, error) {
 	if granularity != "day" && granularity != "week" && granularity != "month" {
 		return Envelope{}, fmt.Errorf("%w: granularity", ErrInvalidFilter)

@@ -37,6 +37,7 @@ func TestInsightsModelsRoutesAreReadOnly(t *testing.T) {
 	r := gin.New()
 	h := &InsightsModelsHandler{}
 	h.RegisterRoutes(r.Group("/api/v1/insights"))
+	foundOptions := false
 	for _, route := range r.Routes() {
 		if route.Method != http.MethodGet {
 			t.Fatalf("unexpected writable model route: %s %s", route.Method, route.Path)
@@ -44,5 +45,11 @@ func TestInsightsModelsRoutesAreReadOnly(t *testing.T) {
 		if strings.Contains(route.Path, "/profile") {
 			t.Fatalf("editable profile route remains registered: %s", route.Path)
 		}
+		if route.Path == "/api/v1/insights/models/options" {
+			foundOptions = true
+		}
+	}
+	if !foundOptions {
+		t.Fatal("lightweight model options route is not registered")
 	}
 }

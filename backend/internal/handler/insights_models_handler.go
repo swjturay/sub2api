@@ -31,9 +31,33 @@ func NewInsightsModelsHandler(db *sql.DB, cfg *config.Config, catalog *service.M
 
 // RegisterRoutes exposes the stable v1 paths on already-authenticated groups.
 func (h *InsightsModelsHandler) RegisterRoutes(user *gin.RouterGroup) {
+	user.GET("/models/options", h.Options)
 	user.GET("/models", h.List)
 	user.GET("/models/detail", h.Detail)
 	user.GET("/models/compare", h.Compare)
+}
+
+// Options returns only stable catalog identities for filters and initial page
+// rendering. Expensive usage performance and per-model trend queries stay on
+// the full catalog and detail endpoints.
+func (h *InsightsModelsHandler) Options(c *gin.Context) {
+	models, err := h.catalog.ListInsightsCatalog(c.Request.Context())
+	if err != nil {
+		response.InternalError(c, "failed to load insights model options")
+		return
+	}
+	items := make([]insights.ModelIdentity, 0, len(models))
+	for _, model := range models {
+		items = append(items, insights.ModelIdentity{Platform: model.Platform, Name: model.Name, DisplayName: model.DisplayName})
+	}
+	c.JSON(http.StatusOK, insights.Envelope{
+		Data: map[string]any{"items": items},
+		Meta: insights.Meta{
+			Timezone:    h.timezone,
+			GeneratedAt: time.Now(),
+			Coverage:    []insights.CoverageInfo{{Dataset: "model_catalog", Status: "complete"}},
+		},
+	})
 }
 func modelWindow(raw string) (time.Time, time.Time, string, bool) {
 	now := time.Now()
@@ -110,20 +134,21 @@ func (h *InsightsModelsHandler) catalogViews(c *gin.Context, ids []insights.Mode
 	if err != nil {
 		return nil, err
 	}
+	trends, err := h.store.Trends(c.Request.Context(), perfIDs, from, to, step)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]insights.ModelView, 0, len(selected))
 	for _, m := range selected {
 		id := insights.ModelIdentity{Platform: m.Platform, Name: m.Name, DisplayName: m.DisplayName}
-		trend, e := h.store.Trend(c.Request.Context(), id, from, to, step)
-		if e != nil {
-			return nil, e
-		}
-		perf, ok := performance[insights.NormalizeModelKey(id)]
+		key := insights.NormalizeModelKey(id)
+		perf, ok := performance[key]
 		if !ok {
 			zero := 0.0
 			perf.AverageTPM = &zero
 			perf.AverageRPM = &zero
 		}
-		out = append(out, insights.ModelView{Identity: id, Configured: true, Profile: m.Profile, ReferencePricing: pricingProjection(m.OfficialPricing), Performance: perf, Trend: trend})
+		out = append(out, insights.ModelView{Identity: id, Configured: true, Profile: m.Profile, ReferencePricing: pricingProjection(m.OfficialPricing), Performance: perf, Trend: trends[key]})
 	}
 	return out, nil
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiRequestError, AuthSessionChangedError, sessionSnapshot, verifySession } from "./auth";
 import type { User } from "./types";
 
@@ -8,6 +8,8 @@ export function useInsightsSession(path: string) {
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(true);
+  const pathRef = useRef(path);
+  pathRef.current = path;
   useEffect(() => {
     let active = true, generation = 0;
     const verify = async () => {
@@ -22,7 +24,7 @@ export function useInsightsSession(path: string) {
         if (e instanceof AuthSessionChangedError) { void verify(); return; }
         setUser(null); setError((e as Error).message); setChecking(false);
         if (e instanceof ApiRequestError && e.status === 401) {
-          window.location.assign(`/login?redirect=${encodeURIComponent("/insights" + path)}`);
+          window.location.assign(`/login?redirect=${encodeURIComponent("/insights" + pathRef.current)}`);
         }
       }
     };
@@ -47,6 +49,6 @@ export function useInsightsSession(path: string) {
       window.removeEventListener("insights-auth-revalidate", revalidate);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [path]);
+  }, []);
   return { user, error, checking };
 }

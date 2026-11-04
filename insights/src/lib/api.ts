@@ -190,20 +190,15 @@ export const adaptModelProfile = (x: any): T.ModelProfile => ({
 
 export const insightsApi = {
   bootstrap: async (signal?: AbortSignal) => {
-    const r = await apiFetch<Wire<{ items: any[] }>>(
-        "/insights/models?window=24h",
-        {},
-        signal,
-      ),
-      u = JSON.parse(localStorage.getItem("auth_user") || "{}");
+    const u = JSON.parse(localStorage.getItem("auth_user") || "{}"),
+      canRead = u.is_admin || u.role === "admin" || u.can_view_insights,
+      [r, d] = await Promise.all([
+        apiFetch<Wire<{ items: any[] }>>("/insights/models/options", {}, signal),
+        canRead ? apiFetch<Wire<any>>("/insights/dimensions?include_models=false", {}, signal) : Promise.resolve(null),
+      ]);
     let departments: T.DepartmentOption[] = [];
     let retention = { usageDays: 365, errorDays: 30 };
-    if (u.is_admin || u.role === "admin" || u.can_view_insights) {
-      const d = await apiFetch<Wire<any>>(
-        "/insights/dimensions",
-        {},
-        signal,
-      );
+    if (d) {
       departments = (d.data.department?.options || []).map((x: any) => ({
         id: x.value,
         name: x.label,
@@ -215,9 +210,9 @@ export const insightsApi = {
     }
     return {
       models: r.data.items.map((x) => ({
-        id: `${x.identity.platform}:${x.identity.name}`,
-        name: x.identity.display_name || x.identity.name,
-        platform: x.identity.platform,
+        id: `${x.platform}:${x.name}`,
+        name: x.display_name || x.name,
+        platform: x.platform,
       })),
       departments,
       timezone: r.meta.timezone,
@@ -379,6 +374,23 @@ export const insightsApi = {
         })),
       })),
     } as T.ModelComparison;
+  },
+  departmentsOverview: async (f: T.FilterState, signal?: AbortSignal) => {
+    const r = await apiFetch<Wire<any>>(`/insights/departments/overview${q(fq(f))}`, {}, signal),
+      s = r.data.summary;
+    return {
+      members: s.member_count,
+      activeMembers: s.active_member_count,
+      totalTokens: s.tokens.total,
+      averageDailyTokens: s.daily_average_tokens,
+      perMemberDailyTokens: s.daily_per_member_tokens,
+      requests: s.request_count,
+      outputTokens: s.tokens.output,
+      outputShare: s.output_ratio,
+      cacheHitRate: s.cache_hit_ratio,
+      series: r.data.buckets.map(adaptTimePoint),
+      coverage: cov(r.meta),
+    } as T.DepartmentOverview;
   },
   departments: async (
     f: T.FilterState,

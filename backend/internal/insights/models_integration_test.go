@@ -89,6 +89,10 @@ func TestModelStorePostgresIntegration(t *testing.T) {
 	if err != nil || len(trend) != 1 || trend[0].Performance.RPMSamples != 4 {
 		t.Fatalf("trend=%+v err=%v", trend, err)
 	}
+	batchedTrends, err := store.Trends(ctx, []ModelIdentity{id, anthropicID}, now, now.Add(time.Hour), "hour")
+	if err != nil || len(batchedTrends) != 2 || batchedTrends[NormalizeModelKey(id)][0].Performance.RPMSamples != 4 || batchedTrends[NormalizeModelKey(anthropicID)][0].Performance.RPMSamples != 1 {
+		t.Fatalf("batched trends=%+v err=%v", batchedTrends, err)
+	}
 	partial, err := store.Trend(ctx, id, now.Add(5*time.Minute), now.Add(20*time.Minute), "hour")
 	if err != nil || len(partial) != 1 || partial[0].Performance.AverageRPM == nil || *partial[0].Performance.AverageRPM != 4.0/15.0 || partial[0].Complete {
 		t.Fatalf("partial trend=%+v err=%v", partial, err)

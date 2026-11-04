@@ -26,6 +26,7 @@ func RegisterInsightsRoutes(v1 *gin.RouterGroup, h *handler.Handlers, jwtAuth mi
 	read.Use(gin.HandlerFunc(jwtAuth), middleware.BackendModeUserGuard(settingService), h.Auth.RequireInsightsAccess, limiter.Heavy())
 	for _, group := range []*gin.RouterGroup{read, admin} {
 		group.GET("/dimensions", h.Insights.Dimensions)
+		group.GET("/departments/overview", h.Insights.DepartmentOverview)
 		group.GET("/departments", h.Insights.Departments)
 		group.GET("/gateway/quality", h.Insights.GatewayQuality)
 		group.GET("/gateway/model-preferences", h.Insights.GatewayModelPreferences)

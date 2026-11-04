@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adaptModelSlice, adaptTimePoint, adaptTokens, insightsApi, resolveCatalogModel } from "./api";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
 
 describe("Insights API adapters", () => {
+  it("bootstraps from lightweight model options without requesting full model analytics", async () => {
+    localStorage.setItem("auth_user", JSON.stringify({ id: 7, role: "user", can_view_insights: true }));
+    const requested: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.includes("/models/options")) return new Response(JSON.stringify({ data: { items: [{ platform: "openai", name: "gpt-6", display_name: "GPT-6" }] }, meta: { timezone: "Asia/Shanghai", generated_at: "2026-11-04T00:00:00Z", coverage: [] } }), { status: 200 });
+      if (url.includes("/insights/dimensions")) return new Response(JSON.stringify({ data: { department: { options: [] }, retention: {} }, meta: { timezone: "Asia/Shanghai", generated_at: "2026-11-04T00:00:00Z", coverage: [] } }), { status: 200 });
+      throw new Error(`unexpected request: ${url}`);
+    });
+    await expect(insightsApi.bootstrap()).resolves.toMatchObject({ models: [{ id: "openai:gpt-6", name: "GPT-6" }] });
+    expect(requested).toContain("/api/v1/insights/models/options");
+    expect(requested.some((url) => url.includes("models?window=24h"))).toBe(false);
+    expect(requested).toContain("/api/v1/insights/dimensions?include_models=false");
+  });
   it("preserves missing values as null while retaining observed zero", () => {
     expect(adaptTokens({ input: 0, output: null })).toEqual({
       input: 0,

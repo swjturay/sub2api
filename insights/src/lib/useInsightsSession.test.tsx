@@ -15,6 +15,14 @@ it("rechecks access every 60 seconds independently of chart refresh",async()=>{
  await act(async()=>{await vi.advanceTimersByTimeAsync(60_000)});
  expect(hook.result.current.user?.can_view_insights).toBe(false);
 });
+it("does not revalidate the session when only the Insights route changes", async()=>{
+ vi.mocked(verifySession).mockResolvedValue(viewer);
+ const hook=renderHook(({path}:{path:string})=>useInsightsSession(path),{initialProps:{path:"/departments"}});
+ await waitFor(()=>expect(hook.result.current.checking).toBe(false));
+ hook.rerender({path:"/gateway"});
+ await act(async()=>{});
+ expect(verifySession).toHaveBeenCalledTimes(1);
+});
 it("hides protected content until foreground revalidation and fails closed on errors",async()=>{
  vi.mocked(verifySession).mockResolvedValue(viewer);
  const hook=renderHook(()=>useInsightsSession("/costs"));

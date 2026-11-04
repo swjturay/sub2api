@@ -25,7 +25,7 @@ export function GatewayPage({ auto }: { auto: boolean }) {
     models: [],
     departments: [],
   }));
-  const state = useRemote((signal) => insightsApi.gateway(filters, signal), [filters], auto);
+  const state = useRemote((signal) => insightsApi.gateway(filters, signal), [filters], auto, `${boot.scope}:gateway:${JSON.stringify(filters)}`);
   const data = state.data;
   const applyPreset = (days: number) => setFilters((value) => ({
     ...value,

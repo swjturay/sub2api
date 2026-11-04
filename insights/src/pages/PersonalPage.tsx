@@ -17,7 +17,7 @@ import { HelpTip } from "../components/ui/HelpTip";
 import { buildHeatmapOption, heatmapLegendItems, heatmapSelectionDate } from "../features/chartOptions";
 
 export function PersonalPage({ auto }: { auto: boolean }) {
-  const { models, timezone, generatedAt } = useBootstrap();
+  const { models, timezone, generatedAt, scope } = useBootstrap();
   const platformToday = platformDateParts(generatedAt, timezone);
   const [filters, setFilters] = useState<FilterState>(() => ({
       from: subtractPlatformDays(platformToday.date, 6),
@@ -32,9 +32,9 @@ export function PersonalPage({ auto }: { auto: boolean }) {
     [tab, setTab] = useState<"usage" | "errors">("usage"),
     [pageSize, setPageSize] = useState(20),
     [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
-  const overview = useRemote((signal) => insightsApi.personalOverview(signal), [], auto);
-  const heatmap = useRemote((signal) => insightsApi.personalHeatmap(year, signal), [year], auto);
-  const analytics = useRemote((signal) => insightsApi.personalAnalytics(filters, signal), [filters], auto);
+  const overview = useRemote((signal) => insightsApi.personalOverview(signal), [], auto, `${scope}:personal-overview`);
+  const heatmap = useRemote((signal) => insightsApi.personalHeatmap(year, signal), [year], auto, `${scope}:personal-heatmap:${year}`);
+  const analytics = useRemote((signal) => insightsApi.personalAnalytics(filters, signal), [filters], auto, `${scope}:personal-analytics:${JSON.stringify(filters)}`);
   const analyticsData = useMemo(
     () => analytics.data ? resolvePersonalAnalyticsModels(analytics.data, models) : undefined,
     [analytics.data, models],
@@ -43,6 +43,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
     (signal) => insightsApi.logs(tab, filters, cursors.at(-1), pageSize, signal),
     [tab, filters, cursors, pageSize],
     false,
+    `${scope}:personal-logs:${tab}:${JSON.stringify(filters)}:${cursors.at(-1) || ""}:${pageSize}`,
   );
   const updateFilters = (next: FilterState) => {
     setFilters(next);

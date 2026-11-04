@@ -301,6 +301,16 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	if dailyDepartmentSummary.RequestCount != 2 || dailyDepartmentSummary.Tokens.Total != 16 || dailyDepartmentPerformance.AverageRPM == nil || *dailyDepartmentPerformance.AverageRPM*10080 != 4 {
 		t.Fatalf("daily department=%+v perf=%+v", dailyDepartmentSummary, dailyDepartmentPerformance)
 	}
+	overview, err := q.DepartmentsOverview(ctx, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC), time.Date(2024, 1, 8, 0, 0, 0, 0, time.UTC), "week", []string{"A/B"}, []string{"OpenAI:A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overviewData := mustType[map[string]any](t, overview.Data)
+	overviewSummary := mustType[DepartmentSummary](t, overviewData["summary"])
+	overviewBuckets := mustType[[]DepartmentBucket](t, overviewData["buckets"])
+	if overviewSummary.RequestCount != 2 || overviewSummary.Tokens.Total != 16 || len(overviewBuckets) != 1 || len(overviewBuckets[0].Departments) != 1 || len(overviewBuckets[0].Models) != 0 {
+		t.Fatalf("department overview summary=%+v buckets=%+v", overviewSummary, overviewBuckets)
+	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_error_facts VALUES('00000000-0000-0000-0000-000000000001',7,'OpenAI','public-model','upstream','visible',$1),('00000000-0000-0000-0000-000000000002',7,'Other','free-model','timeout','filtered',$1),('00000000-0000-0000-0000-000000000003',70,'OpenAI','public-model','secret','other-user',$1)`, from); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import { useRemote } from "../lib/useRemote";
 import type { Coverage, DepartmentOption, ModelOption } from "../lib/types";
 import { Loading, ErrorBanner, CoverageBanner } from "../components/ui/States";
 interface Bootstrap {
+  scope: string;
   models: ModelOption[];
   departments: DepartmentOption[];
   timezone: string;
@@ -15,8 +16,8 @@ interface Bootstrap {
   modelCoverage: Coverage;
 }
 const Context = createContext<Bootstrap | null>(null);
-export function BootstrapProvider({ children }: { children: ReactNode }) {
-  const state = useRemote((s) => insightsApi.bootstrap(s), [], false);
+export function BootstrapProvider({ children, scope }: { children: ReactNode; scope: string }) {
+  const state = useRemote((s) => insightsApi.bootstrap(s), [], false, `bootstrap:${scope}`);
   const location = useLocation();
   if (state.loading && !state.data)
     return (
@@ -34,7 +35,7 @@ export function BootstrapProvider({ children }: { children: ReactNode }) {
       </main>
     );
   return (
-    <Context.Provider value={state.data}>
+    <Context.Provider value={{ ...state.data, scope }}>
       {state.error && (
         <div className="px-4 pt-3">
           <ErrorBanner message={state.error} retry={state.refresh} stale />

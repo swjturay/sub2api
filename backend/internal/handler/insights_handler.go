@@ -59,9 +59,10 @@ func (h *InsightsHandler) Dimensions(c *gin.Context) {
 		response.InternalError(c, "failed to resolve insights dimensions")
 		return
 	}
+	includeModels := c.DefaultQuery("include_models", "true") != "false"
 	models := make([]insights.ModelIdentity, 0)
-	catalogStatus := "not_configured"
-	if h.catalog != nil {
+	catalogStatus := "not_requested"
+	if includeModels && h.catalog != nil {
 		catalog, err := h.catalog.ListInsightsCatalog(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "failed to load insights model catalog")
@@ -79,8 +80,8 @@ func (h *InsightsHandler) Dimensions(c *gin.Context) {
 	retentionDays := int(retentionEnd.Sub(retainedFrom).Hours() / 24)
 	c.JSON(http.StatusOK, h.query.Envelope(map[string]any{
 		"department": department,
-		"models":     models,
 		"retention":  map[string]any{"usage_detail_days": h.usageRetentionDays, "error_detail_days": h.errorRetentionDays, "daily_days": retentionDays, "daily_years": 3, "daily_from": retainedFrom.Format("2006-01-02")},
+		"models":     models,
 	}, []insights.CoverageInfo{{Dataset: "department_attribute", Status: department.Status}, {Dataset: "model_catalog", Status: catalogStatus}}))
 }
 
@@ -272,12 +273,12 @@ func (h *InsightsHandler) Departments(c *gin.Context) {
 	}
 	granularity := c.DefaultQuery("granularity", "day")
 	departments, models, performanceModels := c.QueryArray("department"), c.QueryArray("model"), c.QueryArray("performance_model")
-	cutoff := h.usageDetailCutoff()
+	currentDay := h.currentPlatformDay()
 	var out insights.Envelope
 	var err error
-	if from.Before(cutoff) && to.After(cutoff) {
-		out, err = h.query.DepartmentsCombined(c.Request.Context(), from, to, cutoff, granularity, departments, models, performanceModels)
-	} else if from.Before(cutoff) {
+	if from.Before(currentDay) && to.After(currentDay) {
+		out, err = h.query.DepartmentsCombined(c.Request.Context(), from, to, currentDay, granularity, departments, models, performanceModels)
+	} else if !to.After(currentDay) {
 		out, err = h.query.DepartmentsDaily(c.Request.Context(), from, to, granularity, departments, models, performanceModels)
 	} else {
 		out, err = h.query.Departments(c.Request.Context(), from, to, granularity, departments, models, performanceModels)
@@ -291,6 +292,28 @@ func (h *InsightsHandler) Departments(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, out)
+}
+
+func (h *InsightsHandler) DepartmentOverview(c *gin.Context) {
+	from, to, ok := h.rangeFromQuery(c, 7)
+	if !ok {
+		return
+	}
+	out, err := h.query.DepartmentsOverview(c.Request.Context(), from, to, h.currentPlatformDay(), c.DefaultQuery("granularity", "day"), c.QueryArray("department"), c.QueryArray("model"))
+	if err != nil {
+		if errors.Is(err, insights.ErrInvalidFilter) {
+			response.BadRequest(c, "invalid department filter")
+			return
+		}
+		response.InternalError(c, "failed to query department overview")
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+func (h *InsightsHandler) currentPlatformDay() time.Time {
+	now := time.Now().In(h.loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.loc)
 }
 
 func (h *InsightsHandler) GatewayQuality(c *gin.Context) {

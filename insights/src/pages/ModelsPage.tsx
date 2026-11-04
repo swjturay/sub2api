@@ -15,7 +15,7 @@ import type { ModelProfile } from "../lib/types";
 import { useRemote } from "../lib/useRemote";
 import { cn } from "../lib/cn";
 
-export function ModelsPage({ auto }: { auto: boolean }) {
+export function ModelsPage({ auto, scope = "models-test" }: { auto: boolean; scope?: string }) {
   const window = "24h";
   const [filters, setFilters] = useState(emptyCatalogFilters);
   const [sort, setSort] = useState<CatalogSort>("rpm");
@@ -31,13 +31,14 @@ export function ModelsPage({ auto }: { auto: boolean }) {
   const comparisonOpener = useRef<HTMLElement | null>(null);
   const detailOpener = useRef<HTMLElement | null>(null);
 
-  const state = useRemote((signal) => insightsApi.models(window, signal), [window], auto);
+  const state = useRemote((signal) => insightsApi.models(window, signal), [window], auto, `${scope}:models:${window}`);
   const comparison = useRemote(
     (signal) => compareOpen && selected.length >= 2
       ? insightsApi.compareModels(selected, window, signal)
       : Promise.resolve(null),
     [compareOpen, selected.join("|"), window],
     auto && compareOpen,
+    compareOpen && selected.length >= 2 ? `${scope}:model-comparison:${window}:${selected.join("|")}` : undefined,
   );
   const models = state.data || [];
   const filtered = useMemo(() => filterCatalog(state.data || [], filters, sort), [state.data, filters, sort]);

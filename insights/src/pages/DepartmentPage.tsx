@@ -24,22 +24,16 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
       granularity: "day",
       models: [],
       departments: [],
-    })),
-    [performanceModel, setPerformanceModel] = useState(""),
-    [pareto, setPareto] = useState<"department" | "member">("department");
+    }));
+  const overviewKey = `${boot.scope}:department-overview:${JSON.stringify(filters)}`;
   const state = useRemote(
-    (signal) => insightsApi.departments(filters, performanceModel, signal),
-    [filters, performanceModel],
+    (signal) => insightsApi.departmentsOverview(filters, signal),
+    [filters],
     auto,
+    overviewKey,
   );
   const data = state.data;
   const metricGroups = data ? departmentMetricGroups(data) : null;
-  const paretoItems = data
-    ? pareto === "member" ? data.memberPareto : data.departmentPareto
-    : [];
-  const paretoTheme = cartesianTheme(82);
-  const rankingTheme = cartesianTheme(24);
-  const colors = chartColors();
 
   return (
     <div className="page-stack grid gap-6">
@@ -70,6 +64,32 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
           <section className="panel">
             <CategoryTokenChart data={data.series} dimension="departments" />
           </section>
+          {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+function DepartmentDetails({ filters, auto }: { filters: FilterState; auto: boolean }) {
+  const boot = useBootstrap();
+  const [performanceModel, setPerformanceModel] = useState(""),
+    [pareto, setPareto] = useState<"department" | "member">("department");
+  const state = useRemote(
+    (signal) => insightsApi.departments(filters, performanceModel, signal),
+    [filters, performanceModel],
+    auto,
+    `${boot.scope}:department-details:${JSON.stringify(filters)}:${performanceModel}`,
+  );
+  const data = state.data;
+  const paretoItems = data ? pareto === "member" ? data.memberPareto : data.departmentPareto : [];
+  const paretoTheme = cartesianTheme(82);
+  const rankingTheme = cartesianTheme(24);
+  const colors = chartColors();
+  if (state.loading && !data) return <section className="panel"><Loading label="正在加载详细分析" /></section>;
+  if (!data) return state.error ? <ErrorBanner message={state.error} retry={state.refresh} /> : null;
+  return <>
+          {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale />}
           <div className="grid items-stretch gap-6 xl:grid-cols-12">
             <section className="panel xl:col-span-8">
               <CategoryTokenChart data={data.series} dimension="models" />
@@ -148,8 +168,5 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
               <MetricCard label="估算TPOT" value={data.performance.tpot.value} unit="ms" detail="逐请求估算后等权平均" />
             </div>
           </section>
-        </>
-      )}
-    </div>
-  );
+  </>;
 }

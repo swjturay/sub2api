@@ -1,4 +1,4 @@
-import type { DepartmentAnalytics } from "../lib/types";
+import type { DepartmentOverview } from "../lib/types";
 
 export interface DepartmentMetricSpec {
   label: string;
@@ -8,7 +8,7 @@ export interface DepartmentMetricSpec {
   formula?: string;
 }
 
-export function departmentMetricGroups(data: DepartmentAnalytics): {
+export function departmentMetricGroups(data: DepartmentOverview): {
   title: string;
   primary: DepartmentMetricSpec;
   secondary: DepartmentMetricSpec[];

@@ -19,6 +19,12 @@ Sub2API backend.
 Set `VITE_INSIGHTS_REFRESH_INTERVAL_SECONDS` at build time to configure automatic
 refresh. Values must be at least 5 seconds; invalid values use the 60-second default.
 
+The initial application bootstrap uses `/api/v1/insights/models/options` for
+filter identities; full model performance and trends are loaded only by the
+model catalog. The department page loads `/api/v1/insights/departments/overview`
+before the complete department analysis so summary and trend content can render
+without waiting for model, Pareto, ranking, and performance sections.
+
 Tests may define local fixtures. Production source files never fall back to demo
 data: failed or incomplete endpoints remain visible as error or coverage states.
 

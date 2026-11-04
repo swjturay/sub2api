@@ -1,5 +1,32 @@
 # Development Journal
 
+## Insights progressive loading and query reduction (2026-11-04)
+
+- Replaced the Insights bootstrap dependency on the full 24-hour model analytics
+  endpoint with a lightweight read-only model-options endpoint. Authorized
+  analytics viewers fetch options and dimensions concurrently without loading
+  duplicate catalog data; the full model catalog remains backward compatible.
+- Added a department overview endpoint for first useful paint. Closed platform
+  days read `insights_user_model_daily`, the current platform day reads raw
+  usage, and the default unfiltered overview avoids the per-row call-fact
+  LATERAL join. The existing complete department response remains available and
+  now also uses daily rollups for closed days plus raw usage for the current day.
+- Split the department UI into overview/trend first and secondary model,
+  Pareto, member-ranking and performance analysis afterward. Secondary failure
+  no longer blocks the first useful department content.
+- Replaced the model catalog's serial per-model trend queries with one batched
+  trend aggregation. Added user/role-scoped, bounded 60-second client caching,
+  in-flight refresh coalescing, request cancellation on filter changes, and
+  refresh scheduling from the previous request's completion. Route changes no
+  longer revalidate `/auth/me`; timed, foreground and authorization-failure
+  checks remain.
+
+Validation: Insights ESLint, TypeScript, production build and 28 files / 115
+tests passed. Backend handler, Insights and route tests passed; both Insights
+PostgreSQL integration suites passed against an isolated PostgreSQL instance;
+`go build ./...` passed. The production build still reports the pre-existing
+single-chunk size warning. No production deployment or data mutation occurred.
+
 ## Adopt selected klno improvements (2026-10-30)
 
 From `KlN-4096/sub2api:klno`, adopt only the safe CCE-scoped pieces. Preserve

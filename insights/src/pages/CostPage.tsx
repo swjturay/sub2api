@@ -44,7 +44,7 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
   const state = useRemote((signal) => insightsApi.costs(requestFilters, signal), [
     filters.month, filters.department, filters.platform, deferredSearch, deferredContributor,
     filters.paymentMethod, filters.status, filters.completeness, filters.registration, filters.page, filters.pageSize,
-  ], auto);
+  ], auto, `${boot.scope}:costs:${JSON.stringify(requestFilters)}`);
   const [editing, setEditing] = useState<CostAccount | null>(null);
   const [contributorID, setContributorID] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<CostPaymentMethod>("subscription");
