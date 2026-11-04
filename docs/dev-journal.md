@@ -832,3 +832,9 @@ Validation:
 - Frontend lint, typecheck, locale compilation and production build passed.
 - Critical frontend suite: 40 files / 689 tests passed. Existing SettingsView jsdom network warnings remained non-fatal.
 - Browser validation against the local Vite app with production read-only public settings covered Chinese/English, light/dark, desktop, 390px mobile, mobile menu, section anchors and all four code examples. Browser console reported no warnings or errors. No login, write request, paid inference, deployment or production mutation was performed.
+
+## CCE release frontend audit gate refresh (2026-11-04)
+
+- Updated the existing `follow-redirects` override from 1.16.1 to 1.16.2 after the exact-source Security Scan reported GHSA-mrwp-f3q8-3g9p. No audit exception was added.
+- Regenerated only the matching lockfile entries. The production dependency audit now validates against the existing exception policy; frontend lint, typecheck, locale compilation and production build pass.
+- This change prepares the release source only. No image build, registry publication, Kubernetes change, migration, traffic cutover or production request was performed in this step.
