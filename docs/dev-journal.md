@@ -818,3 +818,17 @@ Validation: Insights ESLint, TypeScript, 17 files / 63 tests and production buil
 Validation: Insights lint, TypeScript, all 23 test files / 93 tests, and production build passed. `go test ./internal/insights` passed, including day/week/month bucket merge and classification-conservation regression coverage; PostgreSQL integration tests were skipped because INSIGHTS_TEST_DATABASE_URL is not configured. Browser verification used a loopback-only fixture API and the actual production frontend build, explicitly labelled as example data. Inspected 1366x768, 1440x900 and 1920x1080 desktop layouts in light/dark, confirmed no horizontal document overflow, independent chart controls, and department filtering; browser console reported no warnings/errors. Preview remains at http://127.0.0.1:4188/insights/departments. These changes have not been deployed.
 
 Follow-up: Both department and model Token trends default to stacked bars, with the stacked-bar option before line. The filter toolbar orders date, granularity, department, then model. Rebuilt and reloaded the local preview to verify both default selections and control order. Before committing, reran Insights lint, all 93 tests, production build (including TypeScript), and the backend Insights suite successfully; PostgreSQL integration remains unverified without its test database.
+
+## Blue Zone gateway home page (2026-11-04)
+
+- Replaced the generic default landing page on `cce-deploy` with a dedicated Vue home page for the Blue Zone AI gateway. Admin-provided `home_content` and the compact-home setting retain their existing precedence and behavior.
+- Kept the implementation frontend-only: promotional request/Token figures, model families, capabilities and Agent entries are fixed presentation content. No API, backend route, migration or production data dependency was added.
+- Added a viewport-aware four-example code-generation loop covering embedded-oriented C and Rust examples plus Java and Python. Prompts describe the task without naming the language; reduced-motion mode renders one complete static example.
+- Reused existing login/dashboard routing, registration availability, locale switching, theme state and optional public model-plaza access. Added matching Chinese and English message trees and focused homepage regressions.
+
+Validation:
+
+- Frontend focused tests: 18 passed.
+- Frontend lint, typecheck, locale compilation and production build passed.
+- Critical frontend suite: 40 files / 689 tests passed. Existing SettingsView jsdom network warnings remained non-fatal.
+- Browser validation against the local Vite app with production read-only public settings covered Chinese/English, light/dark, desktop, 390px mobile, mobile menu, section anchors and all four code examples. Browser console reported no warnings or errors. No login, write request, paid inference, deployment or production mutation was performed.

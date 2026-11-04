@@ -14,6 +14,97 @@ export default {
     login: '登录',
     getStarted: '立即开始',
     goToDashboard: '进入控制台',
+    blueZone: {
+      brand: '蓝区AI网关',
+      login: '登录平台',
+      register: '注册接入',
+      skipToContent: '跳到主要内容',
+      homeAriaLabel: '蓝区AI网关首页',
+      primaryNavigation: '主要导航',
+      mobileNavigation: '移动端导航',
+      openMenu: '打开导航菜单',
+      closeMenu: '关闭导航菜单',
+      nav: {
+        advantages: '核心优势',
+        models: '模型能力',
+        agents: 'Agent 接入',
+        scale: '使用规模'
+      },
+      hero: {
+        lineOne: '汇聚多元 AI',
+        lineTwo: '助力蓝区研发作业',
+        trustAriaLabel: '统一入口，按需选模，用量透明',
+        trust: {
+          unified: '统一入口',
+          choose: '按需选模',
+          transparent: '用量透明'
+        }
+      },
+      demo: {
+        title: '研发助手',
+        statusAriaLabel: '连接状态',
+        smartRouting: '智能路由',
+        connected: '已连接',
+        codeAriaLabel: '代码生成示例',
+        prompts: {
+          debounce: '实现一个按键消抖与短按检测逻辑',
+          heartbeat: '实现一个无阻塞的状态灯心跳任务',
+          queue: '实现一个线程安全的生产者消费者队列',
+          backoff: '实现一个支持指数退避的请求函数'
+        }
+      },
+      scale: {
+        title: '规模化应用，持续运营',
+        requestsValue: '超 7 万',
+        requestsLabel: '日均请求量',
+        tokensValue: '超 100 亿',
+        tokensLabel: '日均 Token 用量'
+      },
+      advantages: {
+        kicker: '为什么选择蓝区AI网关',
+        title: '一个入口，连接研发所需的 AI 能力',
+        unified: {
+          title: '多类模型，一站接入',
+          description: '按需选择，适配不同研发场景'
+        },
+        scheduling: {
+          title: '额度资源，共享调度',
+          description: '额度共享，自动负载均衡'
+        },
+        usage: {
+          title: '用量可度量，费用可查',
+          description: '使用趋势与费用一目了然'
+        }
+      },
+      models: {
+        title: '多元模型能力，覆盖研发所需',
+        listAriaLabel: '支持的模型系列',
+        code: {
+          title: '代码与推理',
+          description: '代码生成 · 复杂问题分析'
+        },
+        multimodal: {
+          title: '多模态理解',
+          description: '结合图文 · 辅助理解'
+        },
+        image: {
+          title: '图像生成',
+          description: '以文生图 · 辅助表达'
+        },
+        more: '更多模型',
+        expanding: '持续拓展'
+      },
+      agents: {
+        title: '常用 Agent，接入即用'
+      },
+      cta: {
+        title: '让 AI 融入研发，让开发测试更高效',
+        description: '登录平台，即刻使用'
+      },
+      footer: {
+        internalOnly: '仅供内部使用'
+      }
+    },
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',

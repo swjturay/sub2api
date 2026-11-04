@@ -14,6 +14,97 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
+    blueZone: {
+      brand: 'Blue Zone AI Gateway',
+      login: 'Sign in',
+      register: 'Request access',
+      skipToContent: 'Skip to main content',
+      homeAriaLabel: 'Blue Zone AI Gateway home',
+      primaryNavigation: 'Primary navigation',
+      mobileNavigation: 'Mobile navigation',
+      openMenu: 'Open navigation menu',
+      closeMenu: 'Close navigation menu',
+      nav: {
+        advantages: 'Advantages',
+        models: 'Model capabilities',
+        agents: 'Agent access',
+        scale: 'Usage scale'
+      },
+      hero: {
+        lineOne: 'One gateway, many models',
+        lineTwo: 'Built for Blue Zone R&D',
+        trustAriaLabel: 'One endpoint, choose on demand, transparent usage',
+        trust: {
+          unified: 'One endpoint',
+          choose: 'Choose on demand',
+          transparent: 'Transparent usage'
+        }
+      },
+      demo: {
+        title: 'R&D Assistant',
+        statusAriaLabel: 'Connection status',
+        smartRouting: 'Smart routing',
+        connected: 'Connected',
+        codeAriaLabel: 'Code generation example',
+        prompts: {
+          debounce: 'Implement button debouncing and short-press detection',
+          heartbeat: 'Implement a non-blocking status LED heartbeat task',
+          queue: 'Implement a thread-safe producer-consumer queue',
+          backoff: 'Implement a request function with exponential backoff'
+        }
+      },
+      scale: {
+        title: 'Operating continuously at scale',
+        requestsValue: '70K+',
+        requestsLabel: 'Requests per day',
+        tokensValue: '10B+',
+        tokensLabel: 'Tokens per day'
+      },
+      advantages: {
+        kicker: 'Why Blue Zone AI Gateway',
+        title: 'One gateway for the AI capabilities R&D needs',
+        unified: {
+          title: 'Many models, one endpoint',
+          description: 'Choose the right capability for each R&D scenario'
+        },
+        scheduling: {
+          title: 'Shared quota orchestration',
+          description: 'Share capacity with automatic load balancing'
+        },
+        usage: {
+          title: 'Measurable usage and cost',
+          description: 'See usage trends and cost clearly'
+        }
+      },
+      models: {
+        title: 'Multiple model capabilities for R&D',
+        listAriaLabel: 'Supported model families',
+        code: {
+          title: 'Code and reasoning',
+          description: 'Code generation · Complex analysis'
+        },
+        multimodal: {
+          title: 'Multimodal understanding',
+          description: 'Combine text and images'
+        },
+        image: {
+          title: 'Image generation',
+          description: 'Turn text into supporting visuals'
+        },
+        more: 'More models',
+        expanding: 'Continuously expanding'
+      },
+      agents: {
+        title: 'Connect the Agents you already use'
+      },
+      cta: {
+        title: 'Bring AI into R&D and move development and testing faster',
+        description: 'Sign in and start now'
+      },
+      footer: {
+        internalOnly: 'Internal use only'
+      }
+    },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
