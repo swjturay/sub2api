@@ -942,3 +942,9 @@ one more Buildx-only assumption: `BUILDPLATFORM` and `TARGETARCH` are not
 automatically populated. CCE is fixed to `linux/amd64`, so removed the two
 Buildx-only `FROM --platform` selectors and gave `TARGETOS/TARGETARCH` explicit
 CCE defaults. Buildx can still override those arguments.
+
+The production image then reached its normal Alpine dependency install but the
+official Alpine CDN DNS timed out from the CodeArts China-region executor.
+Point only the two existing `apk` operations at the Alibaba Cloud Alpine mirror
+and add a five-attempt kubectl download retry for the runner. Dependency names,
+checksums and runtime behavior are unchanged.
