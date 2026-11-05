@@ -9,7 +9,10 @@ case "$build_number" in
     ;;
 esac
 
-source_sha=$(git rev-parse HEAD)
+source_sha=${PINNED_SOURCE_SHA:-}
+if [ -z "$source_sha" ]; then
+  source_sha=$(git rev-parse HEAD)
+fi
 case "$source_sha" in
   [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
   *)
@@ -18,12 +21,14 @@ case "$source_sha" in
     ;;
 esac
 
-git fetch --no-tags origin cce-deploy
-test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$source_sha" || {
-  echo "cce-deploy moved while the release source was being pinned" >&2
-  exit 1
-}
-git merge-base --is-ancestor "$source_sha" FETCH_HEAD
+if [ -z "${PINNED_SOURCE_SHA:-}" ]; then
+  git fetch --no-tags origin cce-deploy
+  test "$(git rev-parse 'FETCH_HEAD^{commit}')" = "$source_sha" || {
+    echo "cce-deploy moved while the release source was being pinned" >&2
+    exit 1
+  }
+  git merge-base --is-ancestor "$source_sha" FETCH_HEAD
+fi
 
 base_version=$(tr -d '\r\n' < backend/cmd/server/VERSION)
 case "$base_version" in
@@ -33,7 +38,14 @@ case "$base_version" in
     ;;
 esac
 source_version="${base_version}-cce-codearts-${build_number}"
-source_date=$(git show -s --format=%cI "$source_sha")
+source_date=${PINNED_SOURCE_DATE:-}
+if [ -z "$source_date" ]; then
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    source_date=$(git show -s --format=%cI "$source_sha")
+  else
+    source_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  fi
+fi
 
 metadata=deploy/cce/codearts/build-metadata.env
 umask 022

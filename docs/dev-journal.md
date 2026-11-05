@@ -956,3 +956,9 @@ existing CI contract: lint, typecheck and `FRONTEND_CRITICAL_VITEST`, while
 retaining complete backend unit tests, lint, vulnerability scanning and real
 PostgreSQL checks. The previously executed 382-file suite passed and is not
 required a second time inside every production image build.
+
+A later run again reached the 60-minute limit after a slow GitHub clone retry.
+The source stage now resolves `refs/heads/cce-deploy` with `git ls-remote`, then
+downloads the exact commit archive. The pinned full SHA remains authoritative;
+the change removes unnecessary Git history transfer without adding a mirror or
+GitHub service endpoint.
