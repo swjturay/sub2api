@@ -874,3 +874,30 @@ Validation:
 - Updated the existing `follow-redirects` override from 1.16.1 to 1.16.2 after the exact-source Security Scan reported GHSA-mrwp-f3q8-3g9p. No audit exception was added.
 - Regenerated only the matching lockfile entries. The production dependency audit now validates against the existing exception policy; frontend lint, typecheck, locale compilation and production build pass.
 - This change prepares the release source only. No image build, registry publication, Kubernetes change, migration, traffic cutover or production request was performed in this step.
+
+# HiSpark CodeArts production pipeline (2026-11-05)
+
+- Added the versioned CodeArts release assets under `deploy/cce/codearts`.
+  CodeArts pins the public `cce-deploy` head, runs CCE-relevant checks, builds
+  immutable Backend, Insights and release-runner images in ACR, and renders one
+  Artifact-backed in-cluster release Job. ACR credentials stay in a private
+  CodeArts endpoint/parameter and are not stored in Git or generated manifests.
+- Added a namespace-scoped release ServiceAccount and blue/green slot
+  controller. The inactive slot must pass internal checks before both Services
+  switch. Public checks continue for the fixed three-minute drain window; probe
+  failure restores the prior selectors, while deadline cleanup scales the old
+  slot to zero and records `forcedDrain=true`.
+- Preserved CodeArts Deploy native rollback by retaining the exact image pair
+  in every historical artifact and giving completed release Jobs a short TTL.
+  Reapplying a prior successful record therefore runs the same state machine
+  against the inactive slot. Migrations remain forward-only.
+- Reduced the release gate to checks that exercise the production application
+  and release transaction. Removed the Python compatibility matrix, Apple
+  container, unrelated Compose/Caddy and GitHub release-matrix checks from this
+  pipeline; the existing workflows remain independent and are not required by
+  CodeArts.
+
+Validation so far: CCE and CodeArts release unit tests, Python compilation,
+shell syntax, JSON rendering and whitespace checks pass locally. The complete
+containerized validation and production rollout are performed by the new
+CodeArts pipeline on the exact published commit.

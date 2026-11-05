@@ -1,10 +1,59 @@
 # CCE Production Release
 
-The image archive and production deployment are deliberately independent.
-GitHub has ACR credentials only; it has no SSH credential, kubeconfig, or path
-to the operations host.
+The production release is owned by the `sub2api-production` pipeline in the
+HiSpark CodeArts project. The pipeline builds from an exact `cce-deploy`
+revision, pushes immutable images to ACR, and starts an in-cluster release Job.
+It does not use GitHub Actions or an operations host.
 
-## 1. Build and archive
+## CodeArts release
+
+The pipeline has two stages: Build and Deploy. It is manual-only, allows one
+run at a time, and has no second approval gate. The Build task clones the
+public GitHub branch, pins its full SHA, runs the release checks, builds the
+Backend, Insights, and release-runner images, then uploads one immutable Job
+manifest to CodeArts Artifact. A private CodeArts endpoint stores the ACR
+credential; credentials never enter this repository, an image, or the release
+artifact.
+
+The release Job maintains two fixed application slots. It prepares and checks
+the inactive slot before changing either production Service selector. After
+cutover it probes all public routes for three minutes while the old Pods remain
+running, then scales the old slot to zero. A failed candidate or public probe
+restores the old selectors before the candidate is removed. The Job continues
+to a safe terminal state if the pipeline UI is closed or its observer is
+stopped.
+
+CodeArts Deploy retains the immutable artifact used by each deployment. Native
+rollback selects the previous successful deployment record and applies its
+artifact through the same release Job. Completed Jobs have a short TTL so an
+older artifact can create its Job again. Database migrations remain
+forward-only and are not reversed by an application rollback.
+
+The permanent namespace bootstrap is
+`deploy/cce/codearts/rbac.yaml`. It grants only the release ServiceAccount's
+namespace-scoped Deployment, Service, Pod, Endpoint and lock-ConfigMap access,
+plus the required network egress. Routine releases apply only the generated
+ConfigMap and Job.
+
+The release gate intentionally contains only production-relevant checks:
+
+- backend unit tests, build, lint, vulnerability scan, and real PostgreSQL
+  Insights/migration regressions;
+- frontend lint, typecheck, critical regressions and production dependency
+  audit;
+- complete Insights typecheck, lint, test and build;
+- CCE release helper and renderer tests.
+
+The Python-version matrix, Apple container checks, generic Compose/Caddy tests,
+and GitHub release-matrix helpers are not release gates because they do not
+validate the CCE images or cutover transaction.
+
+## Legacy GitHub archive
+
+The GitHub workflow remains available as a legacy image archive path, but the
+CodeArts production pipeline does not invoke it or inspect its result.
+
+### Build and archive
 
 If the source commit has no CI runs (for example after restoring Actions on a
 disabled fork), run all three validation workflows against `cce-deploy` before
@@ -37,7 +86,7 @@ reachable from that branch.
 The workflow uploads `cce-release-manifest.json` plus its SHA-256 checksum as a
 small Actions artifact. Image tar archives and GHCR copies are not produced.
 
-## 2. Deploy from the operations host
+### Deploy from the operations host
 
 Install or refresh the repository-owned deployment command from the same reviewed release source before rollout:
 

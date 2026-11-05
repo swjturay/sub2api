@@ -53,6 +53,11 @@ def deployment(name: str, container: str) -> dict:
 
 
 class ReleasePatchTest(unittest.TestCase):
+    def test_controller_uses_in_cluster_context_when_context_is_empty(self):
+        controller = release.Controller("", "sub2api-prod", Path("/tmp/audit"))
+
+        self.assertEqual(controller.kubectl, ["kubectl", "-n", "sub2api-prod"])
+
     def test_backend_patch_enables_application_graceful_shutdown(self):
         source = deployment("sub2api", "sub2api")
         image = "registry.cn-shanghai.aliyuncs.com/rayless/sub2api@sha256:" + "1" * 64

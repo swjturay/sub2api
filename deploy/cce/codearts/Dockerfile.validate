@@ -1,0 +1,110 @@
+FROM python:3.13-alpine AS release-tests
+WORKDIR /src
+COPY deploy/cce deploy/cce
+RUN python3 -m unittest discover -s deploy/cce/tests -v \
+    && python3 -m unittest discover -s deploy/cce/codearts/tests -v \
+    && python3 -m py_compile \
+        deploy/cce/release.py \
+        deploy/cce/codearts/slot_release.py \
+        deploy/cce/codearts/render_release.py \
+        deploy/cce/codearts/registry_digest.py \
+    && /bin/sh -n deploy/cce/install.sh \
+    && /bin/sh -n deploy/cce/codearts/prepare_source.sh \
+    && /bin/sh -n deploy/cce/codearts/finalize_release.sh \
+    && touch /release-tests-passed
+
+FROM node:20-alpine AS frontend-tests
+RUN apk add --no-cache make
+WORKDIR /src
+COPY --from=release-tests /release-tests-passed /
+COPY Makefile ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/
+RUN corepack enable && corepack prepare pnpm@9 --activate \
+    && pnpm --dir frontend install --frozen-lockfile
+COPY frontend frontend
+RUN make test-frontend
+RUN pnpm --dir frontend audit --prod --audit-level=high --json > /tmp/audit.json || true
+COPY .github/audit-exceptions.yml .github/audit-exceptions.yml
+COPY tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+RUN apk add --no-cache python3 \
+    && python3 tools/check_pnpm_audit_exceptions.py \
+        --audit /tmp/audit.json \
+        --exceptions .github/audit-exceptions.yml \
+    && touch /frontend-tests-passed
+
+FROM node:24-alpine AS insights-tests
+WORKDIR /src/insights
+COPY --from=frontend-tests /frontend-tests-passed /
+COPY insights/package.json insights/pnpm-lock.yaml ./
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
+    && pnpm install --frozen-lockfile
+COPY insights ./
+RUN pnpm typecheck \
+    && pnpm lint \
+    && pnpm test \
+    && pnpm build \
+    && touch /insights-tests-passed
+
+FROM golang:1.27.3-alpine AS backend-tests
+RUN apk add --no-cache git make
+WORKDIR /src/backend
+COPY --from=insights-tests /insights-tests-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN go test -tags=unit ./... \
+    && go build ./... \
+    && touch /backend-tests-passed
+
+FROM golangci/golangci-lint:v2.14.0-alpine AS backend-lint
+WORKDIR /src/backend
+COPY --from=backend-tests /backend-tests-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN golangci-lint run --timeout=30m --max-same-issues=0 --max-issues-per-linter=0 \
+    && touch /backend-lint-passed
+
+FROM golang:1.27.3-alpine AS backend-security
+RUN apk add --no-cache git
+WORKDIR /src/backend
+COPY --from=backend-lint /backend-lint-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download \
+    && go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
+COPY backend ./
+RUN govulncheck ./... \
+    && touch /backend-security-passed
+
+FROM postgres:16-alpine AS postgres-integration
+COPY --from=golang:1.27.3-alpine /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH
+RUN apk add --no-cache git
+WORKDIR /src/backend
+COPY --from=backend-security /backend-security-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN mkdir -p /tmp/pgdata \
+    && chown postgres:postgres /tmp/pgdata \
+    && su postgres -c 'initdb -D /tmp/pgdata' >/dev/null \
+    && su postgres -c 'pg_ctl -D /tmp/pgdata -o "-h 127.0.0.1" -w start' >/dev/null \
+    && su postgres -c 'createdb insights_test' \
+    && INSIGHTS_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:5432/insights_test?sslmode=disable' \
+       INSIGHTS_TEST_POSTGRES_DSN='postgres://postgres@127.0.0.1:5432/insights_test?sslmode=disable' \
+       go test ./internal/insights ./internal/handler ./internal/server/routes -count=1 \
+    && go test -tags=unit ./migrations -count=1 \
+    && go test -tags=unit ./internal/service \
+       -run 'Test(GatewayServiceRecordUsage|OpenAIGatewayServiceRecordUsage)_UsesExplicitStatisticalTime' \
+       -count=1 \
+    && su postgres -c 'pg_ctl -D /tmp/pgdata -m fast -w stop' >/dev/null \
+    && touch /postgres-integration-passed
+
+FROM scratch
+COPY --from=release-tests /release-tests-passed /
+COPY --from=frontend-tests /frontend-tests-passed /
+COPY --from=insights-tests /insights-tests-passed /
+COPY --from=backend-tests /backend-tests-passed /
+COPY --from=backend-lint /backend-lint-passed /
+COPY --from=backend-security /backend-security-passed /
+COPY --from=postgres-integration /postgres-integration-passed /

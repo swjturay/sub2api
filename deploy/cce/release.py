@@ -186,7 +186,10 @@ class Controller:
         self.context = context
         self.namespace = namespace
         self.audit_dir = audit_dir
-        self.kubectl = ["kubectl", "--context", context, "-n", namespace]
+        self.kubectl = ["kubectl"]
+        if context:
+            self.kubectl.extend(["--context", context])
+        self.kubectl.extend(["-n", namespace])
 
     def get(self, kind: str, name: str) -> dict:
         result = run([*self.kubectl, "get", kind, name, "-o", "json"])
