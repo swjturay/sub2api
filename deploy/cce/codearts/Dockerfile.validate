@@ -58,7 +58,7 @@ COPY --from=insights-tests /insights-tests-passed /
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend ./
-RUN go test -tags=unit ./... \
+RUN go test -tags=unit -p 2 ./... \
     && go build ./... \
     && touch /backend-tests-passed
 

@@ -924,3 +924,9 @@ image then stopped before compilation because CodeArts uses the classic Docker
 20.10 builder and does not enable BuildKit `RUN --mount` cache syntax. Removed
 the three cache-only mounts while preserving the same install, download and
 compile commands; no production resource had been changed.
+
+One subsequent run exposed the existing bounded-memory unit test as sensitive
+to package-level parallelism on CodeArts' 2U8G executor (8.60 MiB measured
+against an 8 MiB bound after passing in the preceding run). Match the project's
+documented constrained validation by running Go unit packages with `-p 2`;
+the test remains enabled and unchanged.
