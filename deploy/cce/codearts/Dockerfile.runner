@@ -1,15 +1,8 @@
+FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/registry.k8s.io/kubectl:v1.32.7 AS kubectl
+
 FROM python:3.13-alpine
 
-ARG KUBECTL_VERSION=v1.32.9
-ARG KUBECTL_SHA256=509ae171bac7ad3b98cc49f5594d6bc84900cf6860f155968d1059fde3be5286
-
-RUN for attempt in 1 2 3 4 5; do \
-      wget -q -O /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && break; \
-      test "$attempt" = 5 && exit 1; \
-      sleep $((attempt * 3)); \
-    done \
-    && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - \
-    && chmod 0755 /usr/local/bin/kubectl
+COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
 
 WORKDIR /app
 COPY deploy/cce/release.py /app/release.py

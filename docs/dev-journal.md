@@ -962,3 +962,10 @@ The source stage now resolves `refs/heads/cce-deploy` with `git ls-remote`, then
 downloads the exact commit archive. The pinned full SHA remains authoritative;
 the change removes unnecessary Git history transfer without adding a mirror or
 GitHub service endpoint.
+
+The bounded-source run completed the gate plus Backend and Insights builds but
+again reached the 60-minute limit while `dl.k8s.io` stalled during runner
+construction. Replace that download with a multi-stage copy from Huawei SWR's
+public Kubernetes 1.32.7 kubectl image. The client is same-minor compatible
+with CCE 1.32.9, and the completed runner is still recorded by immutable ACR
+digest.
