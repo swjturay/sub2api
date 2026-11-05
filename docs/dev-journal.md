@@ -931,6 +931,12 @@ against an 8 MiB bound after passing in the preceding run). Match the project's
 documented constrained validation by running Go unit packages with `-p 2`;
 the test remains enabled and unchanged.
 
+Package-level parallelism was not sufficient because other tests in the same
+`internal/service` process still affected the heap measurement. The release
+gate now runs every other unit test normally and executes only
+`TestInflightEstimate_AccountMappingNoDBAndBoundedMemory` in a fresh process;
+the assertion remains enabled without changing its 8 MiB bound.
+
 After the bounded run passed the complete gate, the classic builder exposed
 one more Buildx-only assumption: `BUILDPLATFORM` and `TARGETARCH` are not
 automatically populated. CCE is fixed to `linux/amd64`, so removed the two

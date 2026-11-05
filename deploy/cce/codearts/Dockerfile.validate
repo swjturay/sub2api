@@ -58,7 +58,12 @@ COPY --from=insights-tests /insights-tests-passed /
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend ./
-RUN go test -tags=unit -p 2 ./... \
+RUN packages="$(go list ./... | grep -v '/internal/service$')" \
+    && go test -tags=unit -p 2 ${packages} \
+    && go test -tags=unit ./internal/service \
+       -skip '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' \
+    && go test -tags=unit ./internal/service \
+       -run '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' -count=1 \
     && go build ./... \
     && touch /backend-tests-passed
 
