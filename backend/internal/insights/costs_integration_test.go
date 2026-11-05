@@ -107,7 +107,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if err != nil {
 		t.Fatalf("summary view failed: %v", err)
 	}
-	summaryView := summaryEnvelope.Data.(CostDashboard)
+	summaryView, ok := summaryEnvelope.Data.(CostDashboard)
+	if !ok {
+		t.Fatalf("summary data type=%T", summaryEnvelope.Data)
+	}
 	if len(summaryView.Trend) == 0 || summaryView.Accounts.Total != 0 || len(summaryView.Flows) != 0 {
 		t.Fatalf("unexpected summary view=%+v", summaryView)
 	}
@@ -115,7 +118,10 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if err != nil {
 		t.Fatalf("details view failed: %v", err)
 	}
-	detailsView := detailsEnvelope.Data.(CostDashboard)
+	detailsView, ok := detailsEnvelope.Data.(CostDashboard)
+	if !ok {
+		t.Fatalf("details data type=%T", detailsEnvelope.Data)
+	}
 	if len(detailsView.Accounts.Items) == 0 || len(detailsView.Trend) != 0 || len(detailsView.Flows) == 0 {
 		t.Fatalf("unexpected details view=%+v", detailsView)
 	}
