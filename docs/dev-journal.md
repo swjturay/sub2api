@@ -969,3 +969,11 @@ construction. Replace that download with a multi-stage copy from Huawei SWR's
 public Kubernetes 1.32.7 kubectl image. The client is same-minor compatible
 with CCE 1.32.9, and the completed runner is still recorded by immutable ACR
 digest.
+
+The native CCE Deploy action keeps namespace and IAM choices in hidden UI
+state, making API-created copies unsafe, while the generic Kubernetes action
+does not expose a reliable dynamic Artifact parameter through the public API.
+Move only the final ConfigMap/Job apply into the CodeArts Build task. A second
+namespace-scoped ServiceAccount can manage those two kinds but cannot read
+Secrets or patch Services/Deployments; the release Job retains the existing
+separate release role and continues independently to a safe terminal state.

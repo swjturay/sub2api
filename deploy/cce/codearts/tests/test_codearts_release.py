@@ -20,6 +20,7 @@ def load(name: str, path: Path):
 
 slot = load("slot_release", ROOT / "slot_release.py")
 render_release = load("render_release", ROOT / "render_release.py")
+apply_release = load("apply_release", ROOT / "apply_release.py")
 
 
 def source_deployment(name: str, container: str) -> dict:
@@ -103,6 +104,25 @@ class SlotReleaseTest(unittest.TestCase):
         self.assertEqual(manifest["source_sha"], "b" * 40)
         embedded = json.loads(workload["items"][0]["data"]["cce-release-manifest.json"])
         self.assertEqual(embedded, manifest)
+
+        configmap, job = apply_release.validate_workload(workload)
+        self.assertEqual(configmap["metadata"]["namespace"], "sub2api-prod")
+        self.assertEqual(job["spec"]["template"]["spec"]["serviceAccountName"], "sub2api-release")
+
+    def test_apply_rejects_mutable_runner_image(self):
+        image = "registry.cn-shanghai.aliyuncs.com/rayless/sub2api@sha256:" + "a" * 64
+        args = argparse.Namespace(
+            source_sha="b" * 40,
+            version="0.2.19-cce-codearts-test",
+            pipeline_run="42",
+            backend_image=image,
+            insights_image=image,
+            runner_image=image,
+        )
+        _, workload = render_release.render(args)
+        workload["items"][1]["spec"]["template"]["spec"]["containers"][0]["image"] = "latest"
+        with self.assertRaises(ValueError):
+            apply_release.validate_workload(workload)
 
 
 if __name__ == "__main__":

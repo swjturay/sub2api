@@ -7,13 +7,14 @@ It does not use GitHub Actions or an operations host.
 
 ## CodeArts release
 
-The pipeline has two stages: Build and Deploy. It is manual-only, allows one
-run at a time, and has no second approval gate. The Build task clones the
+The pipeline is manual-only, allows one run at a time, and has no second
+approval gate. The Build task downloads the exact public GitHub revision,
 public GitHub branch, pins its full SHA, runs the release checks, builds the
-Backend, Insights, and release-runner images, then uploads one immutable Job
-manifest to CodeArts Artifact. A private CodeArts endpoint stores the ACR
-credential; credentials never enter this repository, an image, or the release
-artifact.
+Backend, Insights, and release-runner images, uploads one immutable Job
+manifest to CodeArts Artifact, and applies it with a private namespace-scoped
+Kubernetes credential. The trigger credential can manage only release
+ConfigMaps and Jobs. A separate private endpoint stores the ACR credential;
+credentials never enter this repository, an image, or the release artifact.
 
 The release Job maintains two fixed application slots. It prepares and checks
 the inactive slot before changing either production Service selector. After
