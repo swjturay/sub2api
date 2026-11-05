@@ -911,3 +911,9 @@ runtime package installation in all release-specific stages.
 The next run completed all 382 frontend files and 3,086 tests, then exposed a
 missing Docker stage marker before the audit stage. Restored the marker without
 changing the checks; no production image or cluster resource had been created.
+
+The following run again passed the complete frontend suite and showed that the
+CodeArts Docker 20.10 builder uses the repository-wide `.dockerignore` instead
+of the Dockerfile-specific file. The root ignore rules now expose only the
+audit exception policy under `.github` and retain Go test files so the
+validation image cannot silently omit backend tests.

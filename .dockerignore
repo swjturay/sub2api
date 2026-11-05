@@ -39,7 +39,6 @@ node_modules/
 backend/vendor/
 
 # Test files
-*_test.go
 **/*.test.js
 coverage/
 .nyc_output/
@@ -78,6 +77,9 @@ deploy/redis_data/
 
 # GitHub
 .github/
+!.github/
+.github/*
+!.github/audit-exceptions.yml
 
 # Claude files
 .claude/
