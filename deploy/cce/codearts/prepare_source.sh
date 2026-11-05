@@ -40,7 +40,9 @@ esac
 source_version="${base_version}-cce-codearts-${build_number}"
 source_date=${PINNED_SOURCE_DATE:-}
 if [ -z "$source_date" ]; then
-  if git rev-parse --git-dir >/dev/null 2>&1; then
+  if [ -n "${PINNED_SOURCE_SHA:-}" ]; then
+    source_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  elif git rev-parse --git-dir >/dev/null 2>&1; then
     source_date=$(git show -s --format=%cI "$source_sha")
   else
     source_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
