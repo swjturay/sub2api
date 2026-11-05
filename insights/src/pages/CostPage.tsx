@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useDeferredValue, useMemo, useRef, useState, type ReactNode } from "react";
 import type { EChartsOption } from "echarts";
 import { Building2, Check, ChevronsUpDown, CircleDollarSign, Pencil, Search, SquareArrowOutUpRight, WalletCards } from "lucide-react";
 import { Chart } from "../components/charts/Chart";
@@ -18,6 +18,7 @@ import { cn } from "../lib/cn";
 import { dateTime, platformDateParts } from "../lib/format";
 import type { CostAccount, CostFilters, CostPaymentMethod } from "../lib/types";
 import { useRemote } from "../lib/useRemote";
+import { useDeferredLoad } from "../lib/useDeferredLoad";
 
 const moneyFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const amountPattern = /^\d+(?:\.\d{1,2})?$/;
@@ -46,7 +47,7 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
     filters.month, filters.department, filters.platform,
   ], auto, `${boot.scope}:costs-overview:${JSON.stringify(overviewFilters)}`);
   const detailsSectionRef = useRef<HTMLDivElement | null>(null);
-  const [detailsEnabled, setDetailsEnabled] = useState(false);
+  const detailsEnabled = useDeferredLoad(detailsSectionRef, Boolean(state.data));
   const detailsState = useRemote((signal) => insightsApi.costs(requestFilters, signal, "details"), [
     filters.month, filters.department, filters.platform, deferredSearch, deferredContributor,
     filters.paymentMethod, filters.status, filters.completeness, filters.registration, filters.page, filters.pageSize,
@@ -63,23 +64,6 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
   const detailData = detailsState.data;
   const accountItems = detailData?.accounts.items.map((account) => ({ ...account, ...accountOverrides[account.id] })) || [];
   const setFilter = <K extends keyof CostFilters>(key: K, value: CostFilters[K]) => setFilters((current) => ({ ...current, [key]: value, page: key === "page" ? Number(value) : 1 }));
-
-  useEffect(() => {
-    const section = detailsSectionRef.current;
-    if (!section) return;
-    if (!("IntersectionObserver" in window)) {
-      const timer = globalThis.setTimeout(() => setDetailsEnabled(true), 900);
-      return () => globalThis.clearTimeout(timer);
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setDetailsEnabled(true);
-        observer.disconnect();
-      }
-    }, { rootMargin: "420px" });
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, []);
 
   const openEditor = (account: CostAccount) => {
     if (!canEdit) return;

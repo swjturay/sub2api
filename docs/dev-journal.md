@@ -9,6 +9,10 @@
 - Added PostgreSQL integration coverage for both `summary` and `details` cost
   views; the regression test failed on the buggy boundary and passes after the
   fix.
+- Fixed a second cost-page loading issue where the deferred details observer
+  ran before the conditional details section mounted, leaving account and
+  department data permanently disabled. The deferred-load hook now reruns when
+  the section becomes active and has a regression test for that mount sequence.
 
 ## Insights secondary pages progressive loading and cost mutation UX (2026-11-05)
 
