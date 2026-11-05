@@ -948,3 +948,11 @@ official Alpine CDN DNS timed out from the CodeArts China-region executor.
 Point only the two existing `apk` operations at the Alibaba Cloud Alpine mirror
 and add a five-attempt kubectl download retry for the runner. Dependency names,
 checksums and runtime behavior are unchanged.
+
+One fully successful gate plus Backend and Insights builds reached CodeArts'
+60-minute task limit while the runner image was still downloading kubectl. The
+runner itself had not failed. Restore the frontend gate to the repository's
+existing CI contract: lint, typecheck and `FRONTEND_CRITICAL_VITEST`, while
+retaining complete backend unit tests, lint, vulnerability scanning and real
+PostgreSQL checks. The previously executed 382-file suite passed and is not
+required a second time inside every production image build.

@@ -39,7 +39,7 @@ The release gate intentionally contains only production-relevant checks:
 
 - backend unit tests, build, lint, vulnerability scan, and real PostgreSQL
   Insights/migration regressions;
-- frontend lint, typecheck, complete regressions and production dependency
+- frontend lint, typecheck, critical regressions and production dependency
   audit;
 - complete Insights typecheck, lint, test and build;
 - CCE release helper and renderer tests.

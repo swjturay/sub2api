@@ -16,13 +16,15 @@ RUN python3 -m unittest discover -s deploy/cce/tests -v \
 FROM node:20-alpine AS frontend-tests
 WORKDIR /src
 COPY --from=release-tests /release-tests-passed /
+COPY Makefile ./
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/
 RUN corepack enable && corepack prepare pnpm@9 --activate \
     && pnpm --dir frontend install --frozen-lockfile
 COPY frontend frontend
 RUN pnpm --dir frontend run lint:check \
     && pnpm --dir frontend run typecheck \
-    && pnpm --dir frontend run test:run \
+    && critical="$(awk 'BEGIN { capture=0 } /^FRONTEND_CRITICAL_VITEST :=/ { capture=1; next } capture && NF == 0 { exit } capture { gsub(/^[ \t]+|[ \t\\]+$/, ""); printf "%s ", $0 }' Makefile)" \
+    && pnpm --dir frontend exec vitest run ${critical} \
     && touch /frontend-tests-passed
 RUN pnpm --dir frontend audit --prod --audit-level=high --json > /tmp/audit.json || true
 
