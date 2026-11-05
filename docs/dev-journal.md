@@ -930,3 +930,9 @@ to package-level parallelism on CodeArts' 2U8G executor (8.60 MiB measured
 against an 8 MiB bound after passing in the preceding run). Match the project's
 documented constrained validation by running Go unit packages with `-p 2`;
 the test remains enabled and unchanged.
+
+After the bounded run passed the complete gate, the classic builder exposed
+one more Buildx-only assumption: `BUILDPLATFORM` and `TARGETARCH` are not
+automatically populated. CCE is fixed to `linux/amd64`, so removed the two
+Buildx-only `FROM --platform` selectors and gave `TARGETOS/TARGETARCH` explicit
+CCE defaults. Buildx can still override those arguments.

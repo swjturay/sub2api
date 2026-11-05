@@ -18,9 +18,9 @@ ARG NPM_CONFIG_REGISTRY=
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
 # -----------------------------------------------------------------------------
-# --platform=$BUILDPLATFORM: the frontend output is JS (arch-neutral), so build
-# it on the native host arch instead of under QEMU emulation for the target.
-FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS frontend-builder
+# The CCE release is linux/amd64 and must also build with CodeArts' classic
+# Docker 20.10 builder, which does not populate Buildx-only platform args.
+FROM ${NODE_IMAGE} AS frontend-builder
 ARG NPM_CONFIG_REGISTRY
 
 WORKDIR /app/frontend
@@ -45,11 +45,9 @@ RUN pnpm run build
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
 # -----------------------------------------------------------------------------
-# --platform=$BUILDPLATFORM: run the Go toolchain on the native host arch and
-# cross-compile to the target arch below. The binary is CGO_ENABLED=0, so this
-# is a clean pure-Go cross-compile — no QEMU emulation of go mod download / go
-# build (emulated networking here was dropping module fetches with EOF).
-FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
+# CCE is fixed to linux/amd64. Explicit defaults keep classic Docker builds
+# equivalent to the Buildx release path.
+FROM ${GOLANG_IMAGE} AS backend-builder
 
 # Build arguments for version info (set by CI)
 ARG VERSION=
@@ -57,9 +55,10 @@ ARG COMMIT=docker
 ARG DATE
 ARG GOPROXY
 ARG GOSUMDB
-# Populated by buildx from the --platform target (e.g. linux/amd64).
-ARG TARGETOS
-ARG TARGETARCH
+# Buildx overrides these when present; classic CodeArts Docker uses the CCE
+# production defaults.
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
