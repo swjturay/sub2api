@@ -30,8 +30,7 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/store \
-    if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
+RUN if [ -n "${NPM_CONFIG_REGISTRY}" ]; then pnpm config set registry "${NPM_CONFIG_REGISTRY}"; fi && \
     pnpm install --frozen-lockfile --prefer-offline
 
 # Copy frontend source and build.
@@ -74,8 +73,7 @@ WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
-RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
-    go mod download
+RUN go mod download
 
 # Copy backend source first
 COPY backend/ ./
@@ -86,9 +84,7 @@ COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
 # Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
-RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
-    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
-    . /tmp/sub2api-build-metadata.env && \
+RUN . /tmp/sub2api-build-metadata.env && \
     VERSION_VALUE="${VERSION:-${SOURCE_VERSION}}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     COMMIT_VALUE="${COMMIT}" && \

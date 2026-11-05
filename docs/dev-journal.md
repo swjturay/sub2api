@@ -917,3 +917,10 @@ CodeArts Docker 20.10 builder uses the repository-wide `.dockerignore` instead
 of the Dockerfile-specific file. The root ignore rules now expose only the
 audit exception policy under `.github` and retain Go test files so the
 validation image cannot silently omit backend tests.
+
+The next run passed the complete release gate, including frontend, Insights,
+backend, lint, vulnerability and real PostgreSQL checks. The production backend
+image then stopped before compilation because CodeArts uses the classic Docker
+20.10 builder and does not enable BuildKit `RUN --mount` cache syntax. Removed
+the three cache-only mounts while preserving the same install, download and
+compile commands; no production resource had been changed.
