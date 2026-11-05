@@ -1,5 +1,15 @@
 # Development Journal
 
+## Insights cost summary regression fix (2026-11-05)
+
+- Fixed a production `internal error` in the new cost `summary` view. The
+  summary response intentionally removes account rows but retained a non-empty
+  pagination slice (`start=0,end=1`), causing a `slice bounds out of range`
+  panic before JSON serialization.
+- Added PostgreSQL integration coverage for both `summary` and `details` cost
+  views; the regression test failed on the buggy boundary and passes after the
+  fix.
+
 ## Insights secondary pages progressive loading and cost mutation UX (2026-11-05)
 
 - Deferred personal usage/error logs until the log region approaches the

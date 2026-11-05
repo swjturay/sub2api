@@ -249,6 +249,7 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	if filter.View == "summary" {
 		tableRows = nil
 		total, page, pages = 0, 1, 1
+		start, end = 0, 0
 	}
 	data := CostDashboard{
 		Month: filter.Month.Format("2006-01"), InProgress: inProgress, Summary: summary,

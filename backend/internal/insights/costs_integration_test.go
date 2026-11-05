@@ -103,6 +103,22 @@ INSERT INTO insights_cost_account_months(account_id,month,registered,contributor
 	if len(data.ContributionDepartments) != 1 || data.ContributionDepartments[0].ActualCost != "6.50" || data.ContributionDepartments[0].AccountCount != 1 {
 		t.Fatalf("contribution departments=%+v", data.ContributionDepartments)
 	}
+	summaryEnvelope, err := q.CostDashboard(ctx, CostFilter{Month: month, Page: 1, PageSize: 20, View: "summary"})
+	if err != nil {
+		t.Fatalf("summary view failed: %v", err)
+	}
+	summaryView := summaryEnvelope.Data.(CostDashboard)
+	if len(summaryView.Trend) == 0 || summaryView.Accounts.Total != 0 || len(summaryView.Flows) != 0 {
+		t.Fatalf("unexpected summary view=%+v", summaryView)
+	}
+	detailsEnvelope, err := q.CostDashboard(ctx, CostFilter{Month: month, Page: 1, PageSize: 20, View: "details"})
+	if err != nil {
+		t.Fatalf("details view failed: %v", err)
+	}
+	detailsView := detailsEnvelope.Data.(CostDashboard)
+	if len(detailsView.Accounts.Items) == 0 || len(detailsView.Trend) != 0 || len(detailsView.Flows) == 0 {
+		t.Fatalf("unexpected details view=%+v", detailsView)
+	}
 	current := data.Trend[len(data.Trend)-1]
 	previous := data.Trend[len(data.Trend)-2]
 	if current.TotalAccounts != 1 || current.ActualCost != "6.50" || current.PlatformCost != "10.00" || current.Savings != "3.50" || previous.ActualCost != "20.00" {
