@@ -901,3 +901,9 @@ Validation so far: CCE and CodeArts release unit tests, Python compilation,
 shell syntax, JSON rendering and whitespace checks pass locally. The complete
 containerized validation and production rollout are performed by the new
 CodeArts pipeline on the exact published commit.
+
+The first CodeArts run stopped in the validation image before any production
+image build or cluster change because an unnecessary `apk add make` hit a
+transient Alpine DNS failure. The validation image now invokes the frontend
+commands directly, checks the audit in its existing Python image, and avoids
+runtime package installation in all release-specific stages.

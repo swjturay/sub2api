@@ -14,27 +14,31 @@ RUN python3 -m unittest discover -s deploy/cce/tests -v \
     && touch /release-tests-passed
 
 FROM node:20-alpine AS frontend-tests
-RUN apk add --no-cache make
 WORKDIR /src
 COPY --from=release-tests /release-tests-passed /
-COPY Makefile ./
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/
 RUN corepack enable && corepack prepare pnpm@9 --activate \
     && pnpm --dir frontend install --frozen-lockfile
 COPY frontend frontend
-RUN make test-frontend
+RUN pnpm --dir frontend run lint:check \
+    && pnpm --dir frontend run typecheck \
+    && pnpm --dir frontend run test:run
 RUN pnpm --dir frontend audit --prod --audit-level=high --json > /tmp/audit.json || true
+
+FROM python:3.13-alpine AS frontend-audit
+WORKDIR /src
+COPY --from=frontend-tests /frontend-tests-passed /
+COPY --from=frontend-tests /tmp/audit.json /tmp/audit.json
 COPY .github/audit-exceptions.yml .github/audit-exceptions.yml
 COPY tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
-RUN apk add --no-cache python3 \
-    && python3 tools/check_pnpm_audit_exceptions.py \
+RUN python3 tools/check_pnpm_audit_exceptions.py \
         --audit /tmp/audit.json \
         --exceptions .github/audit-exceptions.yml \
-    && touch /frontend-tests-passed
+    && touch /frontend-audit-passed
 
 FROM node:24-alpine AS insights-tests
 WORKDIR /src/insights
-COPY --from=frontend-tests /frontend-tests-passed /
+COPY --from=frontend-audit /frontend-audit-passed /
 COPY insights/package.json insights/pnpm-lock.yaml ./
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
     && pnpm install --frozen-lockfile
@@ -46,7 +50,8 @@ RUN pnpm typecheck \
     && touch /insights-tests-passed
 
 FROM golang:1.27.3-alpine AS backend-tests
-RUN apk add --no-cache git make
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
 COPY --from=insights-tests /insights-tests-passed /
 COPY backend/go.mod backend/go.sum ./
@@ -57,6 +62,8 @@ RUN go test -tags=unit ./... \
     && touch /backend-tests-passed
 
 FROM golangci/golangci-lint:v2.14.0-alpine AS backend-lint
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
 COPY --from=backend-tests /backend-tests-passed /
 COPY backend/go.mod backend/go.sum ./
@@ -66,7 +73,8 @@ RUN golangci-lint run --timeout=30m --max-same-issues=0 --max-issues-per-linter=
     && touch /backend-lint-passed
 
 FROM golang:1.27.3-alpine AS backend-security
-RUN apk add --no-cache git
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
 COPY --from=backend-lint /backend-lint-passed /
 COPY backend/go.mod backend/go.sum ./
@@ -78,8 +86,9 @@ RUN govulncheck ./... \
 
 FROM postgres:16-alpine AS postgres-integration
 COPY --from=golang:1.27.3-alpine /usr/local/go /usr/local/go
-ENV PATH=/usr/local/go/bin:$PATH
-RUN apk add --no-cache git
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
 COPY --from=backend-security /backend-security-passed /
 COPY backend/go.mod backend/go.sum ./
@@ -103,6 +112,7 @@ RUN mkdir -p /tmp/pgdata \
 FROM scratch
 COPY --from=release-tests /release-tests-passed /
 COPY --from=frontend-tests /frontend-tests-passed /
+COPY --from=frontend-audit /frontend-audit-passed /
 COPY --from=insights-tests /insights-tests-passed /
 COPY --from=backend-tests /backend-tests-passed /
 COPY --from=backend-lint /backend-lint-passed /
