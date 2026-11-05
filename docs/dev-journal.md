@@ -907,3 +907,7 @@ image build or cluster change because an unnecessary `apk add make` hit a
 transient Alpine DNS failure. The validation image now invokes the frontend
 commands directly, checks the audit in its existing Python image, and avoids
 runtime package installation in all release-specific stages.
+
+The next run completed all 382 frontend files and 3,086 tests, then exposed a
+missing Docker stage marker before the audit stage. Restored the marker without
+changing the checks; no production image or cluster resource had been created.

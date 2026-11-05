@@ -22,7 +22,8 @@ RUN corepack enable && corepack prepare pnpm@9 --activate \
 COPY frontend frontend
 RUN pnpm --dir frontend run lint:check \
     && pnpm --dir frontend run typecheck \
-    && pnpm --dir frontend run test:run
+    && pnpm --dir frontend run test:run \
+    && touch /frontend-tests-passed
 RUN pnpm --dir frontend audit --prod --audit-level=high --json > /tmp/audit.json || true
 
 FROM python:3.13-alpine AS frontend-audit
