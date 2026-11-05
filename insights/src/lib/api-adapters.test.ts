@@ -7,6 +7,13 @@ afterEach(() => {
 });
 
 describe("Insights API adapters", () => {
+  it("normalizes cost mutation responses for immediate row updates", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      code: 0,
+      data: { saved: true, account_id: 7, month: "2026-09", contributor_user_id: 3, payment_method: "payg", actual_cost: "2.50", notes: "ok", updated_at: "2026-11-05T01:00:00Z" },
+    }), { status: 200 }));
+    await expect(insightsApi.saveCostMonth(7, "2026-09", { contributor_user_id: 3, payment_method: "payg", actual_cost: "2.50", notes: "ok" })).resolves.toMatchObject({ accountId: 7, month: "2026-09", actualCost: "2.50", updatedAt: "2026-11-05T01:00:00Z" });
+  });
   it("bootstraps from lightweight model options without requesting full model analytics", async () => {
     localStorage.setItem("auth_user", JSON.stringify({ id: 7, role: "user", can_view_insights: true }));
     const requested: string[] = [];

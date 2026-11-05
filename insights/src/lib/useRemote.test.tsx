@@ -42,3 +42,14 @@ it("shows scoped cached data immediately while refreshing in the background",asy
  const other=renderHook(()=>useRemote(()=>new Promise<string>(()=>{}),[],false,"user:8:overview"));
  expect(other.result.current.data).toBeNull();
 });
+
+it("does not start a deferred request until it is enabled",async()=>{
+ const loader=vi.fn(()=>Promise.resolve("延迟数据"));
+ const hook=renderHook(({enabled}:{enabled:boolean})=>useRemote(()=>loader(),[],false,"deferred",enabled),{initialProps:{enabled:false}});
+ await act(async()=>{});
+ expect(loader).not.toHaveBeenCalled();
+ hook.rerender({enabled:true});
+ await act(async()=>{});
+ expect(loader).toHaveBeenCalledTimes(1);
+ expect(hook.result.current.data).toBe("延迟数据");
+});

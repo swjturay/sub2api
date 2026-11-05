@@ -449,14 +449,23 @@ export const insightsApi = {
       coverage: cov(r.meta),
     } as T.DepartmentAnalytics;
   },
-  gateway: async (f: T.FilterState, signal?: AbortSignal) => {
+  gatewayQuality: async (f: T.FilterState, signal?: AbortSignal): Promise<T.GatewayQualityOverview> => {
+    const query = q({ ...fq(f), model: undefined });
+    const quality = await apiFetch<Wire<any>>(`/insights/gateway/quality${query}`, {}, signal);
+    const s = quality.data.summary;
+    return {
+      totalCalls: s.total,
+      failedCalls: s.failed,
+      successRate: s.success_rate,
+      modelDuration: mv(s.model_duration_ms),
+      gatewayDuration: mv(s.gateway_duration_ms),
+      series: quality.data.buckets.map(adaptTimePoint),
+      coverage: cov(quality.meta),
+    };
+  },
+  gatewaySecondary: async (f: T.FilterState, signal?: AbortSignal): Promise<T.GatewaySecondaryAnalytics> => {
     const query = q({ ...fq(f), model: undefined }),
-      [quality, users, retention, prefs] = await Promise.all([
-        apiFetch<Wire<any>>(
-          `/insights/gateway/quality${query}`,
-          {},
-          signal,
-        ),
+      [users, retention, prefs] = await Promise.all([
         apiFetch<Wire<any>>(
           `/insights/gateway/users${query}`,
           {},
@@ -473,7 +482,6 @@ export const insightsApi = {
           signal,
         ),
       ]),
-      s = quality.data.summary,
       fr = users.data.frequency,
       layer = (key: string, label: string) => ({
         key,
@@ -483,12 +491,6 @@ export const insightsApi = {
         status: retention.data[key].status,
       });
     return {
-      totalCalls: s.total,
-      failedCalls: s.failed,
-      successRate: s.success_rate,
-      modelDuration: mv(s.model_duration_ms),
-      gatewayDuration: mv(s.gateway_duration_ms),
-      series: quality.data.buckets.map(adaptTimePoint),
       totalUsers: users.data.summary.end_users,
       newUsers: users.data.summary.new_users,
       frequency: {
@@ -515,12 +517,18 @@ coverage: cov(users.meta),
           share: m.ratio ?? null,
         })),
       })),
-      coverage: cov(quality.meta),
           retentionCoverage: cov(retention.meta),
       preferenceCoverage: cov(prefs.meta),
-    } as T.GatewayAnalytics;
+    };
   },
-  costs: async (filters: T.CostFilters, signal?: AbortSignal): Promise<T.CostDashboard> => {
+  gateway: async (f: T.FilterState, signal?: AbortSignal) => {
+    const [quality, secondary] = await Promise.all([
+      insightsApi.gatewayQuality(f, signal),
+      insightsApi.gatewaySecondary(f, signal),
+    ]);
+    return { ...quality, ...secondary } as T.GatewayAnalytics;
+  },
+  costs: async (filters: T.CostFilters, signal?: AbortSignal, view: "full" | "summary" | "details" = "full"): Promise<T.CostDashboard> => {
     const r = await apiFetch<Wire<any>>(`/insights/costs${q({
       month: filters.month,
       department: filters.department,
@@ -533,6 +541,7 @@ coverage: cov(users.meta),
       registration: filters.registration,
       page: filters.page,
       page_size: filters.pageSize,
+      view,
     })}`, {}, signal);
     const contributor = (value: any): T.CostContributor | undefined => value ? ({
       id: value.id,
@@ -585,7 +594,12 @@ coverage: cov(users.meta),
     };
   },
   saveCostMonth: (accountId: number, month: string, input: { contributor_user_id: number; payment_method: T.CostPaymentMethod; actual_cost: string | null; notes: string }) =>
-    apiFetch<{ saved: boolean }>(`/admin/insights/costs/accounts/${accountId}/months/${month}`, { method: "PUT", body: JSON.stringify(input) }),
+    apiFetch<any>(`/admin/insights/costs/accounts/${accountId}/months/${month}`, { method: "PUT", body: JSON.stringify(input) }).then((result) => ({
+      saved: Boolean(result.saved), accountId: result.account_id, month: result.month,
+      contributorUserId: result.contributor_user_id, paymentMethod: result.payment_method,
+      actualCost: result.actual_cost === null ? null : String(result.actual_cost), notes: result.notes,
+      updatedAt: result.updated_at,
+    }) as T.CostMutationResult),
   stopCostAccount: (accountId: number, afterMonth: string) =>
-    apiFetch<{ stopped_after: string }>(`/admin/insights/costs/accounts/${accountId}/stop`, { method: "POST", body: JSON.stringify({ after_month: afterMonth }) }),
+    apiFetch<any>(`/admin/insights/costs/accounts/${accountId}/stop`, { method: "POST", body: JSON.stringify({ after_month: afterMonth }) }).then((result) => ({ stoppedAfter: result.stopped_after } as T.CostMutationResult)),
 };

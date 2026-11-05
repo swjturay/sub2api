@@ -36,6 +36,7 @@ type CostFilter struct {
 	Registration string
 	Page         int
 	PageSize     int
+	View         string
 }
 
 type CostContributor struct {
@@ -189,14 +190,22 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 		}
 	}
 	summary := summarizeCostRows(activeRows)
-	trend, err := q.loadCostTrend(ctx, filter, binding, currentMonth)
-	if err != nil {
-		return Envelope{}, err
+	trend := []CostTrendPoint{}
+	if filter.View != "details" {
+		trend, err = q.loadCostTrend(ctx, filter, binding, currentMonth)
+		if err != nil {
+			return Envelope{}, err
+		}
 	}
-	contributionDepartments := summarizeContributionDepartments(activeRows)
-	usageDepartments, flows, err := q.loadCostUsageDepartments(ctx, filter, binding, activeIDs)
-	if err != nil {
-		return Envelope{}, err
+	contributionDepartments := []CostContributionDepartment{}
+	usageDepartments := []CostUsageDepartment{}
+	flows := []CostDepartmentFlow{}
+	if filter.View != "summary" {
+		contributionDepartments = summarizeContributionDepartments(activeRows)
+		usageDepartments, flows, err = q.loadCostUsageDepartments(ctx, filter, binding, activeIDs)
+		if err != nil {
+			return Envelope{}, err
+		}
 	}
 	dimensions, err := q.loadCostDimensions(ctx, rows, binding, dimension)
 	if err != nil {
@@ -236,6 +245,10 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	}
 	if end > total {
 		end = total
+	}
+	if filter.View == "summary" {
+		tableRows = nil
+		total, page, pages = 0, 1, 1
 	}
 	data := CostDashboard{
 		Month: filter.Month.Format("2006-01"), InProgress: inProgress, Summary: summary,

@@ -1,5 +1,27 @@
 # Development Journal
 
+## Insights secondary pages progressive loading and cost mutation UX (2026-11-05)
+
+- Deferred personal usage/error logs until the log region approaches the
+  viewport (with an idle fallback), so today, heatmap and historical summary
+  requests are not blocked by paginated detail data.
+- Split gateway loading into request-quality-first and secondary user,
+  retention and model-preference requests. The existing combined API remains
+  available for compatibility.
+- Added cost dashboard `summary` and `details` views. Summary/trend and filter
+  dimensions render first; department flows and the account-month table load
+  when their lower-page region approaches the viewport.
+- Cost month save/stop mutations now return normalized mutation metadata. The
+  editor closes and patches the visible account row immediately after a
+  successful write; summary/detail refreshes run in the background and retain
+  stale-data retry behavior on failure. Existing last-write-wins semantics are
+  intentionally unchanged.
+
+Validation: Insights ESLint, TypeScript, production build and 28 files / 117
+tests passed. Backend Insights, handler and route tests passed and `go build
+./...` passed. The pre-existing frontend single-chunk size warning remains.
+No production deployment or data mutation occurred.
+
 ## Insights progressive loading and query reduction (2026-11-04)
 
 - Replaced the Insights bootstrap dependency on the full 24-hour model analytics

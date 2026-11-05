@@ -32,7 +32,7 @@ func (h *InsightsHandler) CostData(c *gin.Context) {
 	out, err := h.query.CostDashboard(c.Request.Context(), insights.CostFilter{
 		Month: month, Department: c.Query("department"), Platform: c.Query("platform"), Search: c.Query("q"),
 		Contributor: c.Query("contributor"), Payment: c.Query("payment_method"), Status: c.Query("status"),
-		Completeness: c.Query("completeness"), Registration: c.Query("registration"), Page: page, PageSize: pageSize,
+		Completeness: c.Query("completeness"), Registration: c.Query("registration"), Page: page, PageSize: pageSize, View: c.DefaultQuery("view", "full"),
 	})
 	if err != nil {
 		response.InternalError(c, "failed to query cost data")
@@ -97,7 +97,11 @@ func (h *InsightsHandler) SaveCostMonth(c *gin.Context) {
 	if h.writeCostMutationError(c, err) {
 		return
 	}
-	response.Success(c, map[string]any{"saved": true})
+	response.Success(c, map[string]any{
+		"saved": true, "account_id": accountID, "month": month.Format("2006-01"),
+		"contributor_user_id": request.ContributorUserID, "payment_method": request.PaymentMethod,
+		"actual_cost": actualCost, "notes": strings.TrimSpace(request.Notes), "updated_at": time.Now().UTC(),
+	})
 }
 
 type stopCostAccountRequest struct {

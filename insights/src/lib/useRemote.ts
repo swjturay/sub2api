@@ -21,6 +21,7 @@ export function useRemote<T>(
   deps: unknown[],
   auto = true,
   cacheKey?: string,
+  enabled = true,
 ) {
   const cached = cacheKey ? cache.get(cacheKey) : undefined;
   const initial = cached && Date.now() - cached.at < CACHE_TTL_MS
@@ -74,6 +75,7 @@ export function useRemote<T>(
   }, deps);
 
   useEffect(() => {
+    if (!enabled) return;
     if (keyRef.current !== cacheKey) {
       const entry = cacheKey ? cache.get(cacheKey) : undefined;
       const next = entry && Date.now() - entry.at < CACHE_TTL_MS
@@ -93,16 +95,17 @@ export function useRemote<T>(
       controllerRef.current = null;
       inFlightRef.current = null;
     };
-  }, [refresh, cacheKey]);
+  }, [refresh, cacheKey, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     const manual = () => void refresh();
     window.addEventListener("insights-manual-refresh", manual);
     return () => window.removeEventListener("insights-manual-refresh", manual);
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   useEffect(() => {
-    if (!auto || loading) return;
+    if (!enabled || !auto || loading) return;
     let timer: number | undefined;
     const schedule = () => {
       window.clearTimeout(timer);
@@ -118,7 +121,7 @@ export function useRemote<T>(
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [auto, refresh, loading, updatedAt]);
+  }, [enabled, auto, refresh, loading, updatedAt]);
 
   return { data, dataKey, error, loading, updatedAt, refresh };
 }

@@ -25,8 +25,10 @@ export function GatewayPage({ auto }: { auto: boolean }) {
     models: [],
     departments: [],
   }));
-  const state = useRemote((signal) => insightsApi.gateway(filters, signal), [filters], auto, `${boot.scope}:gateway:${JSON.stringify(filters)}`);
-  const data = state.data;
+  const qualityState = useRemote((signal) => insightsApi.gatewayQuality(filters, signal), [filters], auto, `${boot.scope}:gateway-quality:${JSON.stringify(filters)}`);
+  const secondaryState = useRemote((signal) => insightsApi.gatewaySecondary(filters, signal), [filters], auto, `${boot.scope}:gateway-secondary:${JSON.stringify(filters)}`);
+  const quality = qualityState.data;
+  const secondary = secondaryState.data;
   const applyPreset = (days: number) => setFilters((value) => ({
     ...value,
     from: subtractPlatformDays(platformToday.date, days - 1),
@@ -54,60 +56,63 @@ export function GatewayPage({ auto }: { auto: boolean }) {
           </div>
           <div className="min-w-0 flex-1"><AnalyticsFilters value={filters} onChange={setFilters} models={boot.models} departments={boot.departments} showModels={false} showDepartments granularities={["hour", "day", "week", "month"]} /></div>
         </div>
-        {state.error && <div className="mt-3"><ErrorBanner message={state.error} retry={state.refresh} stale={!!data} /></div>}
+        {qualityState.error && <div className="mt-3"><ErrorBanner message={qualityState.error} retry={qualityState.refresh} stale={!!quality} /></div>}
+        {secondaryState.error && <div className="mt-3"><ErrorBanner message={secondaryState.error} retry={secondaryState.refresh} stale={!!secondary} /></div>}
       </section>
 
-      {state.loading && !data ? <Loading /> : data && (
+      {qualityState.loading && !quality ? <Loading /> : quality && (
         <>
-          <CoverageBanner coverage={data.coverage} />
+          <CoverageBanner coverage={quality.coverage} />
           <section className="panel">
             <SectionHeading icon={<Activity aria-hidden="true" className="h-4 w-4" />} title="请求质量" detail="成功率基于已有明确结果的模型调用。全部部门包含身份未知及已删除用户的历史，可能大于当前各部门之和。" />
             <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-5">
-              <MetricCard label="请求总次数" value={data.totalCalls} detail="成功 + 失败" />
-              <MetricCard label="失败次数" value={data.failedCalls} detail="拒绝、报错、超时、中断或取消" />
-              <MetricCard label="成功率" value={data.successRate === null ? null : data.successRate * 100} unit="%" />
-              <MetricCard label="模型平均处理时长" value={data.modelDuration.value === null ? null : data.modelDuration.value / 1000} unit="s" detail="最终成功上游尝试，网关观测值" formula="最终成功的上游尝试从发送到完成的平均耗时，包含上游网络和输出传输，不等同于模型服务器的纯计算时间。仅统计有有效耗时的成功调用。" />
-              <MetricCard label="网关平均转发前耗时" value={data.gatewayDuration.value === null ? null : data.gatewayDuration.value / 1000} unit="s" detail="首次转发前，含排队" formula="从进入网关统计到首次调用上游的平均耗时，包含请求读取、鉴权、并发排队、账号调度及转发准备；不是纯计算耗时，不包含首次发送后的模型响应时间。仅统计有有效耗时的成功调用。" />
+              <MetricCard label="请求总次数" value={quality.totalCalls} detail="成功 + 失败" />
+              <MetricCard label="失败次数" value={quality.failedCalls} detail="拒绝、报错、超时、中断或取消" />
+              <MetricCard label="成功率" value={quality.successRate === null ? null : quality.successRate * 100} unit="%" />
+              <MetricCard label="模型平均处理时长" value={quality.modelDuration.value === null ? null : quality.modelDuration.value / 1000} unit="s" detail="最终成功上游尝试，网关观测值" formula="最终成功的上游尝试从发送到完成的平均耗时，包含上游网络和输出传输，不等同于模型服务器的纯计算时间。仅统计有有效耗时的成功调用。" />
+              <MetricCard label="网关平均转发前耗时" value={quality.gatewayDuration.value === null ? null : quality.gatewayDuration.value / 1000} unit="s" detail="首次转发前，含排队" formula="从进入网关统计到首次调用上游的平均耗时，包含请求读取、鉴权、并发排队、账号调度及转发准备；不是纯计算耗时，不包含首次发送后的模型响应时间。仅统计有有效耗时的成功调用。" />
             </div>
             <div className="mt-4 border-t border-[var(--border)] pt-3">
               <div className="text-xs font-semibold muted">请求成功率趋势</div>
-              <TimeSeriesChart data={data.series} metric="successRate" mode="line" percent label="请求成功率趋势" height={300} />
+              <TimeSeriesChart data={quality.series} metric="successRate" mode="line" percent label="请求成功率趋势" height={300} />
             </div>
           </section>
 
+          {secondaryState.loading && !secondary ? <section className="panel"><Loading label="正在加载用户与留存分析" /></section> : secondary && <>
           <section className="panel">
             <SectionHeading icon={<Users aria-hidden="true" className="h-4 w-4" />} title="用户分析" detail="频次按整个所选区间累计；切换粒度不会重新分类。" />
-            <div className="mt-3"><CoverageBanner coverage={data.frequency.coverage} /></div>
+            <div className="mt-3"><CoverageBanner coverage={secondary.frequency.coverage} /></div>
             <div className="mt-4 grid overflow-hidden rounded-[10px] border border-[var(--border)] md:grid-cols-3 xl:grid-cols-5">
-              <MetricCard label="期末总用户数" value={data.totalUsers} detail="截至所选期末" />
-              <MetricCard label="新增用户数" value={data.newUsers} detail="区间内新建账号" />
-              <MetricCard label="高频用户" value={data.frequency.high} detail="> 200 次" />
-              <MetricCard label="中频用户" value={data.frequency.medium} detail="20–200 次" />
-              <MetricCard label="低频用户" value={data.frequency.low} detail="0–19 次，含已知未使用者" />
+              <MetricCard label="期末总用户数" value={secondary.totalUsers} detail="截至所选期末" />
+              <MetricCard label="新增用户数" value={secondary.newUsers} detail="区间内新建账号" />
+              <MetricCard label="高频用户" value={secondary.frequency.high} detail="> 200 次" />
+              <MetricCard label="中频用户" value={secondary.frequency.medium} detail="20–200 次" />
+              <MetricCard label="低频用户" value={secondary.frequency.low} detail="0–19 次，含已知未使用者" />
             </div>
             <div className="mt-4 border-t border-[var(--border)] pt-3">
               <div className="text-xs font-semibold muted">期末累计用户趋势</div>
-              <TimeSeriesChart data={data.userSeries} metric="users" mode="line" label="累计用户数趋势" height={300} />
+              <TimeSeriesChart data={secondary.userSeries} metric="users" mode="line" label="累计用户数趋势" height={300} />
             </div>
           </section>
 
           <div className="grid items-stretch gap-6 xl:grid-cols-12">
             <section className="panel xl:col-span-6">
               <SectionHeading icon={<GitMerge aria-hidden="true" className="h-4 w-4" />} title="用户转化漏斗" detail="按结束日期累计快照；第N日及以后回访。" />
-              <div className="mt-3"><CoverageBanner coverage={data.retentionCoverage} /></div>
-              {data.funnel.length ? <Chart label="真实递减用户留存漏斗" height={390} option={buildFunnelOption(data.funnel)} /> : <Empty detail={emptyDetail(data.retentionCoverage, "当前筛选范围没有可展示的留存数据。") } />}
-              {data.funnel.some((layer) => layer.count === null) && (
+              <div className="mt-3"><CoverageBanner coverage={secondary.retentionCoverage} /></div>
+              {secondary.funnel.length ? <Chart label="真实递减用户留存漏斗" height={390} option={buildFunnelOption(secondary.funnel)} /> : <Empty detail={emptyDetail(secondary.retentionCoverage, "当前筛选范围没有可展示的留存数据。") } />}
+              {secondary.funnel.some((layer) => layer.count === null) && (
                 <div className="rounded-[9px] border border-[var(--border)] bg-[var(--surface-subtle)] px-3 py-2 text-xs muted">
-                  {data.funnel.filter((layer) => layer.count === null).map((layer) => layer.label).join("、")}：待观察或历史覆盖不足，暂无法判断；未作为流失或 0 人处理。
+                  {secondary.funnel.filter((layer) => layer.count === null).map((layer) => layer.label).join("、")}：待观察或历史覆盖不足，暂无法判断；未作为流失或 0 人处理。
                 </div>
               )}
             </section>
             <section className="panel xl:col-span-6">
               <SectionHeading icon={<ChartNoAxesCombined aria-hidden="true" className="h-4 w-4" />} title="部门模型偏好" detail="每个部门按完整区间的调用构成展示，条形合计100%。" />
-              <div className="mt-3"><CoverageBanner coverage={data.preferenceCoverage} /></div>
-              {data.preferences.length ? <Chart label="部门模型偏好100%堆叠图" height={390} option={buildPreferenceOption(resolveGatewayPreferences(data.preferences, boot.models))} /> : <Empty detail={emptyDetail(data.preferenceCoverage, "当前筛选范围没有部门模型调用。") } />}
+              <div className="mt-3"><CoverageBanner coverage={secondary.preferenceCoverage} /></div>
+              {secondary.preferences.length ? <Chart label="部门模型偏好100%堆叠图" height={390} option={buildPreferenceOption(resolveGatewayPreferences(secondary.preferences, boot.models))} /> : <Empty detail={emptyDetail(secondary.preferenceCoverage, "当前筛选范围没有部门模型调用。") } />}
             </section>
           </div>
+          </>}
         </>
       )}
     </div>

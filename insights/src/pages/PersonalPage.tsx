@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Activity, CalendarDays, ChevronDown, ChevronUp, Clock3, WalletCards, Zap } from "lucide-react";
 import { insightsApi, resolveCatalogModel, resolvePersonalAnalyticsModels } from "../lib/api";
 import { useRemote } from "../lib/useRemote";
@@ -31,7 +31,25 @@ export function PersonalPage({ auto }: { auto: boolean }) {
     [metric, setMetric] = useState<"totalTokens" | "outputTokens" | "cacheHitRate">("totalTokens"),
     [tab, setTab] = useState<"usage" | "errors">("usage"),
     [pageSize, setPageSize] = useState(20),
-    [cursors, setCursors] = useState<Array<string | undefined>>([undefined]);
+    [cursors, setCursors] = useState<Array<string | undefined>>([undefined]),
+    [logsEnabled, setLogsEnabled] = useState(false);
+  const logsSectionRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const section = logsSectionRef.current;
+    if (!section) return;
+    if (!("IntersectionObserver" in window)) {
+      const timer = globalThis.setTimeout(() => setLogsEnabled(true), 800);
+      return () => globalThis.clearTimeout(timer);
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setLogsEnabled(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "320px" });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
   const overview = useRemote((signal) => insightsApi.personalOverview(signal), [], auto, `${scope}:personal-overview`);
   const heatmap = useRemote((signal) => insightsApi.personalHeatmap(year, signal), [year], auto, `${scope}:personal-heatmap:${year}`);
   const analytics = useRemote((signal) => insightsApi.personalAnalytics(filters, signal), [filters], auto, `${scope}:personal-analytics:${JSON.stringify(filters)}`);
@@ -44,6 +62,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
     [tab, filters, cursors, pageSize],
     false,
     `${scope}:personal-logs:${tab}:${JSON.stringify(filters)}:${cursors.at(-1) || ""}:${pageSize}`,
+    logsEnabled,
   );
   const updateFilters = (next: FilterState) => {
     setFilters(next);
@@ -92,7 +111,7 @@ export function PersonalPage({ auto }: { auto: boolean }) {
         </>
       )}
 
-      <section className="panel min-w-0 max-w-full">
+      <section ref={logsSectionRef} className="panel min-w-0 max-w-full">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-[9px] bg-[var(--primary-soft)] text-[var(--primary)]"><CalendarDays aria-hidden="true" className="h-4 w-4" /></span>

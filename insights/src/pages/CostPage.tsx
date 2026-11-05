@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { EChartsOption } from "echarts";
 import { Building2, Check, ChevronsUpDown, CircleDollarSign, Pencil, Search, SquareArrowOutUpRight, WalletCards } from "lucide-react";
 import { Chart } from "../components/charts/Chart";
@@ -41,10 +41,16 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
   const deferredSearch = useDeferredValue(filters.q);
   const deferredContributor = useDeferredValue(filters.contributor);
   const requestFilters = { ...filters, q: deferredSearch, contributor: deferredContributor };
-  const state = useRemote((signal) => insightsApi.costs(requestFilters, signal), [
+  const overviewFilters = { ...requestFilters, q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 };
+  const state = useRemote((signal) => insightsApi.costs(overviewFilters, signal, "summary"), [
+    filters.month, filters.department, filters.platform,
+  ], auto, `${boot.scope}:costs-overview:${JSON.stringify(overviewFilters)}`);
+  const detailsSectionRef = useRef<HTMLDivElement | null>(null);
+  const [detailsEnabled, setDetailsEnabled] = useState(false);
+  const detailsState = useRemote((signal) => insightsApi.costs(requestFilters, signal, "details"), [
     filters.month, filters.department, filters.platform, deferredSearch, deferredContributor,
     filters.paymentMethod, filters.status, filters.completeness, filters.registration, filters.page, filters.pageSize,
-  ], auto, `${boot.scope}:costs:${JSON.stringify(requestFilters)}`);
+  ], auto, `${boot.scope}:costs-details:${JSON.stringify(requestFilters)}`, detailsEnabled);
   const [editing, setEditing] = useState<CostAccount | null>(null);
   const [contributorID, setContributorID] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<CostPaymentMethod>("subscription");
@@ -52,8 +58,28 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
   const [notes, setNotes] = useState("");
   const [mutationError, setMutationError] = useState("");
   const [mutating, setMutating] = useState(false);
+  const [accountOverrides, setAccountOverrides] = useState<Record<number, Partial<CostAccount>>>({});
   const data = state.data;
+  const detailData = detailsState.data;
+  const accountItems = detailData?.accounts.items.map((account) => ({ ...account, ...accountOverrides[account.id] })) || [];
   const setFilter = <K extends keyof CostFilters>(key: K, value: CostFilters[K]) => setFilters((current) => ({ ...current, [key]: value, page: key === "page" ? Number(value) : 1 }));
+
+  useEffect(() => {
+    const section = detailsSectionRef.current;
+    if (!section) return;
+    if (!("IntersectionObserver" in window)) {
+      const timer = globalThis.setTimeout(() => setDetailsEnabled(true), 900);
+      return () => globalThis.clearTimeout(timer);
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setDetailsEnabled(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "420px" });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
 
   const openEditor = (account: CostAccount) => {
     if (!canEdit) return;
@@ -79,14 +105,22 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
     setMutating(true);
     setMutationError("");
     try {
-      await insightsApi.saveCostMonth(editing.id, filters.month, {
+      const result = await insightsApi.saveCostMonth(editing.id, filters.month, {
         contributor_user_id: Number(contributorID),
         payment_method: paymentMethod,
         actual_cost: normalized || null,
         notes,
       });
+      const contributor = data?.dimensions.contributors.find((item) => item.id === Number(contributorID));
+      const actual = normalized ? Number(normalized) : null;
+      setAccountOverrides((current) => ({ ...current, [editing.id]: {
+        registered: true, contributor, paymentMethod, actualCost: actual,
+        savings: actual === null ? null : editing.platformCost - actual,
+        notes, updatedAt: result.updatedAt || new Date().toISOString(),
+      } }));
       setEditing(null);
-      await state.refresh();
+      void state.refresh();
+      if (detailsEnabled) void detailsState.refresh();
     } catch (error) {
       setMutationError((error as Error).message);
     } finally {
@@ -102,7 +136,8 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
     try {
       await insightsApi.stopCostAccount(editing.id, filters.month);
       setEditing(null);
-      await state.refresh();
+      void state.refresh();
+      if (detailsEnabled) void detailsState.refresh();
     } catch (error) {
       setMutationError((error as Error).message);
     } finally {
@@ -111,7 +146,7 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
   };
 
   const trendOption = useMemo(() => data ? buildCostTrendOption(data.trend) : {}, [data]);
-  const flowOption = useMemo(() => data ? buildCostFlowOption(data.flows) : {}, [data]);
+  const flowOption = useMemo(() => detailData ? buildCostFlowOption(detailData.flows) : {}, [detailData]);
   const previewSavings = editing ? costSavingsPreview(editing, actualCost) : null;
   const editingDeleted = Boolean(editing?.deletedAt && editing.deletedAt.slice(0, 7) < filters.month);
 
@@ -133,7 +168,7 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
           <div className="filter-field"><span className="filter-label sr-only">贡献部门</span><SingleFilter label="贡献部门" value={filters.department} onChange={(value) => setFilter("department", value)} options={[{ value: "", label: "全部部门" }, ...(data?.dimensions.departments.map((department) => ({ value: department.id, label: department.name })) || [])]} className="w-44" /></div>
           <div className="filter-field"><span className="filter-label sr-only">平台</span><SingleFilter label="平台" value={filters.platform} onChange={(value) => setFilter("platform", value)} options={[{ value: "", label: "全部平台" }, ...(data?.dimensions.platforms.map((platform) => ({ value: platform, label: platform })) || [])]} className="w-40" /></div>
         </div>
-        {(state.error || mutationError) && <div className="mt-3"><ErrorBanner message={mutationError || state.error || "请求失败"} retry={state.refresh} stale={!!data} /></div>}
+        {(state.error || detailsState.error || mutationError) && <div className="mt-3"><ErrorBanner message={mutationError || state.error || detailsState.error || "请求失败"} retry={state.refresh} stale={!!data} /></div>}
       </section>
 
       {state.loading && !data ? <Loading /> : data && (
@@ -153,31 +188,31 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
             <Chart option={trendOption} label="成本数据十二个月趋势" height={320} />
           </section>
 
-          <div className="grid items-stretch gap-6 xl:grid-cols-12">
+          <div ref={detailsSectionRef} className="grid items-stretch gap-6 xl:grid-cols-12">
             <section className="panel overflow-hidden xl:col-span-8">
               <SectionHeading icon={<WalletCards />} title="贡献部门" detail="真实支出和成本节省全部归属贡献人的当前部门。" />
               <div className="mt-4 overflow-auto scrollbar-thin">
-                {data.contributionDepartments.length ? <table className="cost-table min-w-[850px] w-full"><thead><tr><th>部门</th><th>贡献人</th><th>账号</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th><th>真实支出</th><th>成本节省</th><th>完整度</th></tr></thead><tbody>{data.contributionDepartments.map((row) => <tr key={row.id}><td className="font-semibold">{row.name}</td><td>{row.contributorCount}</td><td>{row.accountCount}</td><td>{integer(row.requestCount)}</td><td>{integer(row.tokens)}</td><td>{money(row.platformCost)}</td><td>{money(row.actualCost)}</td><td className={moneyClass(row.savings)}>{money(row.savings)}</td><td>{costCompletionLabel(row.completedAccounts, row.totalAccounts)}</td></tr>)}</tbody></table> : <Empty />}
+                {detailData ? (detailData.contributionDepartments.length ? <table className="cost-table min-w-[850px] w-full"><thead><tr><th>部门</th><th>贡献人</th><th>账号</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th><th>真实支出</th><th>成本节省</th><th>完整度</th></tr></thead><tbody>{detailData.contributionDepartments.map((row) => <tr key={row.id}><td className="font-semibold">{row.name}</td><td>{row.contributorCount}</td><td>{row.accountCount}</td><td>{integer(row.requestCount)}</td><td>{integer(row.tokens)}</td><td>{money(row.platformCost)}</td><td>{money(row.actualCost)}</td><td className={moneyClass(row.savings)}>{money(row.savings)}</td><td>{costCompletionLabel(row.completedAccounts, row.totalAccounts)}</td></tr>)}</tbody></table> : <Empty />) : <Loading label="正在加载部门成本" />}
               </div>
             </section>
             <section className="panel overflow-hidden xl:col-span-4">
               <SectionHeading icon={<Building2 />} title="使用部门" detail="仅按调用用户当前部门归集请求、Token和预估价格。" />
               <div className="mt-4 overflow-auto scrollbar-thin">
-                {data.usageDepartments.length ? <table className="cost-table min-w-[420px] w-full"><thead><tr><th>部门</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th></tr></thead><tbody>{data.usageDepartments.map((row) => <tr key={row.id}><td className="font-semibold">{row.name}</td><td>{integer(row.requestCount)}</td><td>{integer(row.tokens)}</td><td>{money(row.platformCost)}</td></tr>)}</tbody></table> : <Empty />}
+                {detailData ? (detailData.usageDepartments.length ? <table className="cost-table min-w-[420px] w-full"><thead><tr><th>部门</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th></tr></thead><tbody>{detailData.usageDepartments.map((row) => <tr key={row.id}><td className="font-semibold">{row.name}</td><td>{integer(row.requestCount)}</td><td>{integer(row.tokens)}</td><td>{money(row.platformCost)}</td></tr>)}</tbody></table> : <Empty />) : <Loading label="正在加载使用部门" />}
               </div>
             </section>
           </div>
 
           <section className="panel">
             <SectionHeading icon={<SquareArrowOutUpRight />} title="部门成本流向" detail="贡献部门到使用部门的预估价格交叉汇总，不表示部门结算。" />
-            {data.flows.length ? <Chart option={flowOption} label="贡献部门到使用部门成本流向矩阵" height={360} /> : <Empty />}
+            {detailData ? (detailData.flows.length ? <Chart option={flowOption} label="贡献部门到使用部门成本流向矩阵" height={360} /> : <Empty />) : <Loading label="正在加载成本流向" />}
           </section>
 
           <section className="panel overflow-hidden !p-0">
             <div className="border-b border-[var(--border)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><h2 className="m-0 text-base font-semibold">账号月表</h2><p className="mb-0 mt-1 text-xs muted">未登记账号可在此发现并配置；关联子账号已归入逻辑主账号。</p></div>
-                <div className="text-xs muted">共 {data.accounts.total} 个账号</div>
+                <div className="text-xs muted">共 {detailData?.accounts.total || 0} 个账号</div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <label className="relative"><Search aria-hidden="true" className="absolute left-3 top-2.5 h-4 w-4 text-[var(--muted)]" /><Input value={filters.q} onChange={(event) => setFilter("q", event.target.value)} placeholder="账号名称或ID" className="w-52 pl-9" /></label>
@@ -189,9 +224,9 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
               </div>
             </div>
             <div className="max-h-[620px] overflow-auto scrollbar-thin">
-              <table className="cost-table cost-account-table min-w-[1740px] w-full">
+              {detailData ? <table className="cost-table cost-account-table min-w-[1740px] w-full">
                 <thead className="sticky top-0 z-10 bg-[var(--surface)]"><tr><th>账号</th><th>平台/类型</th><th>状态</th><th>贡献人</th><th>当前部门</th><th>付费方式</th><th>请求</th><th>Token</th><th><EstimatedPriceLabel /></th><th>真实支出</th><th>成本节省</th><th>备注</th><th>最后修改</th>{canEdit && <th><span className="sr-only">操作</span></th>}</tr></thead>
-                <tbody>{data.accounts.items.map((account) => {
+                <tbody>{accountItems.map((account) => {
                   const cannotEdit = Boolean(account.deletedAt && account.deletedAt.slice(0, 7) < filters.month);
                   return <tr key={account.id}>
                     <td><div className="font-semibold text-[var(--ink)]">{account.name}</div><div className="mt-0.5 text-xs muted">ID {account.id}{account.inherited ? ` · 继承 ${account.configurationMonth}` : ""}</div></td>
@@ -208,11 +243,11 @@ export function CostPage({ auto, canEdit = false }: { auto: boolean; canEdit?: b
                     {canEdit && <td><Button type="button" variant="ghost" className="icon-button" onClick={() => openEditor(account)} disabled={cannotEdit} aria-label={`编辑 ${account.name}`} title={cannotEdit ? "软删除账号不能新增后续月份" : "编辑月记录"}><Pencil /></Button></td>}
                   </tr>;
                 })}</tbody>
-              </table>
+              </table> : <Loading label={detailsEnabled ? "正在加载账号月表" : "滚动到此处加载账号月表"} />}
             </div>
             <div className="flex items-center justify-between border-t border-[var(--border)] px-4 py-3">
               <div className="flex items-center gap-2 text-xs muted"><span>每页</span><Select aria-label="每页数量" value={String(filters.pageSize)} onChange={(event) => setFilter("pageSize", Number(event.target.value))}><option value="20">20</option><option value="50">50</option><option value="100">100</option></Select></div>
-              <div className="flex items-center gap-2"><Button variant="secondary" disabled={data.accounts.page <= 1} onClick={() => setFilter("page", data.accounts.page - 1)}>上一页</Button><span className="min-w-20 text-center text-xs muted">{data.accounts.page} / {data.accounts.pages}</span><Button variant="secondary" disabled={data.accounts.page >= data.accounts.pages} onClick={() => setFilter("page", data.accounts.page + 1)}>下一页</Button></div>
+              <div className="flex items-center gap-2"><Button variant="secondary" disabled={!detailData || detailData.accounts.page <= 1} onClick={() => setFilter("page", (detailData?.accounts.page || 1) - 1)}>上一页</Button><span className="min-w-20 text-center text-xs muted">{detailData?.accounts.page || 1} / {detailData?.accounts.pages || 1}</span><Button variant="secondary" disabled={!detailData || detailData.accounts.page >= detailData.accounts.pages} onClick={() => setFilter("page", (detailData?.accounts.page || 1) + 1)}>下一页</Button></div>
             </div>
           </section>
         </>
