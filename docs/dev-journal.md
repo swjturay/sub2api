@@ -977,3 +977,14 @@ The final ConfigMap/Job apply now uses CodeArts Deploy's native CCE Manifest
 action and its existing CCE service agency. The Build executor no longer holds
 or uses Kubernetes credentials; the release Job retains its separate
 namespace-scoped role and continues independently to a safe terminal state.
+
+The first pipeline-owned build on the fresh CodeArts task completed the
+frontend, Insights, backend unit and lint stages, then the 2U8G CodeArts
+executor disappeared while `govulncheck` was still running after 37 minutes.
+No production stage started. Split the validation contract so each release
+runs the production request-path unit packages, complete builds, frontend
+critical gate, Insights suite and release-controller tests. The slow all-package
+Go tests, lint, vulnerability scan and PostgreSQL regressions remain in
+`Dockerfile.full-validate` for an independent on-demand CodeArts build. This
+keeps the expensive audit available without coupling executor lifetime to every
+traffic-safe release.

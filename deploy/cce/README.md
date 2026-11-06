@@ -37,14 +37,22 @@ Deployment, Service, Pod, Endpoint and lock-ConfigMap access, plus the required
 network egress. CodeArts Deploy applies the Job manifest; the Build executor
 does not have Kubernetes credentials.
 
-The release gate intentionally contains only production-relevant checks:
+The release gate is deliberately bounded so a normal deployment does not wait
+for the slow static-analysis suite:
 
-- backend unit tests, build, lint, vulnerability scan, and real PostgreSQL
-  Insights/migration regressions;
+- backend build plus the handler, routes, service, Insights, and migration unit
+  packages that guard the production request path;
 - frontend lint, typecheck, critical regressions and production dependency
   audit;
 - complete Insights typecheck, lint, test and build;
 - CCE release helper and renderer tests.
+
+The slower all-package backend tests, `golangci-lint`, `govulncheck`, and real
+PostgreSQL regressions remain available in
+`deploy/cce/codearts/Dockerfile.full-validate`. They are a separate on-demand
+CodeArts Build check and are not repeated for every deployment. A failed full
+check must be investigated before the next planned production release, but it
+cannot leave a half-finished deployment because it never calls the CCE API.
 
 The Python-version matrix, Apple container checks, generic Compose/Caddy tests,
 and GitHub release-matrix helpers are not release gates because they do not

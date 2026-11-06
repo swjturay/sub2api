@@ -1,0 +1,69 @@
+FROM golang:1.27.3-alpine AS backend-tests
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN packages="$(go list ./... | grep -v '/internal/service$')" \
+    && go test -tags=unit -p 2 ${packages} \
+    && go test -tags=unit ./internal/service \
+       -skip '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' \
+    && go test -tags=unit ./internal/service \
+       -run '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' -count=1 \
+    && go build ./... \
+    && touch /backend-tests-passed
+
+FROM golangci/golangci-lint:v2.14.0-alpine AS backend-lint
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY --from=backend-tests /backend-tests-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN golangci-lint run --timeout=30m --max-same-issues=0 --max-issues-per-linter=0 \
+    && touch /backend-lint-passed
+
+FROM golang:1.27.3-alpine AS backend-security
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY --from=backend-lint /backend-lint-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download \
+    && go install golang.org/x/vuln/cmd/govulncheck@v1.4.0
+COPY backend ./
+RUN govulncheck ./... \
+    && touch /backend-security-passed
+
+FROM postgres:16-alpine AS postgres-integration
+COPY --from=golang:1.27.3-alpine /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY --from=backend-security /backend-security-passed /
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN mkdir -p /tmp/pgdata \
+    && chown postgres:postgres /tmp/pgdata \
+    && su postgres -c 'initdb -D /tmp/pgdata' >/dev/null \
+    && su postgres -c 'pg_ctl -D /tmp/pgdata -o "-h 127.0.0.1" -w start' >/dev/null \
+    && su postgres -c 'createdb insights_test' \
+    && INSIGHTS_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:5432/insights_test?sslmode=disable' \
+       INSIGHTS_TEST_POSTGRES_DSN='postgres://postgres@127.0.0.1:5432/insights_test?sslmode=disable' \
+       go test ./internal/insights ./internal/handler ./internal/server/routes -count=1 \
+    && go test -tags=unit ./migrations -count=1 \
+    && go test -tags=unit ./internal/service \
+       -run 'Test(GatewayServiceRecordUsage|OpenAIGatewayServiceRecordUsage)_UsesExplicitStatisticalTime' \
+       -count=1 \
+    && su postgres -c 'pg_ctl -D /tmp/pgdata -m fast -w stop' >/dev/null \
+    && touch /postgres-integration-passed
+
+FROM scratch
+COPY --from=backend-tests /backend-tests-passed /
+COPY --from=backend-lint /backend-lint-passed /
+COPY --from=backend-security /backend-security-passed /
+COPY --from=postgres-integration /postgres-integration-passed /
