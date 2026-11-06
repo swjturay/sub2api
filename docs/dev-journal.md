@@ -973,7 +973,7 @@ digest.
 The native CCE Deploy action keeps namespace and IAM choices in hidden UI
 state, making API-created copies unsafe, while the generic Kubernetes action
 does not expose a reliable dynamic Artifact parameter through the public API.
-Move only the final ConfigMap/Job apply into the CodeArts Build task. A second
-namespace-scoped ServiceAccount can manage those two kinds but cannot read
-Secrets or patch Services/Deployments; the release Job retains the existing
-separate release role and continues independently to a safe terminal state.
+The final ConfigMap/Job apply now uses CodeArts Deploy's native CCE Manifest
+action and its existing CCE service agency. The Build executor no longer holds
+or uses Kubernetes credentials; the release Job retains its separate
+namespace-scoped role and continues independently to a safe terminal state.

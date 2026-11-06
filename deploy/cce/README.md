@@ -10,11 +10,12 @@ It does not use GitHub Actions or an operations host.
 The pipeline is manual-only, allows one run at a time, and has no second
 approval gate. The Build task downloads the exact public GitHub revision,
 public GitHub branch, pins its full SHA, runs the release checks, builds the
-Backend, Insights, and release-runner images, uploads one immutable Job
-manifest to CodeArts Artifact, and applies it with a private namespace-scoped
-Kubernetes credential. The trigger credential can manage only release
-ConfigMaps and Jobs. A separate private endpoint stores the ACR credential;
-credentials never enter this repository, an image, or the release artifact.
+Backend, Insights, and release-runner images, and uploads one immutable Job
+manifest to CodeArts Artifact. The Deploy stage then uses CodeArts Deploy's
+native CCE Manifest action and its configured CCE service agency to apply that
+manifest. The Build executor never calls the CCE API. A private endpoint stores
+only the ACR credential; credentials never enter this repository, an image, or
+the release artifact.
 
 The release Job maintains two fixed application slots. It prepares and checks
 the inactive slot before changing either production Service selector. After
@@ -31,10 +32,10 @@ older artifact can create its Job again. Database migrations remain
 forward-only and are not reversed by an application rollback.
 
 The permanent namespace bootstrap is
-`deploy/cce/codearts/rbac.yaml`. It grants only the release ServiceAccount's
-namespace-scoped Deployment, Service, Pod, Endpoint and lock-ConfigMap access,
-plus the required network egress. Routine releases apply only the generated
-ConfigMap and Job.
+`deploy/cce/codearts/rbac.yaml`. It grants the release Job its namespace-scoped
+Deployment, Service, Pod, Endpoint and lock-ConfigMap access, plus the required
+network egress. CodeArts Deploy applies the Job manifest; the Build executor
+does not have Kubernetes credentials.
 
 The release gate intentionally contains only production-relevant checks:
 
