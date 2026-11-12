@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DepartmentAnalytics, TimePoint } from "../lib/types";
-import { groupedDepartments, heavyUsersForMonth, modelFamilyData, modelFamilyMonthlyData, pastCostTrend } from "./DepartmentAnalyticsCharts";
+import { cumulativeActualCost, groupedDepartments, heavyUsersForMonth, modelFamilyData, modelFamilyMonthlyData, pastCostTrend } from "./DepartmentAnalyticsCharts";
 
 const series: TimePoint[] = [{
   bucket: "2026-07-01T00:00:00+08:00", totalTokens: 35, outputTokens: 3, cacheHitRate: null, requests: 2,
@@ -44,6 +44,8 @@ describe("department analytics chart data", () => {
     const departments = Array.from({ length: 9 }, (_, index) => ({ id: String(index), name: `部门${index}`, count: 9 - index }));
     expect(groupedDepartments(departments)).toHaveLength(8);
     expect(groupedDepartments(departments).at(-1)).toEqual({ name: "其他 2 个部门", value: 3 });
-    expect(pastCostTrend([{ month: "2026-09" }, { month: "2026-10" }, { month: "2026-11" }], "2026-11")).toEqual([{ month: "2026-09" }, { month: "2026-10" }]);
+    const past = pastCostTrend([{ month: "2026-09", actualCost: 12.5 }, { month: "2026-10", actualCost: 8.25 }, { month: "2026-11", actualCost: 99 }], "2026-11");
+    expect(past).toEqual([{ month: "2026-09", actualCost: 12.5 }, { month: "2026-10", actualCost: 8.25 }]);
+    expect(cumulativeActualCost(past)).toBe(20.75);
   });
 });

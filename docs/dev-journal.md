@@ -1098,3 +1098,12 @@ production dependency audit policy and all CCE/CodeArts release helpers. The
 local Vite preview served the formal page at
 `http://127.0.0.1:4178/insights/departments` through the existing same-origin
 proxy workflow.
+
+## Department cumulative cost display (2026-11-12)
+
+- Added a cumulative cost KPI to the department cost card. It sums the same
+  past-month `actual_cost` values rendered by the bar chart, so the current
+  month remains excluded from both the bars and cumulative total.
+
+Validation: Insights lint, TypeScript, all 30 test files / 126 tests and the
+production build passed.

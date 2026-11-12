@@ -128,6 +128,10 @@ export function pastCostTrend<T extends { month: string }>(trend: T[], currentMo
   return trend.filter((point) => point.month < currentMonth);
 }
 
+export function cumulativeActualCost(trend: Array<{ actualCost: number }>) {
+  return trend.reduce((sum, point) => sum + point.actualCost, 0);
+}
+
 export function UserDepartmentDistributionCard({ distribution }: { distribution: DepartmentMemberCount[] }) {
   const data = groupedDepartments(distribution);
   const total = data.reduce((sum, item) => sum + item.value, 0);
@@ -212,10 +216,14 @@ export function MonthlyActualCostCard({ auto }: { auto: boolean }) {
   const filters: CostFilters = { month: currentMonth, department: "", platform: "", q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 };
   const state = useRemote((signal) => insightsApi.costs(filters, signal, "summary"), [currentMonth], auto, `${boot.scope}:department-costs:${currentMonth}`);
   const trend = pastCostTrend(state.data?.trend || [], currentMonth);
+  const cumulativeCost = cumulativeActualCost(trend);
   const theme = cartesianTheme(54);
   const colors = chartColors();
   return <section className="panel h-[340px]">
-    <h2 className="m-0 text-base font-semibold">支出成本</h2>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <h2 className="m-0 text-base font-semibold">支出成本</h2>
+      <div className="text-right"><span className="block text-xs muted">累计成本</span><strong className="tabular-nums text-lg font-semibold text-[var(--ink)]">{cumulativeCost.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+    </div>
     <p className="mb-0 mt-1 text-xs leading-5 muted">仅统计已纳管至平台的账号成本；成本按对应 AI 订阅价格估算，未纳管账号不计入。</p>
     {state.loading && !state.data ? <Loading label="正在加载支出成本" /> : trend.length ? <Chart label="过往月份支出成本柱状图" height={260} option={{
       color: [palette[2]], textStyle: theme.textStyle,
