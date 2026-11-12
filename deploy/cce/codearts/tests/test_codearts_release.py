@@ -44,6 +44,7 @@ class OperationsHostReleaseTest(unittest.TestCase):
         self.assertEqual(accepted.returncode, 0)
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("full lowercase commit", rejected.stderr)
+        self.assertNotIn("\\\n", build_jobs.FETCH_SOURCE)
 
     def test_build_task_specs_have_one_responsibility_and_fixed_bundle_outputs(self):
         specs = build_jobs.task_specs()

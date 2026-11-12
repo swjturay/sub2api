@@ -30,8 +30,7 @@ esac
 rm -rf sub2api-source source.tar.gz
 attempt=1
 while [ "$attempt" -le 5 ]; do
-  if curl --fail --location --silent --show-error --connect-timeout 15 --max-time 300 \
-      --output source.tar.gz "https://codeload.github.com/swjturay/sub2api/tar.gz/$SOURCE_SHA"; then
+  if curl --fail --location --silent --show-error --connect-timeout 15 --max-time 300 --output source.tar.gz "https://codeload.github.com/swjturay/sub2api/tar.gz/$SOURCE_SHA"; then
     top=$(tar -tzf source.tar.gz | awk -F/ 'NR == 1 { print $1 }')
     tar -xzf source.tar.gz
     mv "$top" sub2api-source
