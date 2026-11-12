@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { EChartsOption } from "echarts";
 import type { ChartMode, Granularity, TimePoint } from "../../lib/types";
 import { Chart, palette } from "./Chart";
-import { cartesianTheme, compactNumber, compactTimeLabel, fullNumber, legendTheme, tooltipTheme } from "./chartTheme";
+import { cartesianTheme, chartColors, compactNumber, compactTimeLabel, fullNumber, legendTheme, tooltipTheme } from "./chartTheme";
 import { Segmented } from "../ui/Controls";
 import { Empty } from "../ui/States";
 
@@ -49,43 +49,50 @@ function categoryTimeLabel(value: string, granularity: Granularity) {
   return compactTimeLabel(value);
 }
 
-export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension, metric: TokenMetric, mode: ChartMode, granularity: Granularity = "day"): EChartsOption {
-  const groups = categoryTokenSeries(data, dimension, metric);
+export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension, metric: TokenMetric, mode: ChartMode, granularity: Granularity = "day", aggregate = false): EChartsOption {
+  const metricLabel = metric === "totalTokens" ? "总Token" : "输出Token";
+  const groups = aggregate ? [{
+    id: "__total_series__", ids: [], name: metricLabel, values: data.map(point => point[metric]),
+  }] : categoryTokenSeries(data, dimension, metric);
   const zoom = data.length > 16;
   const theme = cartesianTheme(zoom ? 90 : 62);
+  const colors = chartColors();
   return {
     color: palette, textStyle: theme.textStyle, grid: theme.grid,
-    legend: { ...legendTheme(), bottom: zoom ? 26 : 0 },
+    legend: aggregate ? { show: false } : { ...legendTheme(), bottom: zoom ? 26 : 0 },
     tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: mode === "bar" ? "shadow" : "line" }, valueFormatter: value => value == null ? "—" : fullNumber(value) },
     xAxis: { ...theme.xAxis, type: "category", boundaryGap: mode === "bar", data: data.map(point => point.bucket), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true, formatter: (value: string, index: number) => `${categoryTimeLabel(value, granularity)}${data[index]?.incomplete ? "\n未结束" : ""}` } },
     yAxis: { ...theme.yAxis, type: "value", min: 0, axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: compactNumber } },
     series: groups.map(group => ({
-      id: group.id, name: group.name, type: mode, stack: mode === "bar" ? "tokens" : undefined,
+      id: group.id, name: group.name, type: mode, stack: !aggregate && mode === "bar" ? "tokens" : undefined,
       data: group.values, connectNulls: false, showSymbol: data.length <= 8, symbolSize: 5,
       lineStyle: { width: 2 }, barMaxWidth: 36, emphasis: { focus: "series" },
+      label: aggregate ? { show: true, position: "top", distance: 8, color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => compactNumber(params.value) } : undefined,
+      labelLayout: aggregate ? { hideOverlap: true } : undefined,
     })),
     dataZoom: zoom ? [{ type: "inside", filterMode: "none" }, { type: "slider", filterMode: "none", bottom: 0, height: 16, showDetail: false }] : [],
   };
 }
 
-export function CategoryTokenChart({ data, dimension, granularity }: { data: TimePoint[]; dimension: Dimension; granularity: Granularity }) {
+export function CategoryTokenChart({ data, dimension, granularity, aggregate = false }: { data: TimePoint[]; dimension: Dimension; granularity: Granularity; aggregate?: boolean }) {
   const [metric, setMetric] = useState<TokenMetric>("totalTokens");
   const [mode, setMode] = useState<ChartMode>("bar");
   const subject = dimension === "departments" ? "部门" : "模型";
   const title = `${subject} Token 消耗`;
-  const available = data.some(point => point[dimension] !== undefined);
-  const count = categoryTokenSeries(data, dimension, metric).reduce((sum, group) => sum + group.ids.length, 0);
+  const available = aggregate ? data.some(point => point[metric] !== null) : data.some(point => point[dimension] !== undefined);
+  const count = aggregate ? 0 : categoryTokenSeries(data, dimension, metric).reduce((sum, group) => sum + group.ids.length, 0);
+  const metricLabel = metric === "totalTokens" ? "总Token" : "输出Token";
   return <>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 className="m-0 text-base font-semibold">{title}</h2>
-        <p className="mb-0 mt-1 text-xs muted">按{subject}分类{count > 0 && ` · ${count} 个${subject}`}{count > 7 && " · 前 7 项单独展示，其余合并"} · 点击图例筛选</p>
+        <p className="mb-0 mt-1 text-xs muted">{aggregate ? "汇总所选部门 · 每个时间段显示总量" : <>按{subject}分类{count > 0 && ` · ${count} 个${subject}`}{count > 7 && " · 前 7 项单独展示，其余合并"} · 点击图例筛选</>}</p>
       </div>
       <div className="flex flex-wrap gap-3">
         <Segmented value={metric} onChange={setMetric} label={`${subject}消耗指标`} options={[{ value: "totalTokens", label: "总Token" }, { value: "outputTokens", label: "输出Token" }]} />
-        <Segmented value={mode} onChange={setMode} label={`${subject}图表模式`} options={[{ value: "bar", label: "堆叠柱状" }, { value: "line", label: "折线" }]} />
+        <Segmented value={mode} onChange={setMode} label={`${subject}图表模式`} options={[{ value: "bar", label: aggregate ? "柱状" : "堆叠柱状" }, { value: "line", label: "折线" }]} />
       </div>
     </div>
-    {available && count > 0 ? <Chart label={`${title}，按${subject}分类的${metric === "totalTokens" ? "总Token" : "输出Token"}趋势`} height={280} option={buildCategoryTokenOption(data, dimension, metric, mode, granularity)} /> : <Empty title={data.length && !available ? "分类消耗暂不可用" : "暂无消耗数据"} detail={data.length && !available ? "当前数据未提供逐时间段的分类消耗。" : "当前筛选范围没有可展示的记录。"} />}
+    {available && (aggregate || count > 0) ? <Chart label={aggregate ? `${title}，所选部门${metricLabel}总量趋势` : `${title}，按${subject}分类的${metricLabel}趋势`} height={280} option={buildCategoryTokenOption(data, dimension, metric, mode, granularity, aggregate)} /> : <Empty title={data.length && !available ? aggregate ? "总量暂不可用" : "分类消耗暂不可用" : "暂无消耗数据"} detail={data.length && !available ? aggregate ? "当前数据未提供逐时间段的 Token 总量。" : "当前数据未提供逐时间段的分类消耗。" : "当前筛选范围没有可展示的记录。"} />}
   </>;
 }

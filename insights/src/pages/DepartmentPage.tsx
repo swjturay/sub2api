@@ -64,7 +64,7 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
             </section>
           )}
           <section className="panel">
-            <CategoryTokenChart data={data.series} dimension="departments" granularity={filters.granularity} />
+            <CategoryTokenChart data={data.series} dimension="departments" granularity={filters.granularity} aggregate />
           </section>
           {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} />}
         </>

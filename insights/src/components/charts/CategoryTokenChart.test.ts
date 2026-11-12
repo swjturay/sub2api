@@ -43,4 +43,18 @@ describe("classified token consumption", () => {
     expect(formatter?.(points[0].bucket, 0)).toBe("2026年07月");
     expect(formatter?.(points[1].bucket, 1)).toBe("2026年08月\n未结束");
   });
+
+  it("renders a directly labelled total series without department breakdown", () => {
+    const points = [
+      adaptTimePoint({ start: "2026-07-01", tokens: { total: 60_000_000_000, output: 2_000_000_000 }, departments: [{ id: "a", label: "研发", tokens: { total: 40_000_000_000 } }] }),
+      adaptTimePoint({ start: "2026-08-01", tokens: { total: 150_000_000_000, output: 3_000_000_000 }, departments: [{ id: "b", label: "销售", tokens: { total: 150_000_000_000 } }] }),
+    ];
+    const option = buildCategoryTokenOption(points, "departments", "totalTokens", "bar", "month", true);
+    const series = option.series as Array<{ name: string; data: Array<number | null>; stack?: string; label?: { show?: boolean; formatter?: (params: { value?: unknown }) => string } }>;
+    const legend = option.legend as { show?: boolean };
+    expect(legend.show).toBe(false);
+    expect(series).toHaveLength(1);
+    expect(series[0]).toMatchObject({ name: "总Token", data: [60_000_000_000, 150_000_000_000], stack: undefined, label: { show: true } });
+    expect(series[0].label?.formatter?.({ value: 60_000_000_000 })).toBe("600亿");
+  });
 });

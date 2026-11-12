@@ -1058,8 +1058,12 @@ traffic-safe release.
   department and model axes now use unambiguous `YYYY年MM月` labels while day
   and week labels retain their compact format; incomplete-bucket text remains
   visible on a separate line.
+- Changed the department Token trend from a department-stacked breakdown to a
+  single total series over the selected department scope. Bar and line modes
+  now show compact localized values directly above each bucket; the model Token
+  chart keeps its existing model breakdown and interactive legend.
 
-Validation: Insights lint, TypeScript, all 29 test files / 119 tests and the
+Validation: Insights lint, TypeScript, all 29 test files / 120 tests and the
 production build passed. The local Vite preview served the changed department
 page at `http://127.0.0.1:4178/insights/departments` through the existing
 same-origin proxy workflow. No production deployment or write request was
