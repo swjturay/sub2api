@@ -4,10 +4,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CCE_DIR = ROOT.parent
 
 
 def load(name: str, path: Path):
@@ -21,6 +23,7 @@ def load(name: str, path: Path):
 render_release = load("render_release", ROOT / "render_release.py")
 pipeline_config = load("pipeline_config", ROOT / "pipeline_config.py")
 build_jobs = load("build_jobs", ROOT / "build_jobs.py")
+finalize_release = load("finalize_release", ROOT / "finalize_release.py")
 
 
 class OperationsHostReleaseTest(unittest.TestCase):
@@ -47,7 +50,7 @@ class OperationsHostReleaseTest(unittest.TestCase):
         self.assertNotIn("\\\n", build_jobs.FETCH_SOURCE)
 
     def test_build_task_specs_have_one_responsibility_and_fixed_bundle_outputs(self):
-        specs = build_jobs.task_specs()
+        specs = build_jobs.task_specs("a" * 40, "29")
 
         self.assertEqual(set(specs), {
             "validate-release", "validate-frontend", "validate-insights", "validate-backend",
@@ -57,13 +60,13 @@ class OperationsHostReleaseTest(unittest.TestCase):
             names = [step["name"] for step in body["steps"]]
             self.assertEqual(names[0], "锁定精确cce-deploy源码")
             self.assertNotIn("runner", json.dumps(body).lower())
-            parameters = {
-                item["params"][0]["value"]
-                for item in body["parameters"]
-                if item["params"][0]["name"] == "name"
-            }
-            self.assertIn("SOURCE_SHA", parameters)
-            self.assertIn("RELEASE_VERSION", parameters)
+            self.assertIn("SOURCE_SHA=" + "a" * 40, body["steps"][0]["properties"]["command"])
+            self.assertIn("RELEASE_VERSION=29", body["steps"][0]["properties"]["command"])
+        final_parameters = {
+            item["params"][0]["value"] for item in specs["finalize"]["parameters"]
+        }
+        self.assertEqual(final_parameters, {"RELEASE_INPUT_B64"})
+        self.assertNotIn("ACR_", json.dumps(specs["finalize"]))
         uploads = [step["properties"]["file"] for step in specs["finalize"]["steps"] if step["name"].startswith("上传")]
         self.assertEqual(uploads, [
             "sub2api-source/release/sub2api-release-bundle.tar.gz",
@@ -79,30 +82,38 @@ class OperationsHostReleaseTest(unittest.TestCase):
             "validate-backend": "4" * 32,
             "build-backend": "5" * 32,
             "build-insights": "6" * 32,
-            "finalize": "7" * 32,
         }
 
         definition = pipeline_config.pipeline_definition(job_ids)
 
-        self.assertEqual(len(definition["stages"]), 2)
+        self.assertEqual(len(definition["stages"]), 1)
         parallel = definition["stages"][0]["jobs"]
         self.assertEqual(len(parallel), 6)
         self.assertEqual({job["name"] for job in parallel}, {
             "发布工具验证", "原站前端验证", "Insights验证", "Backend验证", "Backend镜像", "Insights镜像"
         })
         self.assertTrue(all(job["depends_on"] == [] for job in parallel))
-        for job in parallel:
-            inputs = {item["key"]: item["value"] for item in job["steps"][0]["inputs"]}
-            self.assertEqual(inputs["SOURCE_SHA"], "${SOURCE_SHA}")
-            self.assertEqual(inputs["RELEASE_VERSION"], "${PIPELINE_NUMBER}")
-        final = definition["stages"][1]["jobs"]
-        self.assertEqual(len(final), 1)
-        self.assertEqual(final[0]["name"], "生成固定发布制品")
-        final_inputs = {item["key"]: item["value"] for item in final[0]["steps"][0]["inputs"]}
-        self.assertEqual(final_inputs["ACR_USERNAME"], "${ACR_USERNAME}")
-        self.assertEqual(final_inputs["ACR_PASSWORD"], "${ACR_PASSWORD}")
-        self.assertTrue(all("ACR_PASSWORD" not in json.dumps(job) for job in parallel))
+        self.assertTrue(all("ACR_" not in json.dumps(job) for job in parallel))
         self.assertNotIn("runner", json.dumps(definition).lower())
+
+    def test_finalizer_builds_bundle_from_non_secret_immutable_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "release"
+            image = "registry.cn-shanghai.aliyuncs.com/rayless/sub2api@sha256:" + "a" * 64
+            value = {
+                "source_sha": "b" * 40,
+                "version": "0.2.21-cce-codearts-29",
+                "pipeline_run": "29",
+                "backend_image": image,
+                "insights_image": image,
+            }
+
+            result = finalize_release.finalize(value, output, CCE_DIR / "release.py")
+
+            self.assertEqual(result["release_id"], "0.2.21-cce-codearts-29-bbbbbbbbbbbb")
+            self.assertTrue((output / "sub2api-release-bundle.tar.gz").is_file())
+            manifest = json.loads((output / "cce-release-manifest.json").read_text())
+            self.assertEqual(set(manifest["images"]), {"backend", "insights"})
 
     def test_validation_contract_is_split_into_independent_images(self):
         expected = {

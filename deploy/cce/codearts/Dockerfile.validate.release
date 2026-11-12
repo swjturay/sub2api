@@ -10,7 +10,9 @@ RUN python3 -m unittest discover -s deploy/cce/tests -v \
         deploy/cce/host_release.py \
         deploy/cce/build_bundle.py \
         deploy/cce/codearts/render_release.py \
+        deploy/cce/codearts/finalize_release.py \
+        deploy/cce/codearts/build_jobs.py \
+        deploy/cce/codearts/pipeline_config.py \
         deploy/cce/codearts/registry_digest.py \
     && /bin/sh -n deploy/cce/install.sh \
-    && /bin/sh -n deploy/cce/codearts/prepare_source.sh \
-    && /bin/sh -n deploy/cce/codearts/finalize_release.sh
+    && /bin/sh -n deploy/cce/codearts/prepare_source.sh

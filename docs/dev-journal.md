@@ -1124,12 +1124,13 @@ production build passed.
   session. Terminal results retain stdout, stderr, duration and release audit.
 - Split the former serial validation Dockerfile into independent release,
   frontend, Insights and Backend tasks. The reviewed pipeline definition runs
-  those four tasks and Backend/Insights image builds in one parallel stage,
-  then runs one bundle finalizer only after all six succeed. Every job consumes
-  the same explicit full `SOURCE_SHA`.
+  those four tasks and Backend/Insights image builds in one parallel stage.
+  After all six succeed, the controlled orchestrator resolves the two immutable
+  image references and invokes the Artifact finalizer with one non-secret input.
+  Every Build task is rendered with the same explicit full source SHA.
 - Added checked-in generators for the seven single-responsibility CodeArts
-  Build task request bodies and the two-stage Pipeline definition. ACR secrets
-  are runtime-only inputs and are not written to the repository.
+  Build task request bodies and the parallel Pipeline definition. ACR secrets
+  remain in the orchestrator; the finalizer receives only immutable digests.
 
 Local controller, bundle, renderer, pipeline-contract, release patch and setup
 runtime tests pass. Final CodeArts timing and production release evidence are

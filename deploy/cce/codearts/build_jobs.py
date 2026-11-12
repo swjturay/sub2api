@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
+import re
 
 
 PROJECT_ID = "83bea33296754139a25d3eb97382d52c"
@@ -123,15 +123,7 @@ def upload_step(name: str, path: str) -> dict:
     }
 
 
-def base_task(name: str, steps: list[dict], *, secret_values: tuple[str, str] | None = None) -> dict:
-    parameters = [parameter("SOURCE_SHA", "UNSET"), parameter("RELEASE_VERSION", "UNSET")]
-    if secret_values is not None:
-        parameters.extend(
-            [
-                parameter("ACR_USERNAME", secret_values[0], sensitive=True),
-                parameter("ACR_PASSWORD", secret_values[1], sensitive=True),
-            ]
-        )
+def base_task(name: str, steps: list[dict], *, parameters: list[dict] | None = None) -> dict:
     return {
         "arch": "x86-64",
         "build_config_type": "ACTION",
@@ -140,7 +132,7 @@ def base_task(name: str, steps: list[dict], *, secret_values: tuple[str, str] | 
         "host_type": "devcloud",
         "job_name": name,
         "project_id": PROJECT_ID,
-        "parameters": parameters,
+        "parameters": parameters or [],
         "scms": [
             {
                 "url": "https://gitcode.com/gcw_1EmgBpdh/hs-flash-web.git",
@@ -159,7 +151,12 @@ def base_task(name: str, steps: list[dict], *, secret_values: tuple[str, str] | 
     }
 
 
-def task_specs(acr_username: str = "", acr_password: str = "") -> dict[str, dict]:
+def task_specs(source_sha: str, release_version: str) -> dict[str, dict]:
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise ValueError("source_sha must be one full lowercase commit")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}", release_version):
+        raise ValueError("release_version is unsafe")
+    pinned_source = f"SOURCE_SHA={source_sha}\nRELEASE_VERSION={release_version}\n{FETCH_SOURCE}"
     validation = {
         "validate-release": "release",
         "validate-frontend": "frontend",
@@ -174,7 +171,7 @@ def task_specs(acr_username: str = "", acr_password: str = "") -> dict[str, dict
                     f"{key}验证",
                     f"./deploy/cce/codearts/Dockerfile.validate.{suffix}",
                     "",
-                    f"{key}-codearts-${{RELEASE_VERSION}}",
+                    f"{key}-codearts-{release_version}",
                 )
             ],
         )
@@ -182,7 +179,7 @@ def task_specs(acr_username: str = "", acr_password: str = "") -> dict[str, dict
     }
     result["build-backend"] = base_task(
         "sub2api-build-backend-v3",
-        [docker_step("构建Backend镜像", "./Dockerfile", "", "backend-codearts-${RELEASE_VERSION}")],
+        [docker_step("构建Backend镜像", "./Dockerfile", "", f"backend-codearts-{release_version}")],
     )
     result["build-insights"] = base_task(
         "sub2api-build-insights-v3",
@@ -191,19 +188,23 @@ def task_specs(acr_username: str = "", acr_password: str = "") -> dict[str, dict
                 "构建Insights镜像",
                 "./Dockerfile",
                 "insights",
-                "insights-codearts-${RELEASE_VERSION}",
+                f"insights-codearts-{release_version}",
             )
         ],
     )
+    for body in result.values():
+        body["steps"][0]["properties"]["command"] = pinned_source
     finalize = shell_step(
         "生成固定发布制品",
         """set -eu
 set +x
+printf '%s' "$RELEASE_INPUT_B64" | base64 -d > release-input.json
 cd sub2api-source
-export ACR_USERNAME='${ACR_USERNAME}'
-export ACR_PASSWORD='${ACR_PASSWORD}'
-sh deploy/cce/codearts/finalize_release.sh "$RELEASE_VERSION"
-unset ACR_USERNAME ACR_PASSWORD
+python3 deploy/cce/codearts/finalize_release.py \
+  --input ../release-input.json \
+  --output-dir release \
+  --release-tool deploy/cce/release.py
+unset RELEASE_INPUT_B64
 """,
     )
     result["finalize"] = base_task(
@@ -217,19 +218,22 @@ unset ACR_USERNAME ACR_PASSWORD
             ),
             upload_step("上传不可变镜像清单", "sub2api-source/release/cce-release-manifest.json"),
         ],
-        secret_values=(acr_username, acr_password),
+        parameters=[parameter("RELEASE_INPUT_B64", "UNSET")],
     )
+    result["finalize"]["steps"][0]["properties"]["command"] = pinned_source
+    for step in result["finalize"]["steps"][2:]:
+        step["properties"]["buildVersion"] = release_version
     return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--source-sha", required=True)
+    parser.add_argument("--release-version", required=True)
     args = parser.parse_args()
-    username = os.environ.get("ACR_USERNAME", "")
-    password = os.environ.get("ACR_PASSWORD", "")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    for key, body in task_specs(username, password).items():
+    for key, body in task_specs(args.source_sha, args.release_version).items():
         (args.output_dir / f"{key}.json").write_text(
             json.dumps({"body": body}, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",

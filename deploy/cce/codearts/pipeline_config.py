@@ -20,25 +20,16 @@ PARALLEL_JOBS = (
 )
 
 
-def build_step(job_id: str, identifier: str, *, include_registry_credentials: bool = False) -> dict:
+def build_step(job_id: str, identifier: str) -> dict:
     if not JOB_ID_RE.fullmatch(job_id):
         raise ValueError(f"CodeArts Build job ID is invalid: {job_id!r}")
     inputs = [
-        {"key": "RELEASE_VERSION", "value": "${PIPELINE_NUMBER}"},
-        {"key": "SOURCE_SHA", "value": "${SOURCE_SHA}"},
         {"key": "__sameProject__", "value": "true"},
         {"key": "__projectId__", "value": ""},
         {"key": "jobId", "value": job_id},
         {"key": "__repository__", "value": "hs-flash-web"},
         {"key": "artifactIdentifier", "value": ""},
     ]
-    if include_registry_credentials:
-        inputs.extend(
-            [
-                {"key": "ACR_USERNAME", "value": "${ACR_USERNAME}"},
-                {"key": "ACR_PASSWORD", "value": "${ACR_PASSWORD}"},
-            ]
-        )
     return {
         "runtime_attribution": "agent",
         "multi_step_editable": 0,
@@ -57,14 +48,7 @@ def build_step(job_id: str, identifier: str, *, include_registry_credentials: bo
     }
 
 
-def build_job(
-    key: str,
-    name: str,
-    job_id: str,
-    sequence: int,
-    *,
-    include_registry_credentials: bool = False,
-) -> dict:
+def build_job(key: str, name: str, job_id: str, sequence: int) -> dict:
     return {
         "id": "",
         "name": name,
@@ -80,13 +64,7 @@ def build_job(
         "secrets": None,
         "secrets_inherit": False,
         "outputs_define": None,
-        "steps": [
-            build_step(
-                job_id,
-                key,
-                include_registry_credentials=include_registry_credentials,
-            )
-        ],
+        "steps": [build_step(job_id, key)],
         "matrix_context": None,
         "concurrency": None,
         "env": None,
@@ -115,26 +93,16 @@ def stage(name: str, identifier: str, sequence: int, jobs: list[dict]) -> dict:
 
 
 def pipeline_definition(job_ids: dict[str, str]) -> dict:
-    expected = {key for key, _ in PARALLEL_JOBS} | {"finalize"}
+    expected = {key for key, _ in PARALLEL_JOBS}
     if set(job_ids) != expected:
         raise ValueError(f"job ID map must contain exactly {sorted(expected)}")
     parallel = [
         build_job(key, name, job_ids[key], sequence)
         for sequence, (key, name) in enumerate(PARALLEL_JOBS)
     ]
-    final = [
-        build_job(
-            "finalize",
-            "生成固定发布制品",
-            job_ids["finalize"],
-            0,
-            include_registry_credentials=True,
-        )
-    ]
     return {
         "stages": [
             stage("并行验证与镜像构建", "stage-parallel-build", 0, parallel),
-            stage("生成固定发布制品", "stage-finalize-bundle", 1, final),
         ]
     }
 
