@@ -102,6 +102,13 @@ observer does not change the release phase. Inspect `stdout.log`, `stderr.log`
 and `state.json` in the restricted release directory when a terminal failure
 needs diagnosis.
 
+A terminal `failed` state cannot be restarted accidentally. After correcting a
+pre-mutation host/controller fault, an operator may explicitly add `--retry` to
+`start`; the controller records the previous terminal summary, preserves its
+logs with an attempt suffix and increments the attempt number. Recovery after
+any Kubernetes mutation must still follow the release engine's saved audit and
+rollback result rather than blindly retrying.
+
 ## CodeArts parallel contract
 
 The first stage contains six independent jobs:

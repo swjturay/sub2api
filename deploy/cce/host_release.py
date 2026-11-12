@@ -298,19 +298,41 @@ def start_release(
     executable: Path = Path("/usr/local/sbin/sub2api-cce-host"),
     preflight_fn=preflight,
     run=checked_run,
+    environment=os.environ,
+    retry: bool = False,
 ) -> dict:
     if not release.SHA_RE.fullmatch(expected_current_sha):
         raise HostReleaseError("expected current source must be a full SHA")
     state = release_status(control_root, release_id)
+    if state.get("phase") == "failed" and not retry:
+        raise HostReleaseError(f"release {release_id} requires an explicit retry")
     if state.get("phase") not in {"staged", "failed_to_start"}:
-        raise HostReleaseError(
-            f"release {release_id} cannot start from phase {state.get('phase')!r}"
-        )
+        if not (retry and state.get("phase") == "failed"):
+            raise HostReleaseError(
+                f"release {release_id} cannot start from phase {state.get('phase')!r}"
+            )
     report = preflight_fn(control_root, expected_current_sha=expected_current_sha)
     unit = unit_name(release_id)
+    previous_attempts = list(state.get("previous_attempts", []))
+    if state.get("phase") == "failed":
+        previous_attempts.append(
+            {
+                key: state.get(key)
+                for key in ("phase", "error", "finished_at", "duration_seconds", "returncode")
+                if state.get(key) is not None
+            }
+        )
+        old_attempt = int(state.get("attempt", 1))
+        for name in ("stdout.log", "stderr.log"):
+            path = release_directory(control_root, release_id) / name
+            if path.exists():
+                path.replace(path.with_name(f"{path.stem}.attempt-{old_attempt}{path.suffix}"))
+    attempt = int(state.get("attempt", 0)) + 1
     starting = {
         **state,
         "phase": "starting",
+        "attempt": attempt,
+        "previous_attempts": previous_attempts,
         "unit": unit,
         "expected_current_sha": expected_current_sha,
         "start_requested_at": utc_now(),
@@ -325,6 +347,7 @@ def start_release(
         "--property=Type=exec",
         "--property=TimeoutStartSec=infinity",
         "--setenv=PYTHONUNBUFFERED=1",
+        f"--setenv=HOME={environment.get('HOME', '/root')}",
         str(executable),
         "--control-root",
         str(control_root.resolve()),
@@ -458,6 +481,7 @@ def parser() -> argparse.ArgumentParser:
     start = commands.add_parser("start", help="start one staged release as a durable systemd unit")
     start.add_argument("--release-id", required=True)
     start.add_argument("--expected-current-sha", required=True)
+    start.add_argument("--retry", action="store_true")
     status = commands.add_parser("status", help="read the persistent state of one release")
     status.add_argument("--release-id", required=True)
     wait = commands.add_parser("wait", help="wait for a persistent terminal release state")
@@ -484,6 +508,7 @@ def main() -> int:
             args.control_root,
             args.release_id,
             expected_current_sha=args.expected_current_sha,
+            retry=args.retry,
         )
     elif args.command == "status":
         value = release_status(args.control_root, args.release_id)
