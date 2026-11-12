@@ -24,6 +24,14 @@ Source, compatibility decisions, migrations and validation are tracked in
 `docs/tasks/upstream-v0.2.21-merge.md`. This task only synchronizes source;
 production resources and release images are outside its scope.
 
+Validation: Go 1.27.4 full unit target, lint, vulnerability scan, native build
+and embedded Linux/amd64 cross-build pass; frontend CI gate/build, Insights and
+CCE/CodeArts helpers pass as detailed in the task record. An isolated local
+PostgreSQL 16.15 database applies all 308 migrations and passes 74 selected SQL
+integration tests / 206 pass records. GitHub accepts the source push but rejects
+CI dispatch with HTTP 422 `Actions has been disabled for this repository`, even
+though its permissions API reports enabled; cloud CI is not reported as passed.
+
 ## Insights cost summary regression fix (2026-11-05)
 
 - Fixed a production `internal error` in the new cost `summary` view. The

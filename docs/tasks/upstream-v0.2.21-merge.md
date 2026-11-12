@@ -102,9 +102,29 @@ Local validation:
   removed sponsor image. The new SQL migration's existing blank EOF line is
   retained to keep its upstream checksum unchanged.
 
-The Linux CI jobs validate the exact published source, including the real
-Docker/PostgreSQL repository integration suite and release-matrix helpers.
-Those two checks cannot run fully on this Mac: no Docker daemon is installed,
-and `/bin/bash` is Apple's Bash 3.2 rather than the Bash 4+ required by the
-release helper. Production services are not used as a substitute test target.
-Both frontend builds retain their existing chunk-size warnings.
+Supplementary database validation applies all 308 migrations to an isolated
+local PostgreSQL 16.15 instance and passes 74 top-level tests / 206 pass records
+including subtests. This covers account repositories, scoped administrators,
+usage insert/batch/read paths, OpenAI TTL token/price round trips and MCP OAuth
+authorization/refresh replay. A temporary Go overlay outside the worktree only
+replaces Docker bootstrap with local PostgreSQL and miniredis initialization;
+the selected SQL tests and application source are unchanged. This is PostgreSQL
+validation, not a claim that the Docker/Redis 8.4 suite ran locally.
+
+The Linux CI contract includes the real Docker/PostgreSQL repository integration
+suite and release-matrix helpers. Those checks cannot run fully on this Mac:
+no Docker daemon is installed, and `/bin/bash` is Apple's Bash 3.2 rather than
+the Bash 4+ required by the release helper. Production services are not used as
+a substitute test target. Both frontend builds retain their existing chunk-size
+warnings.
+
+### GitHub Actions availability
+
+Source merge `fb8dc47eebf3210098d3b8a70a8a13540ca0f97e` was pushed successfully.
+GitHub reports Actions permissions `enabled=true`, `allowed_actions=all`, and
+active workflow definitions, but creates no push runs. Manual CI dispatch,
+including a retry after enabling that workflow through its API, returns HTTP
+422: `Actions has been disabled for this repository.` No cloud CI success is
+claimed. GitHub does not expose a more specific reason in that response; local
+Go/frontend/Insights/security and supplementary SQL results above are separate
+evidence. No production rollout or release image build was initiated.
