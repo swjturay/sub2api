@@ -53,7 +53,7 @@ def parameter(name: str, default: str, *, sensitive: bool = False) -> dict:
             {"name": "name", "value": name},
             {"name": "type", "value": "normalparam"},
             {"name": "defaultValue", "value": default},
-            {"name": "staticVar", "value": "false"},
+            {"name": "staticVar", "value": "true" if sensitive else "false"},
             {"name": "sensitiveVar", "value": "true" if sensitive else "false"},
             {"name": "description", "value": ""},
             {"name": "deletion", "value": "false"},
