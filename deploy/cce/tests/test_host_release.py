@@ -148,7 +148,7 @@ class HostReleaseTest(unittest.TestCase):
             release_dir = control_root / "releases" / artifact["release_id"]
             host.atomic_json(
                 release_dir / "state.json",
-                {**staged, "phase": "failed", "attempt": 1, "error": "first failure"},
+                {**staged, "phase": "failed", "error": "first failure", "returncode": 1},
             )
 
             with self.assertRaisesRegex(host.HostReleaseError, "explicit retry"):
@@ -169,6 +169,8 @@ class HostReleaseTest(unittest.TestCase):
             )
 
             self.assertEqual(result["attempt"], 2)
+            self.assertNotIn("error", result)
+            self.assertNotIn("returncode", result)
             self.assertEqual(result["previous_attempts"][0]["phase"], "failed")
             self.assertEqual(result["previous_attempts"][0]["error"], "first failure")
 

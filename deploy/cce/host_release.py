@@ -327,7 +327,7 @@ def start_release(
             path = release_directory(control_root, release_id) / name
             if path.exists():
                 path.replace(path.with_name(f"{path.stem}.attempt-{old_attempt}{path.suffix}"))
-    attempt = int(state.get("attempt", 0)) + 1
+    attempt = int(state.get("attempt", 1 if state.get("phase") == "failed" else 0)) + 1
     starting = {
         **state,
         "phase": "starting",
@@ -338,6 +338,8 @@ def start_release(
         "start_requested_at": utc_now(),
         "preflight": report,
     }
+    for key in ("error", "result", "returncode", "finished_at", "duration_seconds", "started_at"):
+        starting.pop(key, None)
     state_path = release_directory(control_root, release_id) / "state.json"
     atomic_json(state_path, starting)
     command = [
