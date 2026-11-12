@@ -1,5 +1,24 @@
 # Development Journal
 
+## CodeArts v0.2.21 preparation packaging fixes (2026-11-12)
+
+Predeployment review found that the CodeArts source preparation omitted the
+portable Python ZIP staged by the GitHub release workflow. Add a checksum-pinned,
+size-bounded download using the Windows bootstrap's version/asset/hash metadata;
+preserve a verified cache and never replace it with a corrupt download. Stage it
+before either image is built so the existing same-site Windows setup fallback
+remains available. No application or account behavior changes.
+
+Align the CodeArts bounded release gate with the unit target's fresh-process
+heap measurement. All request-path tests and the original heap assertion still
+run; only that measurement receives its own process. The initial preparation
+build was stopped for replacement, and the corrected source will be pinned for
+a new build. No production deployment was started.
+
+Validation: runtime-staging regression tests cover verified download/cache,
+checksum rejection, invalid asset metadata and size limits. CCE/CodeArts helper
+tests (9 CCE and 5 CodeArts), Python compilation and shell syntax checks pass.
+
 ## Upstream v0.2.21 integration (2026-11-12)
 
 Merge the official v0.2.21 release (194 upstream commits since v0.2.19) into

@@ -17,6 +17,11 @@ manifest. The Build executor never calls the CCE API. A private endpoint stores
 only the ACR credential; credentials never enter this repository, an image, or
 the release artifact.
 
+Source preparation stages the checksum-pinned portable Python asset described
+by the Windows setup script, preserving the same-site fallback from the GitHub
+archive path. The bounded release gate measures the heap-growth assertion in a
+fresh process while retaining all request-path tests and its original limit.
+
 The release Job maintains two fixed application slots. It prepares and checks
 the inactive slot before changing either production Service selector. After
 cutover it probes all public routes for three minutes while the old Pods remain

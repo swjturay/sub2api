@@ -57,4 +57,6 @@ umask 022
   printf 'SOURCE_DATE=%s\n' "$source_date"
 } > "$metadata"
 
+python3 deploy/cce/stage_setup_runtime.py
+
 printf 'Pinned cce-deploy source %s as %s\n' "$source_sha" "$source_version"
