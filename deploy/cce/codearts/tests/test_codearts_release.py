@@ -74,6 +74,10 @@ class OperationsHostReleaseTest(unittest.TestCase):
         final = definition["stages"][1]["jobs"]
         self.assertEqual(len(final), 1)
         self.assertEqual(final[0]["name"], "生成固定发布制品")
+        final_inputs = {item["key"]: item["value"] for item in final[0]["steps"][0]["inputs"]}
+        self.assertEqual(final_inputs["ACR_USERNAME"], "${ACR_USERNAME}")
+        self.assertEqual(final_inputs["ACR_PASSWORD"], "${ACR_PASSWORD}")
+        self.assertTrue(all("ACR_PASSWORD" not in json.dumps(job) for job in parallel))
         self.assertNotIn("runner", json.dumps(definition).lower())
 
     def test_validation_contract_is_split_into_independent_images(self):
