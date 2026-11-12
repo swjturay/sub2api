@@ -17,9 +17,12 @@ DOCKER_MODULE = "devcloud2018.codeci_action_20004.action"
 UPLOAD_MODULE = "devcloud2018.codeci_action_20018.action"
 
 FETCH_SOURCE = r'''set -eu
+test "${#SOURCE_SHA}" -eq 40 || {
+  echo "SOURCE_SHA must be one full lowercase commit" >&2
+  exit 1
+}
 case "$SOURCE_SHA" in
-  [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-  *) echo "SOURCE_SHA must be one full lowercase commit" >&2; exit 1 ;;
+  *[!0-9a-f]*|'') echo "SOURCE_SHA must be one full lowercase commit" >&2; exit 1 ;;
 esac
 case "$RELEASE_VERSION" in
   *[!A-Za-z0-9._-]*|'') echo "RELEASE_VERSION is unsafe" >&2; exit 1 ;;

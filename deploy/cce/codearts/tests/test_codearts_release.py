@@ -1,7 +1,9 @@
 import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -22,6 +24,27 @@ build_jobs = load("build_jobs", ROOT / "build_jobs.py")
 
 
 class OperationsHostReleaseTest(unittest.TestCase):
+    def test_source_pin_accepts_exact_sha_and_rejects_other_shapes(self):
+        validation = build_jobs.FETCH_SOURCE.split("rm -rf", 1)[0]
+        base = {**os.environ, "RELEASE_VERSION": "24"}
+
+        accepted = subprocess.run(
+            ["/bin/sh", "-c", validation],
+            env={**base, "SOURCE_SHA": "a" * 40},
+            capture_output=True,
+            text=True,
+        )
+        rejected = subprocess.run(
+            ["/bin/sh", "-c", validation],
+            env={**base, "SOURCE_SHA": "a" * 39 + "G"},
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(accepted.returncode, 0)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("full lowercase commit", rejected.stderr)
+
     def test_build_task_specs_have_one_responsibility_and_fixed_bundle_outputs(self):
         specs = build_jobs.task_specs()
 
