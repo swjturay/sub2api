@@ -23,7 +23,7 @@ afterEach(() => vi.restoreAllMocks());
 
 it("renders the department overview before requesting secondary analysis", async () => {
   let resolveOverview!: (value: DepartmentOverview) => void;
-  vi.spyOn(insightsApi, "departmentsOverview").mockImplementation(() => new Promise((resolve) => { resolveOverview = resolve; }));
+  const overview = vi.spyOn(insightsApi, "departmentsOverview").mockImplementation(() => new Promise((resolve) => { resolveOverview = resolve; }));
   const details = vi.spyOn(insightsApi, "departments").mockResolvedValue({
     members: 2, activeMembers: 1, totalTokens: 10, averageDailyTokens: 10,
     perMemberDailyTokens: 5, requests: 1, outputTokens: 2, outputShare: 0.2,
@@ -33,6 +33,13 @@ it("renders the department overview before requesting secondary analysis", async
   } satisfies DepartmentAnalytics);
 
   render(<TooltipProvider><DepartmentPage auto={false} /></TooltipProvider>);
+  expect(overview).toHaveBeenCalledWith({
+    from: "2026-07-01",
+    to: "2026-11-04",
+    granularity: "month",
+    models: [],
+    departments: [],
+  }, expect.any(AbortSignal));
   expect(details).not.toHaveBeenCalled();
   await act(async () => resolveOverview({
     members: 2, activeMembers: 1, totalTokens: 10, averageDailyTokens: 10,

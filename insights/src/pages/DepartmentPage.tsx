@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Gauge } from "lucide-react";
-import { platformDateParts, subtractPlatformDays } from "../lib/format";
+import { platformDateParts } from "../lib/format";
 import type { FilterState } from "../lib/types";
 import { useBootstrap } from "../features/BootstrapContext";
 import { AnalyticsFilters } from "../features/Filters";
@@ -15,13 +15,15 @@ import { Chart, palette } from "../components/charts/Chart";
 import { cartesianTheme, chartColors, compactNumber, legendTheme, tooltipTheme } from "../components/charts/chartTheme";
 import { departmentMetricGroups } from "../features/departmentMetrics";
 
+const departmentHistoryStart = "2026-07-01";
+
 export function DepartmentPage({ auto }: { auto: boolean }) {
   const boot = useBootstrap();
   const platformToday = platformDateParts(boot.generatedAt, boot.timezone);
   const [filters, setFilters] = useState<FilterState>(() => ({
-      from: subtractPlatformDays(platformToday.date, 6),
+      from: departmentHistoryStart,
       to: platformToday.date,
-      granularity: "day",
+      granularity: "month",
       models: [],
       departments: [],
     }));
