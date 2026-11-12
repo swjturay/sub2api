@@ -1,5 +1,29 @@
 # Development Journal
 
+## Upstream v0.2.21 integration (2026-11-12)
+
+Merge the official v0.2.21 release (194 upstream commits since v0.2.19) into
+the current cce-deploy head, retaining all subsequent CCE/CodeArts and Insights
+work. Correct the tagged VERSION file from 0.2.20 to 0.2.21.
+
+Resolve ingress-memory accounting against CPR's retained compressed wire
+representation, scoped quota reads against credential snapshots and shared
+management-only caches, and new cache-write TTL columns against the fork's
+observation storage. Keep Insights send/final timestamps, CPR turn settlement,
+Codex legacy-auth defaults, local setup and shared-ai OpenCode providers.
+Retain upstream and fork regression cases at the new integration boundaries.
+
+Security validation found GO-2026-6859 in upstream's Go 1.27.3 toolchain.
+Raise the module, default backend/CodeArts images and CI version checks to
+the fixed Go 1.27.4 together, preserving the release gate and controllers.
+The unit target also isolates the existing heap-bound assertion in a fresh
+process, matching the CCE gate without changing its limit. New native Codex
+Images tests honor the fork's existing disabled endpoint gate.
+
+Source, compatibility decisions, migrations and validation are tracked in
+`docs/tasks/upstream-v0.2.21-merge.md`. This task only synchronizes source;
+production resources and release images are outside its scope.
+
 ## Insights cost summary regression fix (2026-11-05)
 
 - Fixed a production `internal error` in the new cost `summary` view. The

@@ -53,7 +53,7 @@ RUN pnpm typecheck \
     && pnpm build \
     && touch /insights-tests-passed
 
-FROM golang:1.27.3-alpine AS backend-tests
+FROM golang:1.27.4-alpine AS backend-tests
 ENV GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend

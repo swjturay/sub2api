@@ -1,4 +1,4 @@
-FROM golang:1.27.3-alpine AS backend-tests
+FROM golang:1.27.4-alpine AS backend-tests
 ENV GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
@@ -25,7 +25,7 @@ COPY backend ./
 RUN golangci-lint run --timeout=30m --max-same-issues=0 --max-issues-per-linter=0 \
     && touch /backend-lint-passed
 
-FROM golang:1.27.3-alpine AS backend-security
+FROM golang:1.27.4-alpine AS backend-security
 ENV GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=sum.golang.google.cn
 WORKDIR /src/backend
@@ -38,7 +38,7 @@ RUN govulncheck ./... \
     && touch /backend-security-passed
 
 FROM postgres:16-alpine AS postgres-integration
-COPY --from=golang:1.27.3-alpine /usr/local/go /usr/local/go
+COPY --from=golang:1.27.4-alpine /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH \
     GOPROXY=https://goproxy.cn,direct \
     GOSUMDB=sum.golang.google.cn
