@@ -1108,6 +1108,49 @@ proxy workflow.
 Validation: Insights lint, TypeScript, all 30 test files / 126 tests and the
 production build passed.
 
+## Department dashboard responsive and cost preview refinement (2026-11-12)
+
+- Refined the uncommitted B-layout preview so the cost card defaults to CNY,
+  places the cumulative amount before the currency switch and exposes the
+  fixed `1 USD = 6.7 CNY` rate through a keyboard-focusable help control next
+  to the CNY option. The persistent managed-account disclosure remains short
+  and stays on one line at the desktop dashboard width.
+- Ordered the cost switch as CNY then USD and shortened the disclosure again
+  to preserve chart height. The cumulative-cost label and value now share one
+  horizontal row to reduce header height. Reduced the heavy-user label column
+  so the ten directly visible rows use the card width more efficiently.
+- Moved the cost disclosure into the title block so it sits directly below
+  “支出成本”. Lifted the monthly cost-summary request to the page-level load
+  path, allowing it to run in parallel with the department overview and user
+  growth requests instead of waiting for the larger department-detail response
+  before the card could even begin loading.
+- Folded the synthetic `__unassigned__` department bucket into the chart's
+  “其他” slice. Model-family grouping continues to inspect the actual model
+  identity before the routing platform; OpenCodeGo-wrapped DeepSeek/OpenAI
+  models join their real families, while an unidentifiable wrapper joins
+  “其他” instead of appearing as an OpenCodeGo family.
+- Removed the global 1024px minimum document width that forced phone users to
+  zoom out. The mobile shell now uses a two-row header, full-width wrapping
+  filters and a single-column date-range editor while preserving the desktop
+  card matrix. Department and model selectors shrink to the available phone
+  width instead of widening the document.
+- Kept all ten heavy-user rows directly visible for screenshots and preserved
+  the confirmed aggregate and model-family chart behavior.
+
+Validation before publication: Insights lint, TypeScript, all 30 test files /
+127 tests and the production build passed. The original Vue frontend lint,
+typecheck, all 391 test files / 3185 tests, locale compilation and production
+build passed. The complete Backend unit target, its isolated memory regression
+and production build passed. All 26 CCE/CodeArts release-controller tests,
+Python compilation and release shell syntax checks passed. Browser layout
+checks at 375px portrait, 844px landscape and 1473px desktop reported document
+widths equal to their viewports with no overflowing dashboard elements; CNY
+was selected by default at every size and the desktop disclosure occupied one
+line. A load-order regression asserts that the cost request starts before
+department details resolve. Docker/PostgreSQL validation is unavailable on
+this host and remains part of the exact-source remote release workflow;
+production deployment is recorded separately by that workflow.
+
 ## Durable SRE-host release and parallel CodeArts gate (2026-11-12)
 
 - Made `flexusx-hispark-sre` the only production mutation seam. CodeArts keeps

@@ -78,8 +78,8 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 1024px; scrollbar-gutter: stable; }
-body { margin: 0; min-width: 1024px; min-height: 100vh; background: inherit; color: var(--ink); }
+html { min-width: 0; overflow-x: clip; scrollbar-gutter: stable; }
+body { margin: 0; min-width: 0; min-height: 100vh; overflow-x: hidden; background: inherit; color: var(--ink); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -288,6 +288,27 @@ tbody tr:hover { background: var(--surface-subtle); }
 @media (max-width: 1040px) {
   .module-tab span { display: none; }
   .module-tab { width: 36px; justify-content: center; padding: 0; }
+}
+@media (max-width: 640px) {
+  .app-header { height: auto; }
+  .app-header__inner, .app-main { width: calc(100% - 24px); }
+  .app-header__inner { min-height: 112px; height: auto; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 48px 48px; gap: 0 8px; }
+  .brand-mark { grid-column: 1; grid-row: 1; }
+  .header-actions { grid-column: 2; grid-row: 1; }
+  .module-tabs { grid-column: 1 / -1; grid-row: 2; width: 100%; justify-self: stretch; }
+  .module-tab { width: auto; min-width: 0; flex: 1; }
+  .app-main { padding-block: 12px 32px; }
+  .page-stack { gap: 14px !important; }
+  section.panel { padding: 14px; }
+  .filter-toolbar { padding: 10px; }
+  .analytics-filters { align-items: stretch; gap: 8px; }
+  .analytics-filters > .filter-field { width: 100%; }
+  .date-range-popover > .grid { grid-template-columns: minmax(0, 1fr); }
+  .date-range-popover > .grid > :last-child { border-left: 0; border-top: 1px solid var(--border); }
+  .department-metric-group + .department-metric-group { border-left: 0; border-top: 1px solid var(--border); }
+}
+@media (max-width: 360px) {
+  .brand-mark__name { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }

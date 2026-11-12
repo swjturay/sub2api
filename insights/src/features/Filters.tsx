@@ -59,7 +59,7 @@ function DateRangeFilter({ from, to, today, onChange }: { from: string; to: stri
   return (
     <Popover open={open} onOpenChange={updateOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="secondary" className="filter-trigger min-w-60 justify-start font-medium" aria-label="日期范围">
+        <Button type="button" variant="secondary" className="filter-trigger w-full min-w-0 justify-start font-medium sm:w-auto sm:min-w-60" aria-label="日期范围">
           <CalendarDays aria-hidden="true" />
           <span className="tabular-nums">{from} – {to}</span>
           <ChevronDown className="ml-auto text-[var(--muted)]" aria-hidden="true" />

@@ -14,7 +14,9 @@ import { percent, platformDateParts } from "../lib/format";
 import { useRemote } from "../lib/useRemote";
 
 type ModelChartMode = "pie" | "bar";
+type CostCurrency = "usd" | "cny";
 type HeavyUser = { id: string | number; name: string; tokens: number };
+const CNY_RATE = 6.7;
 
 const familyLabels: Record<string, string> = {
   openai: "OpenAI",
@@ -27,7 +29,10 @@ const familyLabels: Record<string, string> = {
   antigravity: "Gemini",
   xai: "xAI",
   grok: "xAI",
-  opencode: "OpenCode",
+  opencode: "其他",
+  opencode_go: "其他",
+  opencodego: "其他",
+  qwen: "Qwen",
   unknown: "其他",
 };
 
@@ -40,7 +45,15 @@ export function monthLabel(value: string) {
   return match ? `${match[1]}年${match[2]}月` : value;
 }
 
-function familyName(modelId: string, platform: string) {
+function familyName(modelId: string, modelName: string, platform: string) {
+  const identity = `${modelId} ${modelName}`.toLowerCase();
+  if (identity.includes("deepseek")) return "DeepSeek";
+  if (identity.includes("glm")) return "ZhipuGLM";
+  if (identity.includes("claude")) return "Anthropic";
+  if (identity.includes("gemini")) return "Gemini";
+  if (identity.includes("grok")) return "xAI";
+  if (identity.includes("qwen")) return "Qwen";
+  if (identity.includes("gpt") || identity.includes("codex") || /(^|[:/_-])o[134]([:/_-]|$)/.test(identity)) return "OpenAI";
   const prefix = (platform || modelId.split(":", 1)[0] || "unknown").toLowerCase();
   return familyLabels[prefix] || prefix.replace(/(^|[-_])(\w)/g, (_, __, letter: string) => letter.toUpperCase());
 }
@@ -50,7 +63,7 @@ export function modelFamilyData(series: TimePoint[], month: string) {
   for (const point of series) {
     if (month !== "all" && monthKey(point.bucket) !== month) continue;
     for (const model of point.models || []) {
-      const family = familyName(model.modelId, model.platform);
+      const family = familyName(model.modelId, model.name, model.platform);
       totals.set(family, (totals.get(family) || 0) + (model.totalTokens || 0));
     }
   }
@@ -63,7 +76,7 @@ export function modelFamilyMonthlyData(series: TimePoint[]) {
   for (const point of series) {
     const month = monthKey(point.bucket);
     for (const model of point.models || []) {
-      const family = familyName(model.modelId, model.platform);
+      const family = familyName(model.modelId, model.name, model.platform);
       const familyValues = values.get(family) || new Map<string, number>();
       familyValues.set(month, (familyValues.get(month) || 0) + (model.totalTokens || 0));
       values.set(family, familyValues);
@@ -78,7 +91,7 @@ export function modelFamilyMonthlyData(series: TimePoint[]) {
 }
 
 export function heavyUsersForMonth(data: DepartmentAnalytics, month: string): HeavyUser[] {
-  if (month === "all") return [...data.memberPareto].sort((a, b) => b.tokens - a.tokens).slice(0, 20).map((user) => ({ id: user.id, name: user.name, tokens: user.tokens }));
+  if (month === "all") return [...data.memberPareto].sort((a, b) => b.tokens - a.tokens).slice(0, 10).map((user) => ({ id: user.id, name: user.name, tokens: user.tokens }));
   const members = new Map<number, HeavyUser>();
   for (const point of data.series) {
     if (monthKey(point.bucket) !== month) continue;
@@ -88,7 +101,7 @@ export function heavyUsersForMonth(data: DepartmentAnalytics, month: string): He
       members.set(user.id, current);
     }
   }
-  return [...members.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 20);
+  return [...members.values()].sort((a, b) => b.tokens - a.tokens).slice(0, 10);
 }
 
 function NativeMonthSelect({ label, value, months, onChange }: { label: string; value: string; months: string[]; onChange: (value: string) => void }) {
@@ -119,9 +132,14 @@ export function UserGrowthCard({ series, loading, error, retry }: { series?: Tim
 }
 
 export function groupedDepartments(input: DepartmentMemberCount[]) {
-  const sorted = [...input].sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
-  if (sorted.length <= 7) return sorted.map((item) => ({ name: item.name, value: item.count }));
-  return [...sorted.slice(0, 7).map((item) => ({ name: item.name, value: item.count })), { name: `其他 ${sorted.length - 7} 个部门`, value: sorted.slice(7).reduce((sum, item) => sum + item.count, 0) }];
+  const unassigned = input.filter((item) => item.id === "__unassigned__" || item.name.trim() === "未分配");
+  const sorted = input.filter((item) => !unassigned.includes(item)).sort((a, b) => b.count - a.count || a.id.localeCompare(b.id));
+  const visible = sorted.slice(0, 7).map((item) => ({ name: item.name, value: item.count }));
+  const hidden = sorted.slice(7);
+  const groupedValue = [...hidden, ...unassigned].reduce((sum, item) => sum + item.count, 0);
+  if (groupedValue <= 0) return visible;
+  const groupedCount = hidden.length + unassigned.length;
+  return [...visible, { name: groupedCount > 1 ? `其他 ${groupedCount} 个部门` : "其他", value: groupedValue }];
 }
 
 export function pastCostTrend<T extends { month: string }>(trend: T[], currentMonth: string) {
@@ -130,6 +148,10 @@ export function pastCostTrend<T extends { month: string }>(trend: T[], currentMo
 
 export function cumulativeActualCost(trend: Array<{ actualCost: number }>) {
   return trend.reduce((sum, point) => sum + point.actualCost, 0);
+}
+
+export function convertCost(value: number, currency: CostCurrency) {
+  return currency === "cny" ? value * CNY_RATE : value;
 }
 
 export function UserDepartmentDistributionCard({ distribution }: { distribution: DepartmentMemberCount[] }) {
@@ -178,7 +200,7 @@ export function ModelFamilyDistributionCard({ series }: { series: TimePoint[] })
   };
   return <section className="panel h-full">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">模型系列 Token 分布<HelpTip label="模型系列Token分布说明">按 OpenAI、DeepSeek、ZhipuGLM 等模型系列归并；饼状图可查看全部或指定月份，柱状图按月份堆叠展示。</HelpTip></h2>
+      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">模型使用比例<HelpTip label="模型使用比例说明">按实际使用的模型名称归入 OpenAI、DeepSeek、ZhipuGLM 等系列；饼状图可查看全部或指定月份，柱状图按月份堆叠展示。</HelpTip></h2>
       <div className="flex flex-wrap items-center gap-2">
         {mode === "pie" && <NativeMonthSelect label="模型系列分布月份" value={month} months={months} onChange={setMonth} />}
         <Segmented value={mode} onChange={setMode} label="模型系列图表类型" options={[{ value: "pie", label: "饼状" }, { value: "bar", label: "柱状" }]} />
@@ -195,13 +217,13 @@ export function HeavyUsersCard({ data }: { data: DepartmentAnalytics }) {
   const maximum = users[0]?.tokens || 1;
   return <section className="panel h-[340px]">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">重度用户 TOP20<HelpTip label="重度用户TOP20说明">按总 Token 从高到低展示，可查看全部月份或单个月份。</HelpTip></h2>
+      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">重度用户 TOP10<HelpTip label="重度用户TOP10说明">按总 Token 从高到低展示，可查看全部月份或单个月份。</HelpTip></h2>
       <NativeMonthSelect label="重度用户月份" value={month} months={months} onChange={setMonth} />
     </div>
-    {users.length ? <ol className="mt-4 grid max-h-[260px] list-none gap-2 overflow-y-auto pr-2 scrollbar-thin" aria-label="重度用户Token排名">
-      {users.map((user) => <li key={user.id} className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 text-xs">
+    {users.length ? <ol className="mt-3 grid list-none gap-1" aria-label="重度用户Token排名">
+      {users.map((user) => <li key={user.id} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
         <span className="truncate text-right font-medium" title={user.name}>{user.name}</span>
-        <div className="relative h-6 overflow-hidden rounded-md bg-[var(--surface-muted)]">
+        <div className="relative h-5 overflow-hidden rounded-md bg-[var(--surface-muted)]">
           <span className="absolute inset-y-0 left-0 rounded-md bg-[var(--primary)]" style={{ width: `${Math.max(2, (user.tokens / maximum) * 100)}%` }} aria-hidden="true" />
           <span className="absolute inset-y-0 right-2 flex items-center tabular-nums text-[var(--ink)]">{compactNumber(user.tokens)}</span>
         </div>
@@ -210,28 +232,42 @@ export function HeavyUsersCard({ data }: { data: DepartmentAnalytics }) {
   </section>;
 }
 
-export function MonthlyActualCostCard({ auto }: { auto: boolean }) {
+export function useMonthlyActualCost(auto: boolean) {
   const boot = useBootstrap();
   const currentMonth = platformDateParts(boot.generatedAt, boot.timezone).date.slice(0, 7);
   const filters: CostFilters = { month: currentMonth, department: "", platform: "", q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 };
   const state = useRemote((signal) => insightsApi.costs(filters, signal, "summary"), [currentMonth], auto, `${boot.scope}:department-costs:${currentMonth}`);
+  return { currentMonth, state };
+}
+
+export function MonthlyActualCostCard({ cost }: { cost: ReturnType<typeof useMonthlyActualCost> }) {
+  const { currentMonth, state } = cost;
+  const [currency, setCurrency] = useState<CostCurrency>("cny");
   const trend = pastCostTrend(state.data?.trend || [], currentMonth);
-  const cumulativeCost = cumulativeActualCost(trend);
+  const cumulativeCost = convertCost(cumulativeActualCost(trend), currency);
+  const symbol = currency === "cny" ? "¥" : "$";
+  const currencyCode = currency === "cny" ? "CNY" : "USD";
+  const chartValues = trend.map((point) => convertCost(point.actualCost, currency));
   const theme = cartesianTheme(54);
   const colors = chartColors();
   return <section className="panel h-[340px]">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <h2 className="m-0 text-base font-semibold">支出成本</h2>
-      <div className="text-right"><span className="block text-xs muted">累计成本</span><strong className="tabular-nums text-lg font-semibold text-[var(--ink)]">{cumulativeCost.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+      <div>
+        <h2 className="m-0 text-base font-semibold">支出成本</h2>
+        <p className="mb-0 mt-0.5 text-xs leading-5 muted">仅统计平台已纳管账号，成本按 AI 订阅价格估算。</p>
+      </div>
+      <div className="flex flex-wrap items-start justify-end gap-3">
+        <div className="flex items-baseline gap-2 whitespace-nowrap"><span className="text-xs muted">累计成本</span><strong className="tabular-nums text-lg font-semibold text-[var(--ink)]">{cumulativeCost.toLocaleString("zh-CN", { style: "currency", currency: currencyCode, minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+        <div className="flex items-center gap-1"><HelpTip label="人民币汇率说明">人民币按固定汇率 1 USD = 6.7 CNY 换算。</HelpTip><Segmented value={currency} onChange={setCurrency} label="支出成本币种" options={[{ value: "cny", label: "人民币" }, { value: "usd", label: "美元" }]} /></div>
+      </div>
     </div>
-    <p className="mb-0 mt-1 text-xs leading-5 muted">仅统计已纳管至平台的账号成本；成本按对应 AI 订阅价格估算，未纳管账号不计入。</p>
     {state.loading && !state.data ? <Loading label="正在加载支出成本" /> : trend.length ? <Chart label="过往月份支出成本柱状图" height={260} option={{
       color: [palette[2]], textStyle: theme.textStyle,
-      tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value: unknown) => `$${Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+      tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value: unknown) => `${symbol}${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
       grid: { ...(theme.grid as object), top: 34, bottom: 48 },
       xAxis: { ...theme.xAxis, type: "category", data: trend.map((point) => monthLabel(point.month)), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true } },
-      yAxis: { ...theme.yAxis, type: "value", axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: unknown) => `$${compactNumber(value)}` } },
-      series: [{ name: "真实支出", type: "bar", barMaxWidth: 44, data: trend.map((point) => point.actualCost), itemStyle: { borderRadius: [5, 5, 1, 1] }, label: { show: true, position: "top", color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => `$${compactNumber(params.value)}` } }],
+      yAxis: { ...theme.yAxis, type: "value", axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: unknown) => `${symbol}${compactNumber(value)}` } },
+      series: [{ name: "真实支出", type: "bar", barMaxWidth: 44, data: chartValues, itemStyle: { borderRadius: [5, 5, 1, 1] }, label: { show: true, position: "top", color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => `${symbol}${compactNumber(params.value)}` } }],
     }} /> : <Empty title="暂无已结束月份成本" detail={state.error || "当前没有可展示的过往月份支出数据。"} />}
   </section>;
 }

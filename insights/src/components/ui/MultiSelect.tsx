@@ -48,14 +48,14 @@ export function MultiSelect({
           variant="secondary"
           role="combobox"
           aria-label={label}
-          className={cn("filter-trigger w-60 max-w-72 justify-between font-medium", className)}
+          className={cn("filter-trigger w-full min-w-0 max-w-none justify-between font-medium sm:w-60 sm:max-w-72", className)}
           title={summary}
         >
           {value.length === 0 ? <span className="truncate">{allLabel}</span> : <span className="flex min-w-0 flex-1 items-center gap-1.5"><span className="min-w-0 flex-1 truncate">{firstLabel}</span>{value.length > 1 && <span className="shrink-0 rounded bg-[var(--primary-soft)] px-1.5 py-0.5 text-xs text-[var(--primary)]">+{value.length - 1}</span>}</span>}
           <ChevronsUpDown className="text-[var(--muted)]" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent className="w-80 max-w-[calc(100vw-24px)] p-0" align="start">
         <Command label={`${label}搜索`}>
           <CommandInput aria-label={`${label}搜索`} placeholder={searchPlaceholder} />
           <CommandList>

@@ -12,7 +12,7 @@ import { HelpTip } from "../components/ui/HelpTip";
 import { Select } from "../components/ui/Controls";
 import { CategoryTokenChart } from "../components/charts/CategoryTokenChart";
 import { departmentMetricGroups } from "../features/departmentMetrics";
-import { HeavyUsersCard, ModelFamilyDistributionCard, MonthlyActualCostCard, UserDepartmentDistributionCard, UserGrowthCard } from "./DepartmentAnalyticsCharts";
+import { HeavyUsersCard, ModelFamilyDistributionCard, MonthlyActualCostCard, UserDepartmentDistributionCard, UserGrowthCard, useMonthlyActualCost } from "./DepartmentAnalyticsCharts";
 
 const departmentHistoryStart = "2026-07-01";
 type DepartmentMetricGroups = ReturnType<typeof departmentMetricGroups>;
@@ -52,6 +52,7 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
     auto,
     `${boot.scope}:platform-user-growth:${filters.from}:${filters.to}`,
   );
+  const monthlyCost = useMonthlyActualCost(auto);
   const data = state.data;
   const metricGroups = data ? departmentMetricGroups(data) : null;
 
@@ -67,14 +68,14 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
             <UserGrowthCard series={growthState.data?.series} loading={growthState.loading} error={growthState.error || undefined} retry={growthState.refresh} />
             <UserDepartmentDistributionCard distribution={data.memberDistribution} />
           </div>
-          {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} overview={data} metricGroups={metricGroups || []} />}
+          {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} overview={data} metricGroups={metricGroups || []} monthlyCost={monthlyCost} />}
         </>
       )}
     </div>
   );
 }
 
-function DepartmentDetails({ filters, auto, overview, metricGroups }: { filters: FilterState; auto: boolean; overview: DepartmentOverview; metricGroups: DepartmentMetricGroups }) {
+function DepartmentDetails({ filters, auto, overview, metricGroups, monthlyCost }: { filters: FilterState; auto: boolean; overview: DepartmentOverview; metricGroups: DepartmentMetricGroups; monthlyCost: ReturnType<typeof useMonthlyActualCost> }) {
   const boot = useBootstrap();
   const [performanceModel, setPerformanceModel] = useState("");
   const state = useRemote(
@@ -89,12 +90,12 @@ function DepartmentDetails({ filters, auto, overview, metricGroups }: { filters:
   return <>
           {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale />}
           <div className="grid items-stretch gap-6 xl:grid-cols-2">
-            <section className="panel h-full"><CategoryTokenChart data={overview.series} dimension="departments" granularity={filters.granularity} aggregate showMetricControl={false} /></section>
+            <section className="panel h-full"><CategoryTokenChart data={overview.series} dimension="departments" granularity={filters.granularity} aggregate showMetricControl={false} title="研发部整体Token消耗" /></section>
             <ModelFamilyDistributionCard series={data.series} />
           </div>
           <div className="grid items-stretch gap-6 xl:grid-cols-2">
             <HeavyUsersCard data={data} />
-            <MonthlyActualCostCard auto={auto} />
+            <MonthlyActualCostCard cost={monthlyCost} />
           </div>
           {metricGroups.length > 0 && <DepartmentOverviewPanel groups={metricGroups} />}
           <section className="panel">

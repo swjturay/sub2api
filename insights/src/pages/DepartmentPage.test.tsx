@@ -25,7 +25,7 @@ it("renders the department overview before requesting secondary analysis", async
   let resolveOverview!: (value: DepartmentOverview) => void;
   const overview = vi.spyOn(insightsApi, "departmentsOverview").mockImplementation(() => new Promise((resolve) => { resolveOverview = resolve; }));
   vi.spyOn(insightsApi, "platformUserGrowth").mockResolvedValue({ series: [], coverage: { state: "complete" } });
-  vi.spyOn(insightsApi, "costs").mockResolvedValue({
+  const costs = vi.spyOn(insightsApi, "costs").mockResolvedValue({
     month: "2026-11", inProgress: true,
     summary: { contributorCount: 0, accountCount: 0, platformCost: 0, actualCost: 0, savings: 0, completedAccounts: 0, totalAccounts: 0 },
     trend: [], contributionDepartments: [], usageDepartments: [], flows: [],
@@ -52,6 +52,7 @@ it("renders the department overview before requesting secondary analysis", async
     departments: [],
   }, expect.any(AbortSignal));
   expect(details).not.toHaveBeenCalled();
+  expect(costs).toHaveBeenCalledTimes(1);
   await act(async () => resolveOverview({
     members: 2, activeMembers: 1, totalTokens: 10, averageDailyTokens: 10,
     perMemberDailyTokens: 5, requests: 1, outputTokens: 2, outputShare: 0.2,
@@ -60,7 +61,11 @@ it("renders the department overview before requesting secondary analysis", async
   expect(await screen.findByText("总成员数")).toBeInTheDocument();
   expect(screen.queryByRole("note", { name: /部分覆盖/ })).not.toBeInTheDocument();
   await waitFor(() => expect(details).toHaveBeenCalledTimes(1));
-  for (const label of ["用户数说明", "用户部门分布说明", "部门Token消耗说明", "模型系列Token分布说明", "重度用户TOP20说明", "部门模型性能说明"]) {
+  for (const label of ["用户数说明", "用户部门分布说明", "研发部整体Token消耗说明", "模型使用比例说明", "重度用户TOP10说明", "部门模型性能说明"]) {
     expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
   }
+  await waitFor(() => expect(screen.getByRole("button", { name: "人民币" })).toHaveAttribute("aria-pressed", "true"));
+  expect(Array.from(screen.getByRole("group", { name: "支出成本币种" }).querySelectorAll("button"), (button) => button.textContent)).toEqual(["人民币", "美元"]);
+  expect(screen.getByRole("button", { name: "人民币汇率说明" })).toBeInTheDocument();
+  expect(screen.queryByText(/人民币按固定汇率/, { selector: "p" })).not.toBeInTheDocument();
 });
