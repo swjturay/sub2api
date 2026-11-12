@@ -30,4 +30,17 @@ describe("classified token consumption", () => {
     expect(groups.at(-1)).toMatchObject({ name: "其他 3 个部门", values: [6] });
     expect(groups.reduce((sum, x) => sum + x.values[0]!, 0)).toBe(55);
   });
+
+  it("formats monthly axis labels as an unambiguous Chinese year and month", () => {
+    const points = [
+      adaptTimePoint({ start: "2026-07-01T00:00:00+08:00", complete: true, departments: [] }),
+      adaptTimePoint({ start: "2026-08-01T00:00:00+08:00", complete: false, departments: [] }),
+    ];
+    const option = buildCategoryTokenOption(points, "departments", "totalTokens", "bar", "month");
+    const xAxis = option.xAxis as { axisLabel?: { formatter?: (value: string, index: number) => string } };
+    const formatter = xAxis.axisLabel?.formatter;
+    expect(formatter).toBeTypeOf("function");
+    expect(formatter?.(points[0].bucket, 0)).toBe("2026年07月");
+    expect(formatter?.(points[1].bucket, 1)).toBe("2026年08月\n未结束");
+  });
 });

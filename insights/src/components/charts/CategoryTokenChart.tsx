@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState } from "react";
 import type { EChartsOption } from "echarts";
-import type { ChartMode, TimePoint } from "../../lib/types";
+import type { ChartMode, Granularity, TimePoint } from "../../lib/types";
 import { Chart, palette } from "./Chart";
 import { cartesianTheme, compactNumber, compactTimeLabel, fullNumber, legendTheme, tooltipTheme } from "./chartTheme";
 import { Segmented } from "../ui/Controls";
@@ -41,7 +41,15 @@ export function categoryTokenSeries(data: TimePoint[], dimension: Dimension, met
   }) }));
 }
 
-export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension, metric: TokenMetric, mode: ChartMode): EChartsOption {
+function categoryTimeLabel(value: string, granularity: Granularity) {
+  if (granularity === "month") {
+    const match = value.match(/^(\d{4})-(\d{2})/);
+    if (match) return `${match[1]}年${match[2]}月`;
+  }
+  return compactTimeLabel(value);
+}
+
+export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension, metric: TokenMetric, mode: ChartMode, granularity: Granularity = "day"): EChartsOption {
   const groups = categoryTokenSeries(data, dimension, metric);
   const zoom = data.length > 16;
   const theme = cartesianTheme(zoom ? 90 : 62);
@@ -49,7 +57,7 @@ export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension
     color: palette, textStyle: theme.textStyle, grid: theme.grid,
     legend: { ...legendTheme(), bottom: zoom ? 26 : 0 },
     tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: mode === "bar" ? "shadow" : "line" }, valueFormatter: value => value == null ? "—" : fullNumber(value) },
-    xAxis: { ...theme.xAxis, type: "category", boundaryGap: mode === "bar", data: data.map(point => point.bucket), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true, formatter: (value: string, index: number) => `${compactTimeLabel(value)}${data[index]?.incomplete ? "\n未结束" : ""}` } },
+    xAxis: { ...theme.xAxis, type: "category", boundaryGap: mode === "bar", data: data.map(point => point.bucket), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true, formatter: (value: string, index: number) => `${categoryTimeLabel(value, granularity)}${data[index]?.incomplete ? "\n未结束" : ""}` } },
     yAxis: { ...theme.yAxis, type: "value", min: 0, axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: compactNumber } },
     series: groups.map(group => ({
       id: group.id, name: group.name, type: mode, stack: mode === "bar" ? "tokens" : undefined,
@@ -60,7 +68,7 @@ export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension
   };
 }
 
-export function CategoryTokenChart({ data, dimension }: { data: TimePoint[]; dimension: Dimension }) {
+export function CategoryTokenChart({ data, dimension, granularity }: { data: TimePoint[]; dimension: Dimension; granularity: Granularity }) {
   const [metric, setMetric] = useState<TokenMetric>("totalTokens");
   const [mode, setMode] = useState<ChartMode>("bar");
   const subject = dimension === "departments" ? "部门" : "模型";
@@ -78,6 +86,6 @@ export function CategoryTokenChart({ data, dimension }: { data: TimePoint[]; dim
         <Segmented value={mode} onChange={setMode} label={`${subject}图表模式`} options={[{ value: "bar", label: "堆叠柱状" }, { value: "line", label: "折线" }]} />
       </div>
     </div>
-    {available && count > 0 ? <Chart label={`${title}，按${subject}分类的${metric === "totalTokens" ? "总Token" : "输出Token"}趋势`} height={280} option={buildCategoryTokenOption(data, dimension, metric, mode)} /> : <Empty title={data.length && !available ? "分类消耗暂不可用" : "暂无消耗数据"} detail={data.length && !available ? "当前数据未提供逐时间段的分类消耗。" : "当前筛选范围没有可展示的记录。"} />}
+    {available && count > 0 ? <Chart label={`${title}，按${subject}分类的${metric === "totalTokens" ? "总Token" : "输出Token"}趋势`} height={280} option={buildCategoryTokenOption(data, dimension, metric, mode, granularity)} /> : <Empty title={data.length && !available ? "分类消耗暂不可用" : "暂无消耗数据"} detail={data.length && !available ? "当前数据未提供逐时间段的分类消耗。" : "当前筛选范围没有可展示的记录。"} />}
   </>;
 }

@@ -64,7 +64,7 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
             </section>
           )}
           <section className="panel">
-            <CategoryTokenChart data={data.series} dimension="departments" />
+            <CategoryTokenChart data={data.series} dimension="departments" granularity={filters.granularity} />
           </section>
           {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} />}
         </>
@@ -94,7 +94,7 @@ function DepartmentDetails({ filters, auto }: { filters: FilterState; auto: bool
           {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale />}
           <div className="grid items-stretch gap-6 xl:grid-cols-12">
             <section className="panel xl:col-span-8">
-              <CategoryTokenChart data={data.series} dimension="models" />
+              <CategoryTokenChart data={data.series} dimension="models" granularity={filters.granularity} />
             </section>
             <section className="panel xl:col-span-4">
               <h2 className="m-0 text-base font-semibold">模型调用分布</h2>

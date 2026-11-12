@@ -1047,15 +1047,19 @@ Go tests, lint, vulnerability scan and PostgreSQL regressions remain in
 keeps the expensive audit available without coupling executor lifetime to every
 traffic-safe release.
 
-## Department insights default reporting window (2026-11-12)
+## Department insights monthly reporting defaults (2026-11-12)
 
 - Changed only the department analytics initial filter to start on 2026-07-01,
   end on the platform-timezone current date, and use monthly granularity. User
   selections remain editable, and personal and gateway defaults are unchanged.
 - Added a page regression that verifies the first department overview request
   receives the exact default date range and monthly granularity.
+- Passed the selected granularity into both classified Token charts. Monthly
+  department and model axes now use unambiguous `YYYY年MM月` labels while day
+  and week labels retain their compact format; incomplete-bucket text remains
+  visible on a separate line.
 
-Validation: Insights lint, TypeScript, all 29 test files / 118 tests and the
+Validation: Insights lint, TypeScript, all 29 test files / 119 tests and the
 production build passed. The local Vite preview served the changed department
 page at `http://127.0.0.1:4178/insights/departments` through the existing
 same-origin proxy workflow. No production deployment or write request was
