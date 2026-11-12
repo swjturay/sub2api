@@ -1,0 +1,11 @@
+FROM node:24-alpine
+
+WORKDIR /src/insights
+COPY insights/package.json insights/pnpm-lock.yaml ./
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
+    && pnpm install --frozen-lockfile
+COPY insights ./
+RUN pnpm typecheck \
+    && pnpm lint \
+    && pnpm test \
+    && pnpm build

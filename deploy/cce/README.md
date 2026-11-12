@@ -1,153 +1,146 @@
 # CCE Production Release
 
-The production release is owned by the `sub2api-production` pipeline in the
-HiSpark CodeArts project. The pipeline builds from an exact `cce-deploy`
-revision, pushes immutable images to ACR, and starts an in-cluster release Job.
-It does not use GitHub Actions or an operations host.
+The only supported production mutation path is the durable release controller
+on `flexusx-hispark-sre`. CodeArts builds and archives immutable artifacts but
+has no Kubernetes credentials and does not create an in-cluster release Job.
 
-## CodeArts release
+## Release flow
 
-The pipeline is manual-only, allows one run at a time, and has no second
-approval gate. The Build task downloads the exact public GitHub revision,
-public GitHub branch, pins its full SHA, runs the release checks, builds the
-Backend, Insights, and release-runner images, and uploads one immutable Job
-manifest to CodeArts Artifact. The Deploy stage then uses CodeArts Deploy's
-native CCE Manifest action and its configured CCE service agency to apply that
-manifest. The Build executor never calls the CCE API. A private endpoint stores
-only the ACR credential; credentials never enter this repository, an image, or
-the release artifact.
+One release has these ordered gates:
 
-Source preparation stages the checksum-pinned portable Python asset described
-by the Windows setup script, preserving the same-site fallback from the GitHub
-archive path. The bounded release gate measures the heap-growth assertion in a
-fresh process while retaining all request-path tests and its original limit.
-Runtime downloads use a bounded regional mirror/official fallback and verify
-the same pinned SHA-256 before the asset can enter an image.
+1. Run the read-only operations-host preflight before starting an expensive
+   build. It checks the host identity, systemd, `hispark-cce` context,
+   `sub2api-prod` Deployment health/source consistency, ordinary Service
+   selectors, the host release lock and free disk.
+2. Run `sub2api-production` with one explicit full `SOURCE_SHA`. CodeArts runs
+   four validation jobs and two image jobs in parallel. The finalizer runs only
+   after every parallel job succeeds.
+3. The finalizer resolves the immutable Backend and Insights ACR digests and
+   uploads three files under one Artifact version:
+   `sub2api-release-bundle.tar.gz`, its SHA-256 sidecar, and the readable
+   `cce-release-manifest.json`.
+4. Deliver the archive and sidecar unchanged to the SRE host. The host
+   controller verifies the outer checksum, the exact member list, every inner
+   checksum and the manifest/source identity before staging it.
+5. Start the staged release by release ID. `systemd-run` owns the process;
+   closing an SSH or CodeArts observer cannot terminate it. `status` and `wait`
+   read the persistent state file rather than the initiating terminal.
 
-The release Job maintains two fixed application slots. It prepares and checks
-the inactive slot before changing either production Service selector. After
-cutover it probes all public routes for three minutes while the old Pods remain
-running, then scales the old slot to zero. A failed candidate or public probe
-restores the old selectors before the candidate is removed. The Job continues
-to a safe terminal state if the pipeline UI is closed or its observer is
-stopped.
+CodeArts Pipeline concurrency remains one release at a time. A pipeline run
+must pass the same `SOURCE_SHA` to every Build task; a moving branch head is not
+a release input.
 
-CodeArts Deploy retains the immutable artifact used by each deployment. Native
-rollback selects the previous successful deployment record and applies its
-artifact through the same release Job. Completed Jobs have a short TTL so an
-older artifact can create its Job again. Database migrations remain
-forward-only and are not reversed by an application rollback.
+## Install the host interface
 
-The permanent namespace bootstrap is
-`deploy/cce/codearts/rbac.yaml`. It grants the release Job its namespace-scoped
-Deployment, Service, Pod, Endpoint and lock-ConfigMap access, plus the required
-network egress. CodeArts Deploy applies the Job manifest; the Build executor
-does not have Kubernetes credentials.
-
-The release gate is deliberately bounded so a normal deployment does not wait
-for the slow static-analysis suite:
-
-- backend build plus the handler, routes, service, Insights, and migration unit
-  packages that guard the production request path;
-- frontend lint, typecheck, critical regressions and production dependency
-  audit;
-- complete Insights typecheck, lint, test and build;
-- CCE release helper and renderer tests.
-
-The slower all-package backend tests, `golangci-lint`, `govulncheck`, and real
-PostgreSQL regressions remain available in
-`deploy/cce/codearts/Dockerfile.full-validate`. They are a separate on-demand
-CodeArts Build check and are not repeated for every deployment. A failed full
-check must be investigated before the next planned production release, but it
-cannot leave a half-finished deployment because it never calls the CCE API.
-
-The Python-version matrix, Apple container checks, generic Compose/Caddy tests,
-and GitHub release-matrix helpers are not release gates because they do not
-validate the CCE images or cutover transaction.
-
-## Legacy GitHub archive
-
-The GitHub workflow remains available as a legacy image archive path, but the
-CodeArts production pipeline does not invoke it or inspect its result.
-
-### Build and archive
-
-If the source commit has no CI runs (for example after restoring Actions on a
-disabled fork), run all three validation workflows against `cce-deploy` before
-building the release:
-
-```sh
-gh workflow run backend-ci.yml --ref cce-deploy
-gh workflow run insights-ci.yml --ref cce-deploy
-gh workflow run security-scan.yml --ref cce-deploy
-```
-
-Verify each run's full source SHA matches the intended branch head and that
-all three succeed. Manual validation preserves the same jobs and permissions
-as push validation; it does not bypass the image workflow's CI gate.
-
-`.github/workflows/cce-clean-image.yml` builds the backend and Insights images
-in parallel and pushes only immutable linux/amd64 images to Alibaba ACR.
-
-Use either of these release entry points:
-
-- Push a tag named `cce-v<version>` from a commit on `cce-deploy` to build that
-  exact commit automatically.
-- Run `CCE ACR release archive` manually with `source_ref=cce-deploy`, the
-  branch-head full commit SHA, and version.
-
-`cce-deploy` is the sole deployment source branch. The workflow rejects manual
-release refs other than `cce-deploy` and rejects tags whose commits are not
-reachable from that branch.
-
-The workflow uploads `cce-release-manifest.json` plus its SHA-256 checksum as a
-small Actions artifact. Image tar archives and GHCR copies are not produced.
-
-### Deploy from the operations host
-
-Install or refresh the repository-owned deployment command from the same reviewed release source before rollout:
+Install both root-owned entry points from the exact reviewed source:
 
 ```sh
 sudo deploy/cce/install.sh
 ```
 
-Transfer the release manifest artifact to the operations host, verify its
-checksum, and run:
+This installs:
+
+- `/usr/local/sbin/sub2api-cce-release`: the bounded Kubernetes release engine;
+- `/usr/local/sbin/sub2api-cce-host`: bundle validation, preflight and durable
+  lifecycle control.
+
+The controller stores staged bundles and persistent state under
+`/root/sub2api-release-control/releases/<release-id>/`. Files and directories
+are restricted to root. The release engine keeps its Deployment snapshots and
+probe evidence below that release directory's `audit/` subdirectory.
+
+## Preflight
+
+Run this before CodeArts Build:
 
 ```sh
-sha256sum -c cce-release-manifest.json.sha256
-sudo sub2api-cce-release --manifest ./cce-release-manifest.json
+sudo sub2api-cce-host preflight
 ```
 
-For a manifest inspection without changing Kubernetes resources:
+When approval or an earlier observation is bound to the current production
+source, add the stale-state guard:
 
 ```sh
-sudo sub2api-cce-release \
-  --manifest ./cce-release-manifest.json \
-  --dry-run
+sudo sub2api-cce-host preflight \
+  --expected-current-sha <current-production-full-sha>
 ```
 
-Use `--expected-current-sha <full-sha>` when a release must fail if production
-has moved since approval.
+Preflight is read-only with respect to Kubernetes workloads. Failure is a hard
+stop; do not spend build time and then adapt the release around a different
+host, context, namespace, source SHA, pinned Service or active release.
 
-## Release behavior
+## Stage and start an Artifact bundle
 
-The command performs one bounded release:
+Transfer the two exact Artifact files to a mode-0700 temporary directory on the
+SRE host, then run:
 
-1. Validates both ACR images are immutable digests from the production
-   repository and were built from the same source SHA.
-2. Updates the backend with native rolling deployment, a five-second endpoint
-   propagation delay, and a 60-second application shutdown window. The production
-   statistics start is fixed by `INSIGHTS_STATISTICS_START_DATE=2026-06-01` in
-   the platform timezone, so later calendar dates without usage rows are zero-use days.
-3. Updates Insights directly to the new image. It removes compatibility init
-   containers, the `previous-assets` volume, and all old-version mounts.
-4. Runs one 30-second final observation across deployment state, pod restart
-   counts, public routes, authentication boundaries, and the current hashed UI
-   asset.
-5. Rolls back both Deployments to their previous Kubernetes revisions if any
-   rollout or final check fails.
+```sh
+sudo sub2api-cce-host stage \
+  --bundle ./sub2api-release-bundle.tar.gz \
+  --checksum ./sub2api-release-bundle.tar.gz.sha256
+```
 
-Every run is serialized with `/tmp/sub2api-cce-release.lock`. Audit JSON is
-written under `~/sub2api-releases/` by default. Database migrations remain
-forward-only; review migration changes before approving a production manifest.
+The command returns the `release_id`. Starting is a separate guarded action:
+
+```sh
+sudo sub2api-cce-host start \
+  --release-id <release-id> \
+  --expected-current-sha <current-production-full-sha>
+```
+
+It returns as soon as systemd accepts the durable unit. Observe without owning
+the process:
+
+```sh
+sudo sub2api-cce-host status --release-id <release-id>
+sudo sub2api-cce-host wait --release-id <release-id> --timeout 900
+```
+
+Terminal phases are `success`, `failed`, or `failed_to_start`. A timed-out
+observer does not change the release phase. Inspect `stdout.log`, `stderr.log`
+and `state.json` in the restricted release directory when a terminal failure
+needs diagnosis.
+
+## CodeArts parallel contract
+
+The first stage contains six independent jobs:
+
+- release helper/bundle/controller tests;
+- original frontend lint, typecheck, critical tests and dependency audit;
+- complete Insights lint, typecheck, tests and production build;
+- bounded Backend production-request-path tests and complete build;
+- Backend image build;
+- Insights image build.
+
+The second stage contains only the Artifact finalizer. Build task request bodies
+are generated by `deploy/cce/codearts/build_jobs.py`; the reviewed pipeline
+definition is generated by `deploy/cce/codearts/pipeline_config.py`. The four
+validation Dockerfiles deliberately have no cross-domain marker dependency, so
+classic Docker cannot serialize unrelated test suites behind one image stage.
+
+The slower all-package Backend tests, `golangci-lint`, `govulncheck`, and real
+PostgreSQL regressions remain in `Dockerfile.full-validate` as an independent
+on-demand check. They are not substituted with weaker release tests.
+
+## Release behavior and rollback
+
+The release engine:
+
+1. validates both immutable ACR images and their shared source SHA;
+2. updates Backend with `maxUnavailable=0`, a five-second pre-stop hook and a
+   60-second application shutdown budget;
+3. verifies Backend health before updating Insights;
+4. verifies clean Pods, public routes, authentication boundaries and the
+   versioned Insights asset for 30 seconds;
+5. rolls both Deployments back to their saved Kubernetes revisions on failure.
+
+Every run is serialized by `/tmp/sub2api-cce-release.lock`. Database migrations
+remain forward-only and must be reviewed before the corresponding Artifact is
+approved. Releases requiring uninterrupted arbitrary-duration requests still
+need the stronger Service pin/candidate/natural-drain coordinator documented in
+the operations repository; do not shorten safety windows to improve pipeline
+timing.
+
+The former CodeArts native CCE Manifest application, release-runner image,
+slot controller and namespace release ServiceAccount are retired. Historical
+artifacts remain audit evidence but are not supported recovery inputs.

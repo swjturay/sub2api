@@ -1,0 +1,17 @@
+FROM golang:1.27.4-alpine
+
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
+WORKDIR /src/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend ./
+RUN go test -tags=unit -p 2 -skip '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' \
+       ./internal/handler \
+       ./internal/server/routes \
+       ./internal/service \
+       ./internal/insights \
+       ./migrations \
+    && go test -tags=unit -p 2 ./internal/service \
+       -run '^TestInflightEstimate_AccountMappingNoDBAndBoundedMemory$' -count=1 \
+    && go build ./...

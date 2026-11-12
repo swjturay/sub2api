@@ -1107,3 +1107,31 @@ proxy workflow.
 
 Validation: Insights lint, TypeScript, all 30 test files / 126 tests and the
 production build passed.
+
+## Durable SRE-host release and parallel CodeArts gate (2026-11-12)
+
+- Made `flexusx-hispark-sre` the only production mutation seam. CodeArts keeps
+  build/archive authority but no longer renders an in-cluster Job or requires
+  a runner image, CCE Manifest application, slot controller or namespace
+  release ServiceAccount.
+- Added a reproducible operations-host Artifact bundle containing the immutable
+  two-image manifest and exact `release.py`, with outer and inner SHA-256
+  verification and a fixed member contract.
+- Added the root-owned `sub2api-cce-host` interface. `preflight` checks host,
+  context, source/replica health, Service selectors, disk and the release lock;
+  `stage` is idempotent for identical bytes; `start` delegates to systemd;
+  `status` and `wait` read durable state independently of the initiating SSH
+  session. Terminal results retain stdout, stderr, duration and release audit.
+- Split the former serial validation Dockerfile into independent release,
+  frontend, Insights and Backend tasks. The reviewed pipeline definition runs
+  those four tasks and Backend/Insights image builds in one parallel stage,
+  then runs one bundle finalizer only after all six succeed. Every job consumes
+  the same explicit full `SOURCE_SHA`.
+- Added checked-in generators for the seven single-responsibility CodeArts
+  Build task request bodies and the two-stage Pipeline definition. ACR secrets
+  are runtime-only inputs and are not written to the repository.
+
+Local controller, bundle, renderer, pipeline-contract, release patch and setup
+runtime tests pass. Final CodeArts timing and production release evidence are
+recorded after the exact source is published and exercised through the new
+path; this journal entry does not pre-claim that external validation.

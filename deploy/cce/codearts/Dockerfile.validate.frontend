@@ -1,0 +1,23 @@
+FROM node:20-alpine AS frontend
+
+WORKDIR /src
+COPY Makefile ./
+COPY frontend/package.json frontend/pnpm-lock.yaml frontend/
+RUN corepack enable && corepack prepare pnpm@9 --activate \
+    && pnpm --dir frontend install --frozen-lockfile
+COPY frontend frontend
+RUN pnpm --dir frontend run lint:check \
+    && pnpm --dir frontend run typecheck \
+    && critical="$(awk 'BEGIN { capture=0 } /^FRONTEND_CRITICAL_VITEST :=/ { capture=1; next } capture && NF == 0 { exit } capture { gsub(/^[ \t]+|[ \t\\]+$/, ""); printf "%s ", $0 }' Makefile)" \
+    && pnpm --dir frontend exec vitest run ${critical} \
+    && pnpm --dir frontend audit --prod --audit-level=high --json > /tmp/audit.json || test -s /tmp/audit.json
+
+FROM python:3.13-alpine
+
+WORKDIR /src
+COPY --from=frontend /tmp/audit.json /tmp/audit.json
+COPY .github/audit-exceptions.yml .github/audit-exceptions.yml
+COPY tools/check_pnpm_audit_exceptions.py tools/check_pnpm_audit_exceptions.py
+RUN python3 tools/check_pnpm_audit_exceptions.py \
+        --audit /tmp/audit.json \
+        --exceptions .github/audit-exceptions.yml

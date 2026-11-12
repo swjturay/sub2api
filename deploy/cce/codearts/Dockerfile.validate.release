@@ -1,0 +1,16 @@
+FROM python:3.13-alpine
+
+WORKDIR /src
+COPY deploy/cce deploy/cce
+
+RUN python3 -m unittest discover -s deploy/cce/tests -v \
+    && python3 -m unittest discover -s deploy/cce/codearts/tests -v \
+    && python3 -m py_compile \
+        deploy/cce/release.py \
+        deploy/cce/host_release.py \
+        deploy/cce/build_bundle.py \
+        deploy/cce/codearts/render_release.py \
+        deploy/cce/codearts/registry_digest.py \
+    && /bin/sh -n deploy/cce/install.sh \
+    && /bin/sh -n deploy/cce/codearts/prepare_source.sh \
+    && /bin/sh -n deploy/cce/codearts/finalize_release.sh
