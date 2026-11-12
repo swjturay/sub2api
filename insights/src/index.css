@@ -146,10 +146,10 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .metric-card__formula { display: grid; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
 .metric-card__formula:hover { background: var(--surface-muted); color: var(--ink); }
 .metric-card__formula svg { width: 13px; height: 13px; }
-.help-tip { display: inline-grid; width: 20px; height: 20px; flex: none; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 0; vertical-align: middle; }
+.help-tip { display: inline-grid; width: 24px; height: 24px; flex: none; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 0; vertical-align: middle; }
 .help-tip:hover { background: var(--surface-muted); color: var(--ink); }
 .help-tip:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
-.help-tip svg { width: 13px; height: 13px; }
+.help-tip svg { width: 14px; height: 14px; }
 .metric-card__value { margin-top: 6px; overflow: hidden; color: var(--ink); font-size: 20px; font-weight: 680; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .metric-card__detail { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .department-metric-group + .department-metric-group { border-left: 1px solid var(--border); }

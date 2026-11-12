@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adaptModelSlice, adaptTimePoint, adaptTokens, insightsApi, resolveCatalogModel } from "./api";
+import { adaptModelSlice, adaptTimePoint, adaptTokens, coalesceDepartmentOverviewSeries, insightsApi, resolveCatalogModel } from "./api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -48,9 +48,33 @@ describe("Insights API adapters", () => {
     expect(adaptTimePoint({ start: "2026-09-22T22:00:00+08:00", quality: { success_rate: 0.75 }, complete: false })).toMatchObject({ successRate: 0.75, incomplete: true });
   });
   it("maps model usage nested in a time bucket", () => {
-    expect(adaptTimePoint({ start: "2026-09-22", metrics: { tokens: { total: 12 } }, models: [{ model: "openai:gpt-6", request_count: 2, tokens: { total: 12, output: 3 } }] })).toMatchObject({
+    expect(adaptTimePoint({ start: "2026-09-22", metrics: { tokens: { total: 12 } }, models: [{ model: "openai:gpt-6", request_count: 2, tokens: { total: 12, output: 3 } }], members: [{ user_id: 7, username: "Ray", total_tokens: 12 }] })).toMatchObject({
       models: [{ modelId: "openai:gpt-6", name: "openai:gpt-6", requests: 2, totalTokens: 12, outputTokens: 3 }],
+      members: [{ id: 7, name: "Ray", totalTokens: 12 }],
     });
+  });
+  it("coalesces split monthly department overview buckets from mixed timezone identities", () => {
+    const series = coalesceDepartmentOverviewSeries([
+      adaptTimePoint({ start: "2026-11-01T00:00:00+08:00", tokens: { total: 116_810_000_000, output: 4_000_000_000 }, request_count: 80, complete: false }),
+      adaptTimePoint({ start: "2026-11-01T00:00:00+08:00", tokens: { total: 6_620_000_000, output: 300_000_000 }, request_count: 5, complete: false }),
+    ], "month");
+    expect(series).toHaveLength(1);
+    expect(series[0]).toMatchObject({ totalTokens: 123_430_000_000, outputTokens: 4_300_000_000, requests: 85, incomplete: true });
+  });
+  it("loads platform user growth without department or model filters", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: { buckets: [{ start: "2026-10-01T00:00:00+08:00", total_users: 151, complete: true }] },
+      meta: { timezone: "Asia/Shanghai", generated_at: "2026-11-04T00:00:00+08:00", coverage: [] },
+    }), { status: 200 }));
+    await expect(insightsApi.platformUserGrowth("2026-07-01", "2026-11-04")).resolves.toMatchObject({ series: [{ users: 151 }] });
+    expect(String(fetch.mock.calls[0][0])).toBe("/api/v1/insights/gateway/users?from=2026-07-01&to=2026-11-04&granularity=month");
+  });
+  it("maps the all-user department distribution from the overview", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: { summary: { member_count: 2, active_member_count: 1, tokens: { total: 12, output: 3 }, daily_average_tokens: 4, daily_per_member_tokens: 2, request_count: 1, output_ratio: 0.25, cache_hit_ratio: 0 }, buckets: [], member_distribution: [{ id: "A/B", label: "研发", count: 2 }] },
+      meta: { timezone: "Asia/Shanghai", generated_at: "2026-11-04T00:00:00+08:00", coverage: [] },
+    }), { status: 200 }));
+    await expect(insightsApi.departmentsOverview({ from: "2026-07-01", to: "2026-11-04", granularity: "month", models: [], departments: [] })).resolves.toMatchObject({ memberDistribution: [{ id: "A/B", name: "研发", count: 2 }] });
   });
   it("maps today's actual cost independently from subscription quota", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({

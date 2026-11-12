@@ -6,6 +6,7 @@ import { Chart, palette } from "./Chart";
 import { cartesianTheme, chartColors, compactNumber, compactTimeLabel, fullNumber, legendTheme, tooltipTheme } from "./chartTheme";
 import { Segmented } from "../ui/Controls";
 import { Empty } from "../ui/States";
+import { HelpTip } from "../ui/HelpTip";
 
 type Dimension = "departments" | "models";
 type TokenMetric = "totalTokens" | "outputTokens";
@@ -74,7 +75,7 @@ export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension
   };
 }
 
-export function CategoryTokenChart({ data, dimension, granularity, aggregate = false }: { data: TimePoint[]; dimension: Dimension; granularity: Granularity; aggregate?: boolean }) {
+export function CategoryTokenChart({ data, dimension, granularity, aggregate = false, showMetricControl = true }: { data: TimePoint[]; dimension: Dimension; granularity: Granularity; aggregate?: boolean; showMetricControl?: boolean }) {
   const [metric, setMetric] = useState<TokenMetric>("totalTokens");
   const [mode, setMode] = useState<ChartMode>("bar");
   const subject = dimension === "departments" ? "部门" : "模型";
@@ -82,14 +83,12 @@ export function CategoryTokenChart({ data, dimension, granularity, aggregate = f
   const available = aggregate ? data.some(point => point[metric] !== null) : data.some(point => point[dimension] !== undefined);
   const count = aggregate ? 0 : categoryTokenSeries(data, dimension, metric).reduce((sum, group) => sum + group.ids.length, 0);
   const metricLabel = metric === "totalTokens" ? "总Token" : "输出Token";
+  const description = aggregate ? "汇总所选部门，每个时间段显示总量。" : `按${subject}分类${count > 0 ? `，共 ${count} 个${subject}` : ""}${count > 7 ? "；前 7 项单独展示，其余合并" : ""}；可点击图例筛选。`;
   return <>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h2 className="m-0 text-base font-semibold">{title}</h2>
-        <p className="mb-0 mt-1 text-xs muted">{aggregate ? "汇总所选部门 · 每个时间段显示总量" : <>按{subject}分类{count > 0 && ` · ${count} 个${subject}`}{count > 7 && " · 前 7 项单独展示，其余合并"} · 点击图例筛选</>}</p>
-      </div>
+      <h2 className="m-0 flex items-center gap-2 text-base font-semibold">{title}<HelpTip label={`${subject}Token消耗说明`}>{description}</HelpTip></h2>
       <div className="flex flex-wrap gap-3">
-        <Segmented value={metric} onChange={setMetric} label={`${subject}消耗指标`} options={[{ value: "totalTokens", label: "总Token" }, { value: "outputTokens", label: "输出Token" }]} />
+        {showMetricControl && <Segmented value={metric} onChange={setMetric} label={`${subject}消耗指标`} options={[{ value: "totalTokens", label: "总Token" }, { value: "outputTokens", label: "输出Token" }]} />}
         <Segmented value={mode} onChange={setMode} label={`${subject}图表模式`} options={[{ value: "bar", label: aggregate ? "柱状" : "堆叠柱状" }, { value: "line", label: "折线" }]} />
       </div>
     </div>

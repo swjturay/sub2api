@@ -1062,9 +1062,39 @@ traffic-safe release.
   single total series over the selected department scope. Bar and line modes
   now show compact localized values directly above each bucket; the model Token
   chart keeps its existing model breakdown and interactive legend.
+- Normalized overview aggregate bucket keys to the configured platform timezone
+  before grouping. Equivalent monthly instants returned with different Go
+  location identities now merge into one bucket. The React adapter also
+  coalesces duplicate monthly overview buckets so local previews and rolling
+  frontend/backend upgrades remain correct while an older backend is serving.
+- Removed the department page coverage-status chip and moved its nonessential
+  explanatory copy from persistent subtitle rows into keyboard-focusable help
+  tooltips beside the page and section headings. Standardized help targets to
+  24px for web pointer accessibility. Coverage data remains in the API
+  contract; only this page's presentation changed.
+- Replaced the approved design prototype with the fixed equal-width B layout
+  and removed all variants, switchers and synthetic data. The first row now
+  shows real month-end platform user growth and the current all-user department
+  distribution; the second shows department Token totals and model-family
+  Token distribution. Model-family pie mode supports all/single months, while
+  bar mode shows month-by-month family stacks.
+- Added real per-bucket member Token breakdowns for the scrollable heavy-user
+  TOP20 month selector, plus the existing all-range member ranking. The adjacent
+  cost card reuses read-only cost trends, excludes the current month and keeps
+  the approved managed-account estimation disclosure. Department overview KPIs
+  move directly above model performance; the Pareto and redundant model-call
+  distribution panels are removed.
+- Extended the department overview with current all-user department counts and
+  reused the existing gateway user endpoint for true month-end cumulative user
+  counts. Native month selectors avoid page movement from portal scroll locks.
 
-Validation: Insights lint, TypeScript, all 29 test files / 120 tests and the
-production build passed. The local Vite preview served the changed department
-page at `http://127.0.0.1:4178/insights/departments` through the existing
-same-origin proxy workflow. No production deployment or write request was
-performed.
+Validation: the bounded release backend packages and build passed, including
+the isolated memory test. A local PostgreSQL 16.15 instance passed Insights,
+handler, route, migration and statistical-time integration suites. Insights
+lint, TypeScript, all 30 test files / 126 tests and the production build passed;
+the production asset contains no prototype markers. The original frontend
+lint/typecheck and 40-file / 703-test critical suite passed, as did the
+production dependency audit policy and all CCE/CodeArts release helpers. The
+local Vite preview served the formal page at
+`http://127.0.0.1:4178/insights/departments` through the existing same-origin
+proxy workflow.

@@ -37,7 +37,7 @@ func TestDepartmentBucketBreakdownsAndHybridMerge(t *testing.T) {
 				t.Fatalf("buckets=%d", len(merged))
 			}
 			first := merged[0]
-			if first.Tokens.Total != 69 || first.RequestCount != 6 || len(first.Models) != 2 || len(first.Departments) != 2 {
+			if first.Tokens.Total != 69 || first.RequestCount != 6 || len(first.Models) != 2 || len(first.Departments) != 2 || len(first.Members) != 2 {
 				t.Fatalf("merged=%+v", first)
 			}
 			if first.Models[0].Model != "openai:x" || first.Models[0].Tokens.Total != 46 || first.Models[0].RequestCount != 5 {
@@ -45,6 +45,9 @@ func TestDepartmentBucketBreakdownsAndHybridMerge(t *testing.T) {
 			}
 			if first.Departments[0].ID != "a" || first.Departments[0].Tokens.Total != 46 {
 				t.Fatalf("departments=%+v", first.Departments)
+			}
+			if first.Members[0].UserID != 1 || first.Members[0].TotalTokens != 46 || first.Members[1].UserID != 2 || first.Members[1].TotalTokens != 23 {
+				t.Fatalf("members=%+v", first.Members)
 			}
 			for _, bucket := range merged {
 				var models, departments Tokens
@@ -62,5 +65,46 @@ func TestDepartmentBucketBreakdownsAndHybridMerge(t *testing.T) {
 				t.Fatal("merge mutated historical input")
 			}
 		})
+	}
+}
+
+func TestDepartmentOverviewCoalescesEquivalentBucketInstants(t *testing.T) {
+	shanghai, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	databaseZone := time.FixedZone("CST", 8*60*60)
+	monthFromDaily := time.Date(2026, 11, 1, 0, 0, 0, 0, shanghai)
+	monthFromRaw := time.Date(2026, 11, 1, 0, 0, 0, 0, databaseZone)
+	if !monthFromDaily.Equal(monthFromRaw) || monthFromDaily == monthFromRaw {
+		t.Fatalf("fixture must represent one instant with distinct location identities: daily=%#v raw=%#v", monthFromDaily, monthFromRaw)
+	}
+
+	q := &Query{timezone: "Asia/Shanghai", now: func() time.Time {
+		return time.Date(2026, 11, 12, 12, 0, 0, 0, shanghai)
+	}}
+	result := q.finishDepartmentOverview(
+		time.Date(2026, 7, 1, 0, 0, 0, 0, shanghai),
+		time.Date(2026, 11, 13, 0, 0, 0, 0, shanghai),
+		"month",
+		1,
+		[]DepartmentMemberCount{{ID: "研发", Label: "研发", Count: 1}},
+		[]departmentOverviewAggregate{
+			{bucket: monthFromDaily, userID: 1, department: "研发", requests: 1, tokens: NewTokens(10, 0, 0, 1)},
+			{bucket: monthFromRaw, userID: 1, department: "研发", requests: 1, tokens: NewTokens(20, 0, 0, 2)},
+		},
+		departmentBinding{},
+		nil,
+	)
+	buckets := result.Data.(map[string]any)["buckets"].([]DepartmentBucket)
+	distribution := result.Data.(map[string]any)["member_distribution"].([]DepartmentMemberCount)
+	if len(buckets) != 1 {
+		t.Fatalf("equivalent November bucket was split: got %d buckets: %+v", len(buckets), buckets)
+	}
+	if buckets[0].Tokens.Total != 33 || buckets[0].RequestCount != 2 {
+		t.Fatalf("equivalent November bucket totals were not merged: %+v", buckets[0])
+	}
+	if len(distribution) != 1 || distribution[0].Count != 1 {
+		t.Fatalf("member distribution=%+v", distribution)
 	}
 }

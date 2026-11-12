@@ -1,21 +1,33 @@
 import { useState } from "react";
 import { Gauge } from "lucide-react";
 import { platformDateParts } from "../lib/format";
-import type { FilterState } from "../lib/types";
+import type { DepartmentOverview, FilterState } from "../lib/types";
 import { useBootstrap } from "../features/BootstrapContext";
 import { AnalyticsFilters } from "../features/Filters";
 import { insightsApi } from "../lib/api";
 import { useRemote } from "../lib/useRemote";
-import { CoverageBanner, Empty, ErrorBanner, Loading } from "../components/ui/States";
+import { ErrorBanner, Loading } from "../components/ui/States";
 import { MetricCard } from "../components/ui/MetricCard";
-import { ModelDonut } from "../components/charts/ModelDonut";
-import { Segmented, Select } from "../components/ui/Controls";
+import { HelpTip } from "../components/ui/HelpTip";
+import { Select } from "../components/ui/Controls";
 import { CategoryTokenChart } from "../components/charts/CategoryTokenChart";
-import { Chart, palette } from "../components/charts/Chart";
-import { cartesianTheme, chartColors, compactNumber, legendTheme, tooltipTheme } from "../components/charts/chartTheme";
 import { departmentMetricGroups } from "../features/departmentMetrics";
+import { HeavyUsersCard, ModelFamilyDistributionCard, MonthlyActualCostCard, UserDepartmentDistributionCard, UserGrowthCard } from "./DepartmentAnalyticsCharts";
 
 const departmentHistoryStart = "2026-07-01";
+type DepartmentMetricGroups = ReturnType<typeof departmentMetricGroups>;
+
+function DepartmentOverviewPanel({ groups }: { groups: DepartmentMetricGroups }) {
+  return <section className="panel department-overview grid overflow-hidden !p-0 md:grid-cols-3" aria-label="部门概览">
+    {groups.map(group => <div className="department-metric-group" key={group.title}>
+      <h2 className="m-0 px-4 pt-3 text-xs font-medium muted">{group.title}</h2>
+      <div className="department-metric-lead"><MetricCard {...group.primary} /></div>
+      <div className="grid grid-cols-2 border-t border-[var(--border)]">
+        {group.secondary.map(item => <MetricCard key={item.label} {...item} />)}
+      </div>
+    </div>)}
+  </section>;
+}
 
 export function DepartmentPage({ auto }: { auto: boolean }) {
   const boot = useBootstrap();
@@ -34,49 +46,37 @@ export function DepartmentPage({ auto }: { auto: boolean }) {
     auto,
     overviewKey,
   );
+  const growthState = useRemote(
+    (signal) => insightsApi.platformUserGrowth(filters.from, filters.to, signal),
+    [filters.from, filters.to],
+    auto,
+    `${boot.scope}:platform-user-growth:${filters.from}:${filters.to}`,
+  );
   const data = state.data;
   const metricGroups = data ? departmentMetricGroups(data) : null;
 
   return (
     <div className="page-stack grid gap-6">
-      <header className="page-heading">
-        <div>
-          <h1 className="m-0 text-2xl font-semibold">部门数据</h1>
-          <p className="mb-0 mt-1 text-sm muted">按用户当前单一部门归集历史；停用成员保留，已删除成员排除。</p>
-        </div>
-      </header>
       <section className="filter-toolbar">
         <AnalyticsFilters value={filters} onChange={setFilters} models={boot.models} departments={boot.departments} showDepartments />
         {state.error && <div className="mt-3"><ErrorBanner message={state.error} retry={state.refresh} stale={!!data} /></div>}
       </section>
       {state.loading && !data ? <Loading /> : data && (
         <>
-          <CoverageBanner coverage={data.coverage} />
-          {metricGroups && (
-            <section className="panel department-overview grid overflow-hidden !p-0 md:grid-cols-3" aria-label="部门概览">
-              {metricGroups.map(group => <div className="department-metric-group" key={group.title}>
-                <h2 className="m-0 px-4 pt-3 text-xs font-medium muted">{group.title}</h2>
-                <div className="department-metric-lead"><MetricCard {...group.primary} /></div>
-                <div className="grid grid-cols-2 border-t border-[var(--border)]">
-                  {group.secondary.map(item => <MetricCard key={item.label} {...item} />)}
-                </div>
-              </div>)}
-            </section>
-          )}
-          <section className="panel">
-            <CategoryTokenChart data={data.series} dimension="departments" granularity={filters.granularity} aggregate />
-          </section>
-          {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} />}
+          <div className="grid items-stretch gap-6 xl:grid-cols-2">
+            <UserGrowthCard series={growthState.data?.series} loading={growthState.loading} error={growthState.error || undefined} retry={growthState.refresh} />
+            <UserDepartmentDistributionCard distribution={data.memberDistribution} />
+          </div>
+          {state.dataKey === overviewKey && <DepartmentDetails filters={filters} auto={auto} overview={data} metricGroups={metricGroups || []} />}
         </>
       )}
     </div>
   );
 }
 
-function DepartmentDetails({ filters, auto }: { filters: FilterState; auto: boolean }) {
+function DepartmentDetails({ filters, auto, overview, metricGroups }: { filters: FilterState; auto: boolean; overview: DepartmentOverview; metricGroups: DepartmentMetricGroups }) {
   const boot = useBootstrap();
-  const [performanceModel, setPerformanceModel] = useState(""),
-    [pareto, setPareto] = useState<"department" | "member">("department");
+  const [performanceModel, setPerformanceModel] = useState("");
   const state = useRemote(
     (signal) => insightsApi.departments(filters, performanceModel, signal),
     [filters, performanceModel],
@@ -84,76 +84,24 @@ function DepartmentDetails({ filters, auto }: { filters: FilterState; auto: bool
     `${boot.scope}:department-details:${JSON.stringify(filters)}:${performanceModel}`,
   );
   const data = state.data;
-  const paretoItems = data ? pareto === "member" ? data.memberPareto : data.departmentPareto : [];
-  const paretoTheme = cartesianTheme(82);
-  const rankingTheme = cartesianTheme(24);
-  const colors = chartColors();
   if (state.loading && !data) return <section className="panel"><Loading label="正在加载详细分析" /></section>;
   if (!data) return state.error ? <ErrorBanner message={state.error} retry={state.refresh} /> : null;
   return <>
           {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale />}
-          <div className="grid items-stretch gap-6 xl:grid-cols-12">
-            <section className="panel xl:col-span-8">
-              <CategoryTokenChart data={data.series} dimension="models" granularity={filters.granularity} />
-            </section>
-            <section className="panel xl:col-span-4">
-              <h2 className="m-0 text-base font-semibold">模型调用分布</h2>
-              <p className="mb-0 mt-1 text-xs muted">按请求次数排序。</p>
-              <div className="mt-2">{data.models.length ? <ModelDonut models={data.models} compact /> : <Empty />}</div>
-            </section>
+          <div className="grid items-stretch gap-6 xl:grid-cols-2">
+            <section className="panel h-full"><CategoryTokenChart data={overview.series} dimension="departments" granularity={filters.granularity} aggregate showMetricControl={false} /></section>
+            <ModelFamilyDistributionCard series={data.series} />
           </div>
-          <div className="grid items-stretch gap-6 xl:grid-cols-12">
-            <section className="panel xl:col-span-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="m-0 text-base font-semibold">消耗帕累托</h2>
-                  <p className="mb-0 mt-1 text-xs muted">查看部门或成员的Token集中度。</p>
-                </div>
-                <Segmented value={pareto} onChange={setPareto} label="帕累托维度" options={[
-                  { value: "department", label: "部门" },
-                  { value: "member", label: "成员" },
-                ]} />
-              </div>
-              {paretoItems.length ? <Chart label="Token消耗帕累托图" height={360} option={{
-                color: [palette[0], palette[2]],
-                textStyle: paretoTheme.textStyle,
-                tooltip: { ...tooltipTheme(), trigger: "axis" },
-                legend: { ...legendTheme(), data: ["总Token", "累计占比"] },
-                grid: { ...(paretoTheme.grid as object), right: 54, bottom: 82 },
-                xAxis: { ...paretoTheme.xAxis, type: "category", data: paretoItems.map((item) => item.name), axisLabel: { ...(paretoTheme.xAxis.axisLabel as object), rotate: 35 } },
-                yAxis: [
-                  { ...paretoTheme.yAxis, type: "value", axisLabel: { ...(paretoTheme.yAxis.axisLabel as object), formatter: compactNumber } },
-                  { ...paretoTheme.yAxis, type: "value", max: 100, axisLabel: { ...(paretoTheme.yAxis.axisLabel as object), formatter: "{value}%" } },
-                ],
-                series: [
-                  { name: "总Token", type: "bar", data: paretoItems.map((item) => item.tokens), barMaxWidth: 24, itemStyle: { borderRadius: [4, 4, 1, 1] } },
-                  { name: "累计占比", type: "line", yAxisIndex: 1, smooth: 0.18, data: paretoItems.map((item) => item.cumulativeShare * 100), markLine: { symbol: "none", label: { formatter: "80%" }, data: [{ yAxis: 80 }] } },
-                ],
-                dataZoom: paretoItems.length > 10 ? [{ type: "inside" }, { type: "slider", bottom: 15 }] : [],
-              }} /> : <Empty />}
-            </section>
-            <section className="panel xl:col-span-6">
-              <h2 className="m-0 text-base font-semibold">成员 TOP10</h2>
-              <p className="mb-0 mt-1 text-xs muted">按总Token降序。</p>
-              {data.topUsers.length ? <Chart label="成员Token TOP10" height={360} option={{
-                color: [palette[0]],
-                textStyle: rankingTheme.textStyle,
-                tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" } },
-                grid: { ...(rankingTheme.grid as object), left: 10, right: 64, top: 24, bottom: 24 },
-                xAxis: { ...rankingTheme.xAxis, type: "value", show: false },
-                yAxis: { ...rankingTheme.yAxis, type: "category", inverse: true, data: data.topUsers.map((item) => item.name), axisLabel: { ...(rankingTheme.yAxis.axisLabel as object), color: colors.ink, width: 112, overflow: "truncate" }, axisTick: { show: false }, axisLine: { show: false } },
-                series: [{ name: "总Token", type: "bar", data: data.topUsers.map((item) => item.tokens), barMaxWidth: 22, showBackground: true, backgroundStyle: { color: colors.surfaceSubtle, borderRadius: 4 }, itemStyle: { borderRadius: 4 }, label: { show: true, position: "right", color: colors.muted, fontSize: 12, formatter: (params: unknown) => compactNumber((params as { value?: unknown }).value) } }],
-              }} /> : <Empty />}
-            </section>
+          <div className="grid items-stretch gap-6 xl:grid-cols-2">
+            <HeavyUsersCard data={data} />
+            <MonthlyActualCostCard auto={auto} />
           </div>
+          {metricGroups.length > 0 && <DepartmentOverviewPanel groups={metricGroups} />}
           <section className="panel">
             <div className="flex flex-wrap items-end justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-[var(--primary-soft)] text-[var(--primary)]"><Gauge aria-hidden="true" className="h-4 w-4" /></span>
-                <div>
-                  <h2 className="m-0 text-base font-semibold">部门模型性能</h2>
-                  <p className="mb-0 mt-1 text-xs muted">聚合所选日期与部门范围内的有效样本。</p>
-                </div>
+                <h2 className="m-0 flex items-center gap-2 text-base font-semibold">部门模型性能<HelpTip label="部门模型性能说明">聚合所选日期与部门范围内的有效样本。</HelpTip></h2>
               </div>
               <label className="grid min-w-56 gap-1 text-xs muted">
                 性能模型

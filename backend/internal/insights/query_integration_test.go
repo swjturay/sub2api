@@ -308,8 +308,12 @@ func TestQueryPostgresIntegration(t *testing.T) {
 	overviewData := mustType[map[string]any](t, overview.Data)
 	overviewSummary := mustType[DepartmentSummary](t, overviewData["summary"])
 	overviewBuckets := mustType[[]DepartmentBucket](t, overviewData["buckets"])
+	overviewDistribution := mustType[[]DepartmentMemberCount](t, overviewData["member_distribution"])
 	if overviewSummary.RequestCount != 2 || overviewSummary.Tokens.Total != 16 || len(overviewBuckets) != 1 || len(overviewBuckets[0].Departments) != 1 || len(overviewBuckets[0].Models) != 0 {
 		t.Fatalf("department overview summary=%+v buckets=%+v", overviewSummary, overviewBuckets)
+	}
+	if len(overviewDistribution) != 2 || overviewDistribution[0].ID != "__unassigned__" || overviewDistribution[0].Count != 4 || overviewDistribution[1].ID != "A/B" || overviewDistribution[1].Label != "Team AB" || overviewDistribution[1].Count != 2 {
+		t.Fatalf("department overview member distribution=%+v", overviewDistribution)
 	}
 	if _, err = db.ExecContext(ctx, `INSERT INTO insights_error_facts VALUES('00000000-0000-0000-0000-000000000001',7,'OpenAI','public-model','upstream','visible',$1),('00000000-0000-0000-0000-000000000002',7,'Other','free-model','timeout','filtered',$1),('00000000-0000-0000-0000-000000000003',70,'OpenAI','public-model','secret','other-user',$1)`, from); err != nil {
 		t.Fatal(err)

@@ -19,15 +19,16 @@ type DepartmentSummary struct {
 }
 
 type DepartmentBucket struct {
-	Start         time.Time         `json:"start"`
-	End           time.Time         `json:"end"`
-	Complete      bool              `json:"complete"`
-	Tokens        Tokens            `json:"tokens"`
-	RequestCount  int64             `json:"request_count"`
-	OutputRatio   *float64          `json:"output_ratio"`
-	CacheHitRatio *float64          `json:"cache_hit_ratio"`
-	Models        []UsageModel      `json:"models"`
-	Departments   []DepartmentUsage `json:"departments"`
+	Start         time.Time               `json:"start"`
+	End           time.Time               `json:"end"`
+	Complete      bool                    `json:"complete"`
+	Tokens        Tokens                  `json:"tokens"`
+	RequestCount  int64                   `json:"request_count"`
+	OutputRatio   *float64                `json:"output_ratio"`
+	CacheHitRatio *float64                `json:"cache_hit_ratio"`
+	Models        []UsageModel            `json:"models"`
+	Departments   []DepartmentUsage       `json:"departments"`
+	Members       []DepartmentMemberUsage `json:"members"`
 }
 
 type DepartmentUsage struct {
@@ -35,6 +36,18 @@ type DepartmentUsage struct {
 	Label        string `json:"label"`
 	Tokens       Tokens `json:"tokens"`
 	RequestCount int64  `json:"request_count"`
+}
+
+type DepartmentMemberUsage struct {
+	UserID      int64  `json:"user_id"`
+	Username    string `json:"username"`
+	TotalTokens int64  `json:"total_tokens"`
+}
+
+type DepartmentMemberCount struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
 }
 
 type ParetoItem struct {
@@ -89,6 +102,10 @@ func (q *Query) DepartmentsOverview(ctx context.Context, from, to, currentDay ti
 	if err != nil {
 		return Envelope{}, err
 	}
+	memberDistribution, err := q.departmentMemberDistribution(ctx, binding)
+	if err != nil {
+		return Envelope{}, err
+	}
 	aggs := make([]departmentOverviewAggregate, 0)
 	coverage := make([]CoverageInfo, 0, 3)
 	if from.Before(currentDay) {
@@ -117,13 +134,31 @@ func (q *Query) DepartmentsOverview(ctx context.Context, from, to, currentDay ti
 		}
 	}
 	coverage = append(coverage, CoverageInfo{Dataset: "department_attribute", Status: "complete"})
-	return q.finishDepartmentOverview(from, to, granularity, memberCount, aggs, binding, coverage), nil
+	return q.finishDepartmentOverview(from, to, granularity, memberCount, memberDistribution, aggs, binding, coverage), nil
 }
 
 func (q *Query) departmentMemberCount(ctx context.Context, binding departmentBinding, departments, valid []string) (int64, error) {
 	var count int64
 	err := q.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users u LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$1 WHERE u.deleted_at IS NULL AND ($2::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')=ANY($2)) AND ($3::text[] IS NULL OR COALESCE(NULLIF(v.value,''),'__unassigned__')='__unassigned__' OR v.value=ANY($3))`, binding.ID, nullableTextArray(departments), nullableTextArray(valid)).Scan(&count)
 	return count, err
+}
+
+func (q *Query) departmentMemberDistribution(ctx context.Context, binding departmentBinding) ([]DepartmentMemberCount, error) {
+	rows, err := q.db.QueryContext(ctx, `SELECT COALESCE(NULLIF(v.value,''),'__unassigned__'),COUNT(DISTINCT u.id) FROM users u LEFT JOIN user_attribute_values v ON v.user_id=u.id AND v.attribute_id=$1 WHERE u.deleted_at IS NULL GROUP BY 1 ORDER BY 2 DESC,1`, binding.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := make([]DepartmentMemberCount, 0)
+	for rows.Next() {
+		var item DepartmentMemberCount
+		if err = rows.Scan(&item.ID, &item.Count); err != nil {
+			return nil, err
+		}
+		item.Label = departmentLabel(binding, item.ID)
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 func (q *Query) departmentOverviewDaily(ctx context.Context, from, to time.Time, granularity string, binding departmentBinding, departments, valid, models []string) ([]departmentOverviewAggregate, error) {
@@ -175,29 +210,31 @@ func (q *Query) departmentOverviewRaw(ctx context.Context, from, to time.Time, g
 	return out, rows.Err()
 }
 
-func (q *Query) finishDepartmentOverview(from, to time.Time, granularity string, memberCount int64, aggs []departmentOverviewAggregate, binding departmentBinding, coverage []CoverageInfo) Envelope {
+func (q *Query) finishDepartmentOverview(from, to time.Time, granularity string, memberCount int64, memberDistribution []DepartmentMemberCount, aggs []departmentOverviewAggregate, binding departmentBinding, coverage []CoverageInfo) Envelope {
 	summary := DepartmentSummary{MemberCount: memberCount}
 	active := map[int64]struct{}{}
 	bucketMap := map[time.Time]*DepartmentBucket{}
 	bucketDepartments := map[time.Time]map[string]*DepartmentUsage{}
+	loc := mustLocation(q.timezone)
 	for _, item := range aggs {
 		summary.RequestCount += item.requests
 		addTokens(&summary.Tokens, item.tokens)
 		if item.tokens.Total > 0 {
 			active[item.userID] = struct{}{}
 		}
-		bucket := bucketMap[item.bucket]
+		bucketKey := bucketStart(item.bucket, granularity, loc)
+		bucket := bucketMap[bucketKey]
 		if bucket == nil {
-			bucket = &DepartmentBucket{Start: item.bucket, End: bucketEnd(item.bucket, granularity), Models: []UsageModel{}, Departments: []DepartmentUsage{}}
-			bucketMap[item.bucket] = bucket
-			bucketDepartments[item.bucket] = map[string]*DepartmentUsage{}
+			bucket = &DepartmentBucket{Start: bucketKey, End: bucketEnd(bucketKey, granularity), Models: []UsageModel{}, Departments: []DepartmentUsage{}}
+			bucketMap[bucketKey] = bucket
+			bucketDepartments[bucketKey] = map[string]*DepartmentUsage{}
 		}
 		bucket.RequestCount += item.requests
 		addTokens(&bucket.Tokens, item.tokens)
-		department := bucketDepartments[item.bucket][item.department]
+		department := bucketDepartments[bucketKey][item.department]
 		if department == nil {
 			department = &DepartmentUsage{ID: item.department, Label: departmentLabel(binding, item.department)}
-			bucketDepartments[item.bucket][item.department] = department
+			bucketDepartments[bucketKey][item.department] = department
 		}
 		department.RequestCount += item.requests
 		addTokens(&department.Tokens, item.tokens)
@@ -225,7 +262,7 @@ func (q *Query) finishDepartmentOverview(from, to time.Time, granularity string,
 		buckets = append(buckets, *bucket)
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Start.Before(buckets[j].Start) })
-	return q.envelope(map[string]any{"summary": summary, "buckets": buckets}, coverage)
+	return q.envelope(map[string]any{"summary": summary, "buckets": buckets, "member_distribution": memberDistribution}, coverage)
 }
 
 func (q *Query) Departments(ctx context.Context, from, to time.Time, granularity string, departments, models []string, performanceModels []string) (Envelope, error) {
@@ -276,6 +313,7 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 	bucketMap := map[time.Time]*DepartmentBucket{}
 	bucketModels := map[time.Time]map[string]*UsageModel{}
 	bucketDepartments := map[time.Time]map[string]*DepartmentUsage{}
+	bucketMembers := map[time.Time]map[int64]*DepartmentMemberUsage{}
 	modelMap := map[string]*UsageModel{}
 	deptTotals := map[string]int64{}
 	userTotals := map[int64]*TopUser{}
@@ -291,6 +329,7 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 			bucketMap[a.bucket] = b
 			bucketModels[a.bucket] = map[string]*UsageModel{}
 			bucketDepartments[a.bucket] = map[string]*DepartmentUsage{}
+			bucketMembers[a.bucket] = map[int64]*DepartmentMemberUsage{}
 		}
 		b.RequestCount += a.requests
 		addTokens(&b.Tokens, a.tokens)
@@ -308,6 +347,12 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 		}
 		bd.RequestCount += a.requests
 		addTokens(&bd.Tokens, a.tokens)
+		member := bucketMembers[a.bucket][a.userID]
+		if member == nil {
+			member = &DepartmentMemberUsage{UserID: a.userID, Username: a.username}
+			bucketMembers[a.bucket][a.userID] = member
+		}
+		member.TotalTokens += a.tokens.Total
 		m := modelMap[a.model]
 		if m == nil {
 			m = &UsageModel{Model: a.model}
@@ -348,6 +393,10 @@ func (q *Query) finishDepartments(from, to time.Time, granularity string, depart
 			b.Departments = append(b.Departments, *department)
 		}
 		b.Departments = mergeDepartmentUsage(b.Departments, nil)
+		for _, member := range bucketMembers[b.Start] {
+			b.Members = append(b.Members, *member)
+		}
+		b.Members = mergeDepartmentMembers(b.Members, nil)
 		buckets = append(buckets, *b)
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Start.Before(buckets[j].Start) })
@@ -626,6 +675,7 @@ func mergeDepartmentBuckets(a, b []DepartmentBucket) []DepartmentBucket {
 				addTokens(&d.Tokens, v.Tokens)
 				d.Models = mergeUsageModels(d.Models, v.Models, d.RequestCount)
 				d.Departments = mergeDepartmentUsage(d.Departments, v.Departments)
+				d.Members = mergeDepartmentMembers(d.Members, v.Members)
 				d.Complete = d.Complete && v.Complete
 			}
 			d.OutputRatio = Ratio(d.Tokens.Output, d.Tokens.Total)
@@ -637,6 +687,31 @@ func mergeDepartmentBuckets(a, b []DepartmentBucket) []DepartmentBucket {
 		out = append(out, *v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
+	return out
+}
+
+func mergeDepartmentMembers(a, b []DepartmentMemberUsage) []DepartmentMemberUsage {
+	m := map[int64]*DepartmentMemberUsage{}
+	for _, src := range [][]DepartmentMemberUsage{a, b} {
+		for _, value := range src {
+			member := m[value.UserID]
+			if member == nil {
+				member = &DepartmentMemberUsage{UserID: value.UserID, Username: value.Username}
+				m[value.UserID] = member
+			}
+			member.TotalTokens += value.TotalTokens
+		}
+	}
+	out := make([]DepartmentMemberUsage, 0, len(m))
+	for _, member := range m {
+		out = append(out, *member)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalTokens == out[j].TotalTokens {
+			return out[i].UserID < out[j].UserID
+		}
+		return out[i].TotalTokens > out[j].TotalTokens
+	})
 	return out
 }
 func mergeUsageModels(a, b []UsageModel, total int64) []UsageModel {

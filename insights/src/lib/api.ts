@@ -83,7 +83,51 @@ export const adaptTimePoint = (x: any): T.TimePoint => ({
     id: department.id, name: department.label, requests: department.request_count ?? 0,
     totalTokens: department.tokens?.total ?? null, outputTokens: department.tokens?.output ?? null,
   })) : undefined,
+  members: Array.isArray(x.members) ? x.members.map((member: any) => ({
+    id: member.user_id, name: member.username, totalTokens: member.total_tokens ?? 0,
+  })) : undefined,
 });
+
+const sumObserved = (left: number | null, right: number | null) =>
+  left === null || right === null ? null : left + right;
+
+function mergeDepartmentSlices(left?: T.DepartmentSlice[], right?: T.DepartmentSlice[]) {
+  if (!left && !right) return undefined;
+  const merged = new Map<string, T.DepartmentSlice>();
+  for (const item of [...(left || []), ...(right || [])]) {
+    const current = merged.get(item.id);
+    if (!current) {
+      merged.set(item.id, { ...item });
+      continue;
+    }
+    current.requests += item.requests;
+    current.totalTokens = sumObserved(current.totalTokens, item.totalTokens);
+    current.outputTokens = sumObserved(current.outputTokens, item.outputTokens);
+  }
+  return [...merged.values()];
+}
+
+export function coalesceDepartmentOverviewSeries(points: T.TimePoint[], granularity: T.Granularity) {
+  if (granularity !== "month") return points;
+  const buckets = new Map<string, T.TimePoint>();
+  for (const point of points) {
+    const match = /^(\d{4})-(\d{2})/.exec(point.bucket);
+    const key = match ? `${match[1]}-${match[2]}` : point.bucket;
+    const current = buckets.get(key);
+    if (!current) {
+      buckets.set(key, { ...point, departments: point.departments?.map((item) => ({ ...item })) });
+      continue;
+    }
+    current.totalTokens = sumObserved(current.totalTokens, point.totalTokens);
+    current.outputTokens = sumObserved(current.outputTokens, point.outputTokens);
+    current.requests += point.requests;
+    current.incomplete = Boolean(current.incomplete || point.incomplete);
+    current.cacheHitRate = null;
+    current.departments = mergeDepartmentSlices(current.departments, point.departments);
+  }
+  return [...buckets.values()].sort((left, right) => left.bucket.localeCompare(right.bucket));
+}
+
 export const adaptModelSlice = (x: any): T.ModelSlice => ({
   modelId:
     x.model?.identity ||
@@ -388,9 +432,14 @@ export const insightsApi = {
       outputTokens: s.tokens.output,
       outputShare: s.output_ratio,
       cacheHitRate: s.cache_hit_ratio,
-      series: r.data.buckets.map(adaptTimePoint),
+      series: coalesceDepartmentOverviewSeries(r.data.buckets.map(adaptTimePoint), f.granularity),
+      memberDistribution: (r.data.member_distribution || []).map((item: any) => ({ id: item.id, name: item.label, count: item.count })),
       coverage: cov(r.meta),
     } as T.DepartmentOverview;
+  },
+  platformUserGrowth: async (from: string, to: string, signal?: AbortSignal): Promise<T.PlatformUserGrowth> => {
+    const r = await apiFetch<Wire<any>>(`/insights/gateway/users${q({ from, to, granularity: "month" })}`, {}, signal);
+    return { series: r.data.buckets.map(adaptTimePoint), coverage: cov(r.meta) };
   },
   departments: async (
     f: T.FilterState,
