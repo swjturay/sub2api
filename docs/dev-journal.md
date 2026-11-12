@@ -17,7 +17,14 @@ a new build. No production deployment was started.
 
 Validation: runtime-staging regression tests cover verified download/cache,
 checksum rejection, invalid asset metadata and size limits. CCE/CodeArts helper
-tests (9 CCE and 5 CodeArts), Python compilation and shell syntax checks pass.
+tests (10 CCE and 5 CodeArts), Python compilation and shell syntax checks pass.
+
+The first staging attempt also exposed the executor's older Python: its
+`Path.unlink` does not accept `missing_ok`. Use compatible cleanup and run the
+download through curl with both transfer and parent-process deadlines. Prefer
+the checksum-verified Huawei mirror with python.org fallback; both must match
+the bootstrap's existing official SHA-256. A timeout/fallback regression keeps
+the transfer bounded. The failure occurred before any production deployment.
 
 ## Upstream v0.2.21 integration (2026-11-12)
 

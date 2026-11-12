@@ -21,6 +21,8 @@ Source preparation stages the checksum-pinned portable Python asset described
 by the Windows setup script, preserving the same-site fallback from the GitHub
 archive path. The bounded release gate measures the heap-growth assertion in a
 fresh process while retaining all request-path tests and its original limit.
+Runtime downloads use a bounded regional mirror/official fallback and verify
+the same pinned SHA-256 before the asset can enter an image.
 
 The release Job maintains two fixed application slots. It prepares and checks
 the inactive slot before changing either production Service selector. After

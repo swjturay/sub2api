@@ -3,6 +3,7 @@ import importlib.util
 import io
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 
@@ -75,3 +76,21 @@ class SetupRuntimeTests(unittest.TestCase):
                     runtime.stage(root, Mock(return_value=io.BytesIO(b"four")))
             self.assertFalse(destination.exists())
             self.assertEqual(list(destination.parent.glob("*.part")), [])
+
+    def test_download_has_total_timeout_and_official_fallback(self):
+        calls = []
+        def download(command, **kwargs):
+            path = Path(command[command.index('--output') + 1])
+            calls.append((command, kwargs, path))
+            if len(calls) == 1:
+                raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+            path.write_bytes(b'verified runtime')
+        with patch.object(runtime.subprocess, 'run', side_effect=download):
+            with runtime.open_runtime('https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip') as response:
+                self.assertEqual(response.read(), b'verified runtime')
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(calls[0][0][-1].startswith('https://repo.huaweicloud.com/python/'))
+        self.assertTrue(calls[1][0][-1].startswith('https://www.python.org/ftp/python/'))
+        self.assertEqual(calls[0][1]['timeout'], 75)
+        self.assertEqual(calls[0][0][calls[0][0].index('--max-time') + 1], '60')
+        self.assertFalse(calls[0][2].exists())

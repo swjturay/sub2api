@@ -2,19 +2,49 @@
 """Stage the checksum-pinned portable Python used by the Windows setup script."""
 
 import hashlib
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
 import tempfile
-import time
-import urllib.error
-import urllib.request
+import subprocess
 
 
 MAX_BYTES = 32 * 1024 * 1024
 
 
-def stage(root: Path, open_url=urllib.request.urlopen) -> dict:
+@contextmanager
+def open_runtime(url, timeout=60):
+    official = "https://www.python.org/ftp/python/"
+    if not url.startswith(official):
+        raise ValueError("portable Python URL is not approved")
+    mirror = url.replace(official, "https://repo.huaweicloud.com/python/", 1)
+    with tempfile.NamedTemporaryFile(delete=False) as output:
+        temporary = Path(output.name)
+    try:
+        for candidate in (mirror, url):
+            print("Fetching portable Python from " + candidate.split('/')[2], flush=True)
+            try:
+                subprocess.run(
+                    ["curl", "--fail", "--location", "--silent", "--show-error",
+                     "--connect-timeout", "15", "--max-time", str(timeout),
+                     "--max-filesize", str(MAX_BYTES), "--output", str(temporary), candidate],
+                    check=True, capture_output=True, timeout=timeout + 15,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                continue
+            with temporary.open("rb") as response:
+                yield response
+            return
+        raise RuntimeError("portable Python download failed for both approved sources")
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def stage(root: Path, open_url=open_runtime) -> dict:
     scripts = root / "frontend/public/scripts"
     bootstrap = (scripts / "sub2api-local-setup.ps1").read_text(encoding="utf-8-sig")
 
@@ -54,17 +84,11 @@ def stage(root: Path, open_url=urllib.request.urlopen) -> dict:
         return {"asset": asset, "sha256": checksum, "bytes": size, "cached": False}
     finally:
         if temporary is not None:
-            temporary.unlink(missing_ok=True)
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
 
 if __name__ == "__main__":
-    for attempt in range(3):
-        try:
-            result = stage(Path(__file__).resolve().parents[2])
-            print(json.dumps(result), flush=True)
-            break
-        except (urllib.error.URLError, TimeoutError):
-            if attempt == 2:
-                raise
-            print("Retrying portable Python download", flush=True)
-            time.sleep(2)
+    print(json.dumps(stage(Path(__file__).resolve().parents[2])), flush=True)
