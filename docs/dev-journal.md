@@ -1222,3 +1222,8 @@ integration environment.
   configuration mutations invalidate the cache.
 - Added migration, advisory-lock, calendar-range, and concurrent-load
   regression coverage.
+
+Follow-up production verification found the rollup and raw fallback branches
+were UNIONed with different `platform_cost` types (`numeric` versus `text`).
+The rollup branch now casts to text before the existing decimal parser; backend
+unit tests and production build pass after the correction.

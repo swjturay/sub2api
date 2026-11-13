@@ -552,7 +552,7 @@ raw_usage AS (
  GROUP BY 1,2)
 ,
 monthly_usage AS (
- SELECT month,account_id,tokens,platform_cost
+ SELECT month,account_id,tokens,platform_cost::text
  FROM insights_cost_monthly_usage
  WHERE (SELECT ready FROM rollup_ready)
    AND month >= $1::date AND month <= $2::date
