@@ -101,7 +101,7 @@ func TestCostDashboardTrendViewSkipsFullAccountAndDimensionQueries(t *testing.T)
 	t.Cleanup(func() { _ = db.Close() })
 	mock.ExpectQuery("SELECT NULLIF").WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(nil))
 	mock.ExpectQuery("SELECT id,key,type,options,enabled").WillReturnRows(sqlmock.NewRows([]string{"id", "key", "type", "options", "enabled"}))
-	mock.ExpectQuery("WITH months AS").WillReturnRows(sqlmock.NewRows([]string{"month", "platform", "deleted", "registered", "contributor", "department", "actual", "platform_cost", "tokens"}))
+	mock.ExpectQuery("(?s)WITH months AS .*platform_cost::text").WillReturnRows(sqlmock.NewRows([]string{"month", "platform", "deleted", "registered", "contributor", "department", "actual", "platform_cost", "tokens"}))
 	envelope, err := NewQuery(db, "UTC", nil).CostDashboard(context.Background(), CostFilter{Month: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), View: "trend"})
 	if err != nil {
 		t.Fatal(err)
