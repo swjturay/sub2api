@@ -92,6 +92,28 @@ func TestCostDashboardDepartmentCoverage(t *testing.T) {
 	}
 }
 
+func TestCostDashboardTrendViewSkipsFullAccountAndDimensionQueries(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectQuery("SELECT NULLIF").WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(nil))
+	mock.ExpectQuery("SELECT id,key,type,options,enabled").WillReturnRows(sqlmock.NewRows([]string{"id", "key", "type", "options", "enabled"}))
+	mock.ExpectQuery("WITH months AS").WillReturnRows(sqlmock.NewRows([]string{"month", "platform", "deleted", "registered", "contributor", "department", "actual", "platform_cost", "tokens"}))
+	envelope, err := NewQuery(db, "UTC", nil).CostDashboard(context.Background(), CostFilter{Month: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), View: "trend"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := envelope.Data.(CostDashboard)
+	if data.Accounts.Items == nil || data.Dimensions.Contributors == nil {
+		t.Fatalf("trend view must return empty collections: %+v", data)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCostDashboardTableHidesZeroRequestsBeforePagination(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

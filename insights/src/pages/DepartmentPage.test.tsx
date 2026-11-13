@@ -53,6 +53,7 @@ it("renders the department overview before requesting secondary analysis", async
   }, expect.any(AbortSignal));
   expect(details).not.toHaveBeenCalled();
   expect(costs).toHaveBeenCalledTimes(1);
+  expect(costs).toHaveBeenCalledWith(expect.anything(), expect.any(AbortSignal), "trend");
   await act(async () => resolveOverview({
     members: 2, activeMembers: 1, totalTokens: 10, averageDailyTokens: 10,
     perMemberDailyTokens: 5, requests: 1, outputTokens: 2, outputShare: 0.2,

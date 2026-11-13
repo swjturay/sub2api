@@ -243,7 +243,7 @@ export function useMonthlyActualCost(auto: boolean) {
   const boot = useBootstrap();
   const currentMonth = platformDateParts(boot.generatedAt, boot.timezone).date.slice(0, 7);
   const filters: CostFilters = { month: currentMonth, department: "", platform: "", q: "", contributor: "", paymentMethod: "", status: "", completeness: "", registration: "", page: 1, pageSize: 20 };
-  const state = useRemote((signal) => insightsApi.costs(filters, signal, "summary"), [currentMonth], auto, `${boot.scope}:department-costs:${currentMonth}`);
+  const state = useRemote((signal) => insightsApi.costs(filters, signal, "trend"), [currentMonth], auto, `${boot.scope}:department-costs:${currentMonth}`);
   return { currentMonth, state };
 }
 

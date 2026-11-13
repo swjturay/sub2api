@@ -176,6 +176,22 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	if err != nil {
 		return Envelope{}, err
 	}
+	if filter.View == "trend" {
+		trend, err := q.loadCostTrend(ctx, filter, binding, currentMonth)
+		if err != nil {
+			return Envelope{}, err
+		}
+		data := CostDashboard{
+			Month: filter.Month.Format("2006-01"), InProgress: inProgress, Trend: trend,
+			Accounts:   CostAccountPage{Items: []CostAccountItem{}, Page: 1, PageSize: filter.PageSize, Pages: 1},
+			Dimensions: CostDimensions{Contributors: []CostContributor{}, Departments: dimension.Options, Platforms: []string{}, Statuses: []string{}, PaymentMethods: []DimensionOption{}},
+		}
+		departmentCoverage := CoverageInfo{Dataset: "department_attribute", Status: dimension.Status, Detail: dimension.Detail}
+		if dimension.Status == "configured" {
+			departmentCoverage.Status = "complete"
+		}
+		return q.Envelope(data, []CoverageInfo{{Dataset: "cost_data", Status: "complete"}, departmentCoverage}), nil
+	}
 	rows, err := q.loadCostAccountRows(ctx, filter.Month, binding, inProgress)
 	if err != nil {
 		return Envelope{}, err
@@ -511,7 +527,16 @@ func (q *Query) loadCostTrend(ctx context.Context, filter CostFilter, binding de
 	}
 	rows, err := q.db.QueryContext(ctx, `
 WITH months AS (SELECT generate_series($1::date,$2::date,INTERVAL '1 month')::date AS month),
-roots AS (SELECT id,platform,deleted_at FROM accounts WHERE parent_account_id IS NULL),
+roots AS (
+ SELECT a.id,a.platform,a.deleted_at,owner.contributor_user_id,
+        COALESCE(NULLIF(department.value,''),'__unassigned__') AS department_id
+ FROM accounts a
+ LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=a.id
+ LEFT JOIN user_attribute_values department ON department.user_id=owner.contributor_user_id AND department.attribute_id=$6
+ WHERE a.parent_account_id IS NULL
+   AND ($7='' OR a.platform=$7)
+   AND ($8='' OR COALESCE(NULLIF(department.value,''),'__unassigned__')=$8)
+),
 monthly_usage AS (
  SELECT date_trunc('month',ul.created_at AT TIME ZONE $3)::date AS month,
         COALESCE(source.parent_account_id,source.id) AS account_id,
@@ -520,8 +545,8 @@ monthly_usage AS (
  FROM usage_logs ul JOIN accounts source ON source.id=ul.account_id
  WHERE ul.created_at >= $4 AND ul.created_at < $5
  GROUP BY 1,2)
-SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),owner.contributor_user_id,
-       COALESCE(NULLIF(department.value,''),'__unassigned__'),exact.actual_cost::text,COALESCE(usage.platform_cost,'0'),COALESCE(usage.tokens,0)
+SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),roots.contributor_user_id,
+       roots.department_id,exact.actual_cost::text,COALESCE(usage.platform_cost,'0'),COALESCE(usage.tokens,0)
 FROM months CROSS JOIN roots
 LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=roots.id
 LEFT JOIN LATERAL (
@@ -530,9 +555,8 @@ LEFT JOIN LATERAL (
     ORDER BY CASE WHEN value.month<=months.month THEN value.month END DESC NULLS LAST, value.month ASC LIMIT 1
 ) cfg ON TRUE
 LEFT JOIN insights_cost_account_months exact ON exact.account_id=roots.id AND exact.month=months.month
-LEFT JOIN user_attribute_values department ON department.user_id=owner.contributor_user_id AND department.attribute_id=$6
 LEFT JOIN monthly_usage usage ON usage.account_id=roots.id AND usage.month=months.month
-		ORDER BY months.month`, start.Format("2006-01-02"), filter.Month.Format("2006-01-02"), q.timezone, start, filter.Month.AddDate(0, 1, 0), binding.ID)
+		ORDER BY months.month`, start.Format("2006-01-02"), filter.Month.Format("2006-01-02"), q.timezone, start, filter.Month.AddDate(0, 1, 0), binding.ID, filter.Platform, filter.Department)
 	if err != nil {
 		return nil, err
 	}

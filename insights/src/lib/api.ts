@@ -577,7 +577,7 @@ coverage: cov(users.meta),
     ]);
     return { ...quality, ...secondary } as T.GatewayAnalytics;
   },
-  costs: async (filters: T.CostFilters, signal?: AbortSignal, view: "full" | "summary" | "details" = "full"): Promise<T.CostDashboard> => {
+  costs: async (filters: T.CostFilters, signal?: AbortSignal, view: "full" | "summary" | "details" | "trend" = "full"): Promise<T.CostDashboard> => {
     const r = await apiFetch<Wire<any>>(`/insights/costs${q({
       month: filters.month,
       department: filters.department,

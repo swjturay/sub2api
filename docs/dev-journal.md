@@ -1189,3 +1189,24 @@ Local controller, bundle, renderer, pipeline-contract, release patch and setup
 runtime tests pass. Final CodeArts timing and production release evidence are
 recorded after the exact source is published and exercised through the new
 path; this journal entry does not pre-claim that external validation.
+
+## Department cost trend query optimization (2026-11-13)
+
+- Added a lightweight `view=trend` cost response for the department dashboard.
+  It loads only the historical trend and coverage metadata, skipping account
+  rows, contributor dimensions, full pagination and usage-department flows.
+  The frontend now requests this view for the cost chart; the full cost API
+  remains unchanged for the cost-management page.
+- Pushed platform and department filters into the trend roots CTE so the
+  monthly aggregate scans fewer accounts before joining the 12-month series.
+- Added concurrent-safe indexes for the time/account usage-log range and
+  department attribute lookup used by the trend path.
+- Added regression coverage proving the trend view does not issue the full
+  account/dimension query chain, and that the frontend requests `view=trend`.
+
+Validation: Insights lint, TypeScript, all 30 test files / 127 tests and the
+production build passed. Backend full unit tests including the isolated memory
+regression, Insights/handler/routes/migrations suites and production build
+passed. PostgreSQL EXPLAIN/latency comparison and the index rollout remain
+part of the deployment validation because this host has no Docker/PostgreSQL
+integration environment.
