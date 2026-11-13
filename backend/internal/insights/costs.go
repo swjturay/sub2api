@@ -548,7 +548,6 @@ monthly_usage AS (
 SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),roots.contributor_user_id,
        roots.department_id,exact.actual_cost::text,COALESCE(usage.platform_cost,'0'),COALESCE(usage.tokens,0)
 FROM months CROSS JOIN roots
-LEFT JOIN insights_cost_account_contributors owner ON owner.account_id=roots.id
 LEFT JOIN LATERAL (
     SELECT registered FROM insights_cost_account_months value
     WHERE value.account_id=roots.id AND (value.month<=months.month OR value.registered=TRUE)
