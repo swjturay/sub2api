@@ -91,11 +91,11 @@ function DepartmentDetails({ filters, auto, overview, metricGroups, monthlyCost 
           {state.error && <ErrorBanner message={state.error} retry={state.refresh} stale />}
           <div className="grid items-stretch gap-6 xl:grid-cols-2">
             <section className="panel h-full"><CategoryTokenChart data={overview.series} dimension="departments" granularity={filters.granularity} aggregate showMetricControl={false} title="研发部整体Token消耗" /></section>
-            <ModelFamilyDistributionCard series={data.series} />
+            <MonthlyActualCostCard cost={monthlyCost} />
           </div>
           <div className="grid items-stretch gap-6 xl:grid-cols-2">
             <HeavyUsersCard data={data} />
-            <MonthlyActualCostCard cost={monthlyCost} />
+            <ModelFamilyDistributionCard series={data.series} />
           </div>
           {metricGroups.length > 0 && <DepartmentOverviewPanel groups={metricGroups} />}
           <section className="panel">

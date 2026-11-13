@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DepartmentAnalytics, TimePoint } from "../lib/types";
-import { convertCost, cumulativeActualCost, groupedDepartments, heavyUsersForMonth, modelFamilyData, modelFamilyMonthlyData, pastCostTrend } from "./DepartmentAnalyticsCharts";
+import { convertCost, cumulativeActualCost, formatCostAmount, groupedDepartments, heavyUsersForMonth, modelFamilyData, modelFamilyMonthlyData, pastCostTrend } from "./DepartmentAnalyticsCharts";
 
 const series: TimePoint[] = [{
   bucket: "2026-07-01T00:00:00+08:00", totalTokens: 35, outputTokens: 3, cacheHitRate: null, requests: 2,
@@ -56,6 +56,7 @@ describe("department analytics chart data", () => {
     expect(cumulativeActualCost(past)).toBe(20.75);
     expect(convertCost(20.75, "usd")).toBe(20.75);
     expect(convertCost(20.75, "cny")).toBeCloseTo(139.025);
+    expect(formatCostAmount(91_635.9, "cny")).toBe("¥9.16万");
   });
 
   it("limits heavy users to ten visible rows", () => {

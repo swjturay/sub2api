@@ -68,7 +68,7 @@ export function buildCategoryTokenOption(data: TimePoint[], dimension: Dimension
       id: group.id, name: group.name, type: mode, stack: !aggregate && mode === "bar" ? "tokens" : undefined,
       data: group.values, connectNulls: false, showSymbol: data.length <= 8, symbolSize: 5,
       lineStyle: { width: 2 }, barMaxWidth: 36, emphasis: { focus: "series" },
-      label: aggregate ? { show: true, position: "top", distance: 8, color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => compactNumber(params.value) } : undefined,
+      label: aggregate ? { show: true, position: "top", distance: 8, color: colors.ink, fontSize: 14, formatter: (params: { value?: unknown }) => compactNumber(params.value) } : undefined,
       labelLayout: aggregate ? { hideOverlap: true } : undefined,
     })),
     dataZoom: zoom ? [{ type: "inside", filterMode: "none" }, { type: "slider", filterMode: "none", bottom: 0, height: 16, showDetail: false }] : [],

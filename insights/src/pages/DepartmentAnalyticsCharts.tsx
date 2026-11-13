@@ -126,7 +126,7 @@ export function UserGrowthCard({ series, loading, error, retry }: { series?: Tim
       grid: { ...(theme.grid as object), top: 40, bottom: 42 },
       xAxis: { ...theme.xAxis, type: "category", boundaryGap: false, data: data.map((point) => monthLabel(point.bucket)), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true } },
       yAxis: { ...theme.yAxis, type: "value", min: 0, axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: unknown) => `${compactNumber(value)}人` } },
-      series: [{ name: "总用户数", type: "line", smooth: 0.22, symbolSize: 7, showSymbol: true, data: data.map((point) => point.users ?? null), lineStyle: { width: 2.5 }, areaStyle: { color: palette[0], opacity: 0.12 }, label: { show: true, position: "top", color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => compactNumber(params.value) } }],
+      series: [{ name: "总用户数", type: "line", smooth: 0.22, symbolSize: 7, showSymbol: true, data: data.map((point) => point.users ?? null), lineStyle: { width: 2.5 }, areaStyle: { color: palette[0], opacity: 0.12 }, label: { show: true, position: "top", color: colors.ink, fontSize: 14, formatter: (params: { value?: unknown }) => compactNumber(params.value) } }],
     }} /> : <Empty title="暂无用户增长数据" detail="当前日期范围没有可展示的月末用户数据。" />}
   </section>;
 }
@@ -154,6 +154,13 @@ export function convertCost(value: number, currency: CostCurrency) {
   return currency === "cny" ? value * CNY_RATE : value;
 }
 
+export function formatCostAmount(value: number, currency: CostCurrency) {
+  if (currency === "cny") {
+    return `¥${(value / 10_000).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}万`;
+  }
+  return value.toLocaleString("zh-CN", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function UserDepartmentDistributionCard({ distribution }: { distribution: DepartmentMemberCount[] }) {
   const data = groupedDepartments(distribution);
   const total = data.reduce((sum, item) => sum + item.value, 0);
@@ -167,7 +174,7 @@ export function UserDepartmentDistributionCard({ distribution }: { distribution:
         return `${item.name}<br/><b>${fullNumber(item.value)}</b> 人 · ${percent(total ? item.value / total : null)}`;
       } },
       legend: { ...legendTheme(), type: "scroll", bottom: 0 },
-      series: [{ type: "pie", radius: ["38%", "66%"], center: ["50%", "43%"], avoidLabelOverlap: true, label: { color: colors.muted, formatter: "{b}\n{c}人" }, labelLine: { length: 10, length2: 8 }, itemStyle: { borderColor: colors.surface, borderWidth: 2, borderRadius: 4 }, data }],
+      series: [{ type: "pie", radius: ["38%", "66%"], center: ["50%", "43%"], avoidLabelOverlap: true, label: { color: colors.muted, fontSize: 14, lineHeight: 18, formatter: "{b}\n{c}人" }, labelLayout: { hideOverlap: true }, labelLine: { length: 10, length2: 8 }, itemStyle: { borderColor: colors.surface, borderWidth: 2, borderRadius: 4 }, data }],
     }} /> : <Empty title="暂无部门分布数据" detail="当前尚未配置可展示的用户部门数据。" />}
   </section>;
 }
@@ -188,7 +195,7 @@ export function ModelFamilyDistributionCard({ series }: { series: TimePoint[] })
       return `${item.name}<br/><b>${fullNumber(item.value)}</b> Token · ${percent(total ? item.value / total : null)}`;
     } },
     legend: { ...legendTheme(), type: "scroll", bottom: 0 },
-    series: [{ type: "pie", radius: ["42%", "70%"], center: ["50%", "43%"], label: { color: colors.muted, formatter: "{b}\n{d}%" }, itemStyle: { borderColor: colors.surface, borderWidth: 2, borderRadius: 4 }, data }],
+    series: [{ type: "pie", radius: ["42%", "70%"], center: ["50%", "43%"], avoidLabelOverlap: true, label: { color: colors.muted, fontSize: 14, lineHeight: 18, formatter: "{b}\n{d}%" }, labelLayout: { hideOverlap: true }, itemStyle: { borderColor: colors.surface, borderWidth: 2, borderRadius: 4 }, data }],
   } : {
     color: palette, textStyle: theme.textStyle,
     tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value: unknown) => `${fullNumber(value)} Token` },
@@ -221,7 +228,7 @@ export function HeavyUsersCard({ data }: { data: DepartmentAnalytics }) {
       <NativeMonthSelect label="重度用户月份" value={month} months={months} onChange={setMonth} />
     </div>
     {users.length ? <ol className="mt-3 grid list-none gap-1" aria-label="重度用户Token排名">
-      {users.map((user) => <li key={user.id} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
+      {users.map((user) => <li key={user.id} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 text-sm">
         <span className="truncate text-right font-medium" title={user.name}>{user.name}</span>
         <div className="relative h-5 overflow-hidden rounded-md bg-[var(--surface-muted)]">
           <span className="absolute inset-y-0 left-0 rounded-md bg-[var(--primary)]" style={{ width: `${Math.max(2, (user.tokens / maximum) * 100)}%` }} aria-hidden="true" />
@@ -246,7 +253,6 @@ export function MonthlyActualCostCard({ cost }: { cost: ReturnType<typeof useMon
   const trend = pastCostTrend(state.data?.trend || [], currentMonth);
   const cumulativeCost = convertCost(cumulativeActualCost(trend), currency);
   const symbol = currency === "cny" ? "¥" : "$";
-  const currencyCode = currency === "cny" ? "CNY" : "USD";
   const chartValues = trend.map((point) => convertCost(point.actualCost, currency));
   const theme = cartesianTheme(54);
   const colors = chartColors();
@@ -257,17 +263,17 @@ export function MonthlyActualCostCard({ cost }: { cost: ReturnType<typeof useMon
         <p className="mb-0 mt-0.5 text-xs leading-5 muted">仅统计平台已纳管账号，成本按 AI 订阅价格估算。</p>
       </div>
       <div className="flex flex-wrap items-start justify-end gap-3">
-        <div className="flex items-baseline gap-2 whitespace-nowrap"><span className="text-xs muted">累计成本</span><strong className="tabular-nums text-lg font-semibold text-[var(--ink)]">{cumulativeCost.toLocaleString("zh-CN", { style: "currency", currency: currencyCode, minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+        <div className="flex items-baseline gap-2 whitespace-nowrap"><span className="text-xs muted">累计成本</span><strong className="tabular-nums text-lg font-semibold text-[var(--ink)]">{formatCostAmount(cumulativeCost, currency)}</strong></div>
         <div className="flex items-center gap-1"><HelpTip label="人民币汇率说明">人民币按固定汇率 1 USD = 6.7 CNY 换算。</HelpTip><Segmented value={currency} onChange={setCurrency} label="支出成本币种" options={[{ value: "cny", label: "人民币" }, { value: "usd", label: "美元" }]} /></div>
       </div>
     </div>
     {state.loading && !state.data ? <Loading label="正在加载支出成本" /> : trend.length ? <Chart label="过往月份支出成本柱状图" height={260} option={{
       color: [palette[2]], textStyle: theme.textStyle,
-      tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value: unknown) => `${symbol}${Number(value || 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+      tooltip: { ...tooltipTheme(), trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (value: unknown) => formatCostAmount(Number(value || 0), currency) },
       grid: { ...(theme.grid as object), top: 34, bottom: 48 },
       xAxis: { ...theme.xAxis, type: "category", data: trend.map((point) => monthLabel(point.month)), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true } },
       yAxis: { ...theme.yAxis, type: "value", axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: unknown) => `${symbol}${compactNumber(value)}` } },
-      series: [{ name: "真实支出", type: "bar", barMaxWidth: 44, data: chartValues, itemStyle: { borderRadius: [5, 5, 1, 1] }, label: { show: true, position: "top", color: colors.ink, fontSize: 12, formatter: (params: { value?: unknown }) => `${symbol}${compactNumber(params.value)}` } }],
+      series: [{ name: "真实支出", type: "bar", barMaxWidth: 44, data: chartValues, itemStyle: { borderRadius: [5, 5, 1, 1] }, label: { show: true, position: "top", color: colors.ink, fontSize: 14, formatter: (params: { value?: unknown }) => `${symbol}${compactNumber(params.value)}` } }],
     }} /> : <Empty title="暂无已结束月份成本" detail={state.error || "当前没有可展示的过往月份支出数据。"} />}
   </section>;
 }

@@ -1136,6 +1136,16 @@ production build passed.
   width instead of widening the document.
 - Kept all ten heavy-user rows directly visible for screenshots and preserved
   the confirmed aggregate and model-family chart behavior.
+- Increased dashboard chart typography for axes, legends, tooltips, pie labels
+  and direct data labels, with overlap hiding retained for enlarged pie labels.
+  Heavy-user rows now use the same readable small-body scale. CNY cost totals
+  and tooltips use Chinese ten-thousand units such as `¥9.16万` rather than
+  thousands separators.
+- Increased the chart typography one additional step to 14px for the local
+  review pass while keeping the heavy-user ten-row density unchanged.
+- Swapped the B-layout positions of the model-usage and cost cards: cost now
+  sits beside the department Token trend, while model usage sits beside the
+  heavy-user ranking.
 
 Validation before publication: Insights lint, TypeScript, all 30 test files /
 127 tests and the production build passed. The original Vue frontend lint,

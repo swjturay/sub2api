@@ -82,10 +82,10 @@ export function cartesianTheme(bottom = 46): Pick<EChartsOption, "grid" | "textS
   const axis = {
     axisLine: { lineStyle: { color: colors.border } },
     axisTick: { show: false },
-    axisLabel: { color: colors.muted, fontSize: 12, margin: 12 },
+    axisLabel: { color: colors.muted, fontSize: 14, margin: 12 },
   };
   return {
-    textStyle: { color: colors.ink, fontFamily: chartFontFamily() },
+    textStyle: { color: colors.ink, fontFamily: chartFontFamily(), fontSize: 14 },
     grid: { left: 10, right: 18, top: 28, bottom, containLabel: true },
     xAxis: { ...axis, splitLine: { show: false } },
     yAxis: {
@@ -104,7 +104,7 @@ export function tooltipTheme() {
     borderColor: colors.border,
     borderWidth: 1,
     padding: [9, 11] as [number, number],
-    textStyle: { color: colors.ink, fontSize: 12 },
+    textStyle: { color: colors.ink, fontSize: 14 },
     extraCssText: "max-width:min(320px,calc(100vw - 32px));white-space:normal;overflow-wrap:anywhere;border-radius:10px;box-shadow:0 8px 28px rgba(15,23,42,.12);",
   };
 }
@@ -117,9 +117,9 @@ export function legendTheme() {
     itemWidth: 10,
     itemHeight: 6,
     itemGap: 16,
-    textStyle: { color: colors.muted, fontSize: 12 },
+    textStyle: { color: colors.muted, fontSize: 14 },
     pageIconColor: colors.primary,
     pageIconInactiveColor: colors.border,
-    pageTextStyle: { color: colors.muted },
+    pageTextStyle: { color: colors.muted, fontSize: 14 },
   };
 }
