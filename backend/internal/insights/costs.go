@@ -177,7 +177,7 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 		return Envelope{}, err
 	}
 	if filter.View == "trend" {
-		trend, err := q.loadCostTrend(ctx, filter, binding, currentMonth)
+		trend, err := q.loadCostTrendCached(ctx, filter, binding, currentMonth)
 		if err != nil {
 			return Envelope{}, err
 		}
@@ -208,7 +208,7 @@ func (q *Query) CostDashboard(ctx context.Context, filter CostFilter) (Envelope,
 	summary := summarizeCostRows(activeRows)
 	trend := []CostTrendPoint{}
 	if filter.View != "details" {
-		trend, err = q.loadCostTrend(ctx, filter, binding, currentMonth)
+		trend, err = q.loadCostTrendCached(ctx, filter, binding, currentMonth)
 		if err != nil {
 			return Envelope{}, err
 		}
@@ -537,7 +537,12 @@ roots AS (
    AND ($7='' OR a.platform=$7)
    AND ($8='' OR COALESCE(NULLIF(department.value,''),'__unassigned__')=$8)
 ),
-monthly_usage AS (
+rollup_ready AS (
+ SELECT COUNT(DISTINCT month)=(SELECT COUNT(*) FROM months) AS ready
+ FROM insights_cost_monthly_usage
+ WHERE month >= $1::date AND month <= $2::date
+),
+raw_usage AS (
  SELECT date_trunc('month',ul.created_at AT TIME ZONE $3)::date AS month,
         COALESCE(source.parent_account_id,source.id) AS account_id,
         COALESCE(SUM(ul.input_tokens),0)+COALESCE(SUM(ul.cache_creation_tokens),0)+COALESCE(SUM(ul.cache_read_tokens),0)+COALESCE(SUM(ul.output_tokens),0) AS tokens,
@@ -545,6 +550,17 @@ monthly_usage AS (
  FROM usage_logs ul JOIN accounts source ON source.id=ul.account_id
  WHERE ul.created_at >= $4 AND ul.created_at < $5
  GROUP BY 1,2)
+,
+monthly_usage AS (
+ SELECT month,account_id,tokens,platform_cost
+ FROM insights_cost_monthly_usage
+ WHERE (SELECT ready FROM rollup_ready)
+   AND month >= $1::date AND month <= $2::date
+ UNION ALL
+ SELECT month,account_id,tokens,platform_cost
+ FROM raw_usage
+ WHERE NOT (SELECT ready FROM rollup_ready)
+)
 SELECT months.month,roots.platform,roots.deleted_at,COALESCE(cfg.registered,false),roots.contributor_user_id,
        roots.department_id,exact.actual_cost::text,COALESCE(usage.platform_cost,'0'),COALESCE(usage.tokens,0)
 FROM months CROSS JOIN roots
@@ -623,6 +639,66 @@ LEFT JOIN monthly_usage usage ON usage.account_id=roots.id AND usage.month=month
 		out = append(out, CostTrendPoint{Month: key, PlatformCost: money(a.platform), ActualCost: money(a.actual), Savings: money(a.savings), CompletedAccounts: a.completed, TotalAccounts: a.total})
 	}
 	return out, nil
+}
+
+func costTrendCacheKey(filter CostFilter, binding departmentBinding, currentMonth string) string {
+	return strings.Join([]string{
+		filter.Month.Format("2006-01"), filter.Department, filter.Platform,
+		strconv.FormatInt(binding.ID, 10), currentMonth,
+	}, "|")
+}
+
+func cloneCostTrend(points []CostTrendPoint) []CostTrendPoint {
+	if points == nil {
+		return nil
+	}
+	return append([]CostTrendPoint(nil), points...)
+}
+
+func (q *Query) loadCostTrendCached(ctx context.Context, filter CostFilter, binding departmentBinding, currentMonth string) ([]CostTrendPoint, error) {
+	key := costTrendCacheKey(filter, binding, currentMonth)
+	now := q.now()
+	q.costTrendMu.Lock()
+	if entry, ok := q.costTrendCache[key]; ok && now.Before(entry.expiresAt) {
+		trend := cloneCostTrend(entry.trend)
+		q.costTrendMu.Unlock()
+		return trend, nil
+	}
+	q.costTrendMu.Unlock()
+	value, err, _ := q.costTrendGroup.Do(key, func() (any, error) {
+		q.costTrendMu.Lock()
+		if entry, ok := q.costTrendCache[key]; ok && q.now().Before(entry.expiresAt) {
+			trend := cloneCostTrend(entry.trend)
+			q.costTrendMu.Unlock()
+			return trend, nil
+		}
+		q.costTrendMu.Unlock()
+		trend, loadErr := q.loadCostTrend(ctx, filter, binding, currentMonth)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		q.costTrendMu.Lock()
+		if q.costTrendCache == nil {
+			q.costTrendCache = make(map[string]costTrendCacheEntry)
+		}
+		q.costTrendCache[key] = costTrendCacheEntry{trend: cloneCostTrend(trend), expiresAt: q.now().Add(5 * time.Minute)}
+		q.costTrendMu.Unlock()
+		return trend, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	trend, ok := value.([]CostTrendPoint)
+	if !ok {
+		return nil, errors.New("invalid cost trend cache value")
+	}
+	return cloneCostTrend(trend), nil
+}
+
+func (q *Query) clearCostTrendCache() {
+	q.costTrendMu.Lock()
+	q.costTrendCache = make(map[string]costTrendCacheEntry)
+	q.costTrendMu.Unlock()
 }
 
 func (q *Query) loadCostUsageDepartments(ctx context.Context, filter CostFilter, binding departmentBinding, activeIDs []int64) ([]CostUsageDepartment, []CostDepartmentFlow, error) {
@@ -762,6 +838,9 @@ func (q *Query) SaveCostMonth(ctx context.Context, input SaveCostMonthInput) err
 	}
 	// Migration 242 synchronizes account ownership in the same statement, including legacy writers.
 	_, err := q.db.ExecContext(ctx, `INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES($1,$2,TRUE,$3,$4,$5,$6,$7) ON CONFLICT(account_id,month) DO UPDATE SET registered=TRUE,contributor_user_id=EXCLUDED.contributor_user_id,payment_method=EXCLUDED.payment_method,actual_cost=EXCLUDED.actual_cost,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW()`, input.AccountID, input.Month.Format("2006-01-02"), input.ContributorID, input.PaymentMethod, input.ActualCost, input.Notes, input.UpdatedBy)
+	if err == nil {
+		q.clearCostTrendCache()
+	}
 	return err
 }
 
@@ -781,6 +860,7 @@ func (q *Query) StopCostAccountAfter(ctx context.Context, accountID int64, after
 	if affected == 0 {
 		return ErrCostStopConflict
 	}
+	q.clearCostTrendCache()
 	return nil
 }
 

@@ -32,6 +32,7 @@ type runtimeRecorder struct {
 	statisticsStart   *time.Time
 	pendingUsage      int
 	dirtyUsers        map[int64]struct{}
+	lastCostRefresh   time.Time
 }
 
 var defaultRuntime struct {
@@ -249,6 +250,7 @@ func (r *runtimeRecorder) maintain(ctx context.Context) {
 }
 
 func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
+	now := time.Now().In(today.Location())
 	var existingRaw []byte
 	var existing AggregationConfig
 	if err := r.db.QueryRowContext(ctx, `SELECT value FROM insights_settings WHERE key='aggregation_config'`).Scan(&existingRaw); err == nil {
@@ -268,6 +270,16 @@ func (r *runtimeRecorder) maintainBatch(ctx context.Context, today time.Time) {
 	if err := r.store.RollupRange(ctx, today.AddDate(0, 0, -2), today.AddDate(0, 0, 1), r.timezone); err != nil {
 		log.Printf("[Insights] live rollup: %v", err)
 		return
+	}
+	if r.lastCostRefresh.IsZero() || now.Sub(r.lastCostRefresh) >= 10*time.Minute {
+		from, to, err := CostRollupRange(now, r.timezone)
+		if err != nil {
+			log.Printf("[Insights] cost rollup range: %v", err)
+		} else if err = r.store.RefreshCostMonthlyUsage(ctx, from, to, r.timezone); err != nil {
+			log.Printf("[Insights] cost monthly rollup: %v", err)
+		} else {
+			r.lastCostRefresh = now
+		}
 	}
 	var state struct {
 		NextDate   string `json:"next_date"`

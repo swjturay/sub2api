@@ -3,6 +3,7 @@ package insights
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,6 +109,39 @@ func TestCostDashboardTrendViewSkipsFullAccountAndDimensionQueries(t *testing.T)
 	data := envelope.Data.(CostDashboard)
 	if data.Accounts.Items == nil || data.Dimensions.Contributors == nil {
 		t.Fatalf("trend view must return empty collections: %+v", data)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCostTrendCacheCollapsesConcurrentLoads(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	month := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("WITH months").WillReturnRows(sqlmock.NewRows([]string{"month", "platform", "deleted", "registered", "contributor", "department", "actual", "platform_cost", "tokens"}).AddRow(month, "openai", nil, true, nil, "__unassigned__", nil, "3", int64(2)))
+	q := NewQuery(db, "UTC", nil)
+	q.now = func() time.Time { return time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC) }
+	filter := CostFilter{Month: month}
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, loadErr := q.loadCostTrendCached(context.Background(), filter, departmentBinding{}, "2026-10")
+			errs <- loadErr
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for loadErr := range errs {
+		if loadErr != nil {
+			t.Fatal(loadErr)
+		}
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

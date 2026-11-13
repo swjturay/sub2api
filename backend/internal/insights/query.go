@@ -11,9 +11,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lib/pq"
+	"golang.org/x/sync/singleflight"
 )
 
 var ErrConflict = errors.New("insights metadata edit conflict")
@@ -98,6 +100,14 @@ type Query struct {
 	timezone        string
 	statisticsStart *time.Time
 	now             func() time.Time
+	costTrendMu     sync.Mutex
+	costTrendCache  map[string]costTrendCacheEntry
+	costTrendGroup  singleflight.Group
+}
+
+type costTrendCacheEntry struct {
+	trend     []CostTrendPoint
+	expiresAt time.Time
 }
 
 type Page struct {
@@ -289,7 +299,7 @@ func NewQuery(db *sql.DB, timezone string, statisticsStart *time.Time) *Query {
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	return &Query{db: db, timezone: timezone, statisticsStart: statisticsStart, now: time.Now}
+	return &Query{db: db, timezone: timezone, statisticsStart: statisticsStart, now: time.Now, costTrendCache: make(map[string]costTrendCacheEntry)}
 }
 
 func (q *Query) Envelope(data any, coverage []CoverageInfo) Envelope {

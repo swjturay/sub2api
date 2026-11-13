@@ -1210,3 +1210,15 @@ regression, Insights/handler/routes/migrations suites and production build
 passed. PostgreSQL EXPLAIN/latency comparison and the index rollout remain
 part of the deployment validation because this host has no Docker/PostgreSQL
 integration environment.
+
+## Department cost trend rollup and request coalescing (2026-11-13)
+
+- Added `insights_cost_monthly_usage`, an account/month cost rollup refreshed
+  by the Insights maintenance worker over the recent twelve-month window.
+  Trend SQL uses the rollup when all requested months are available and keeps
+  the raw-log path as a correctness fallback during backfill.
+- Added a five-minute per-process trend cache and `singleflight` request
+  coalescing so concurrent dashboard loads share one database query. Cost
+  configuration mutations invalidate the cache.
+- Added migration, advisory-lock, calendar-range, and concurrent-load
+  regression coverage.

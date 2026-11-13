@@ -56,6 +56,7 @@ func TestCostDashboardPostgresIntegration(t *testing.T) {
 		}
 	}
 	applyMigration("241_insights_cost_data.sql")
+	applyMigration("251_insights_cost_monthly_usage.sql")
 	if _, err = db.ExecContext(ctx, `INSERT INTO users VALUES(1,'contributor','c@example','active',NULL),(2,'consumer','u@example','active',NULL),(9,'admin','a@example','active',NULL); INSERT INTO accounts VALUES(100,'root','openai','oauth','active',NULL,NULL,NULL),(101,'shadow','openai','oauth','active',NULL,NULL,100),(200,'unconfigured','gemini','oauth','active',NULL,NULL,NULL); INSERT INTO user_attribute_definitions VALUES(11,'department','select','[{"value":"eng","label":"研发"},{"value":"ops","label":"运营"}]',true,NULL); INSERT INTO user_attribute_values VALUES(1,11,'eng'),(2,11,'ops'); INSERT INTO insights_settings VALUES('department_attribute_id','11'); INSERT INTO insights_cost_account_months(account_id,month,registered,contributor_user_id,payment_method,actual_cost,notes,updated_by) VALUES(100,'2026-09-01',true,1,'subscription',6.50,'confirmed',9)`); err != nil {
 		t.Fatal(err)
 	}
