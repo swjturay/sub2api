@@ -48,17 +48,30 @@ func TestChatReasoningAlias_ResponsesSharedPaths(t *testing.T) {
 	require.Len(t, nonStream.Output, 2)
 	require.Equal(t, "reasoning", nonStream.Output[0].Type)
 	require.Equal(t, "fallback reasoning", nonStream.Output[0].Summary[0].Text)
+	require.Len(t, nonStream.Output[0].Content, 1)
+	require.Equal(t, "reasoning_text", nonStream.Output[0].Content[0].Type)
+	require.Equal(t, "fallback reasoning", nonStream.Output[0].Content[0].Text)
 
 	var chunk ChatCompletionsChunk
 	readIssue5302Fixture(t, "stream_reasoning.json", &chunk)
-	events := ChatCompletionsChunkToResponsesEvents(&chunk, NewChatCompletionsToResponsesStreamState("reasoning-model"))
+	state := NewChatCompletionsToResponsesStreamState("reasoning-model")
+	events := ChatCompletionsChunkToResponsesEvents(&chunk, state)
+	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 	var deltas []string
+	var reasoningDone *ResponsesOutput
 	for _, event := range events {
 		if event.Type == "response.reasoning_summary_text.delta" {
 			deltas = append(deltas, event.Delta)
 		}
+		if event.Type == "response.output_item.done" && event.Item != nil && event.Item.Type == "reasoning" {
+			reasoningDone = event.Item
+		}
 	}
 	require.Equal(t, []string{"streamed fallback"}, deltas)
+	require.NotNil(t, reasoningDone)
+	require.Len(t, reasoningDone.Content, 1)
+	require.Equal(t, "reasoning_text", reasoningDone.Content[0].Type)
+	require.Equal(t, "streamed fallback", reasoningDone.Content[0].Text)
 }
 
 func TestChatReasoningAlias_ReasoningContentTakesPrecedence(t *testing.T) {

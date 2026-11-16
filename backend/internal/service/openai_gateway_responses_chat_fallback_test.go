@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -210,6 +212,103 @@ func TestForwardResponses_ForceChatCompletionsRoutesStreamingToChatCompletions(t
 	require.Equal(t, 3, result.Usage.OutputTokens)
 	require.True(t, result.Stream)
 	require.NotNil(t, result.FirstTokenMs)
+}
+
+// A new Responses session may start on the Chat Completions fallback and then
+// fail over to a native Responses account after a transient Chat 503. The
+// reasoning item emitted by the first turn must carry reasoning_text so the
+// second account can accept the same session history.
+func TestForwardResponses_NewSessionChat503FailoverToResponsesPreservesReasoningText(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"chatcmpl_first","object":"chat.completion","model":"deepseek-reasoner","choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"plan before failover","content":"first answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}`,
+			)),
+		},
+		{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"服务器繁忙，请稍后重试"}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_after_failover","object":"response","model":"deepseek-reasoner","status":"completed","output":[{"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"second answer"}]}],"usage":{"input_tokens":8,"output_tokens":2,"total_tokens":10}}`,
+			)),
+		},
+	}}
+	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
+
+	firstBody := []byte(`{"model":"deepseek-reasoner","input":"first","stream":false}`)
+	firstRec := httptest.NewRecorder()
+	firstCtx, _ := gin.CreateTestContext(firstRec)
+	firstCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(firstBody))
+	firstCtx.Request.Header.Set("Content-Type", "application/json")
+	_, err := svc.Forward(context.Background(), firstCtx, forceChatResponsesFallbackAccount(), firstBody)
+	require.NoError(t, err)
+
+	var firstResponse apicompat.ResponsesResponse
+	require.NoError(t, json.Unmarshal(firstRec.Body.Bytes(), &firstResponse))
+	require.Len(t, firstResponse.Output, 2)
+	require.Equal(t, "reasoning_text", firstResponse.Output[0].Content[0].Type)
+	require.Equal(t, "plan before failover", firstResponse.Output[0].Content[0].Text)
+
+	input := make([]any, 0, len(firstResponse.Output)+1)
+	for _, item := range firstResponse.Output {
+		input = append(input, item)
+	}
+	input = append(input, map[string]any{
+		"type": "message",
+		"role": "user",
+		"content": []map[string]string{{
+			"type": "input_text",
+			"text": "continue",
+		}},
+	})
+	followupPayload, err := json.Marshal(map[string]any{
+		"model":  "deepseek-reasoner",
+		"input":  input,
+		"stream": false,
+	})
+	require.NoError(t, err)
+
+	// The Chat fallback attempt receives a 503 and must surface a failover error
+	// without changing the request history.
+	secondRec := httptest.NewRecorder()
+	secondCtx, _ := gin.CreateTestContext(secondRec)
+	secondCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(followupPayload))
+	secondCtx.Request.Header.Set("Content-Type", "application/json")
+	_, err = svc.Forward(context.Background(), secondCtx, forceChatResponsesFallbackAccount(), followupPayload)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusServiceUnavailable, failoverErr.StatusCode)
+
+	// The next account is a native Responses account. The same new-session
+	// history must now contain the full reasoning_text item.
+	nativeAccount := rawChatCompletionsTestAccount()
+	nativeAccount.Platform = PlatformDeepseek
+	nativeAccount.Credentials["api_protocol"] = APIProtocolResponses
+	nativeAccount.Extra = map[string]any{
+		openai_compat.ExtraKeyResponsesMode:      string(openai_compat.ResponsesSupportModeAuto),
+		openai_compat.ExtraKeyResponsesSupported: true,
+	}
+	thirdRec := httptest.NewRecorder()
+	thirdCtx, _ := gin.CreateTestContext(thirdRec)
+	thirdCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(followupPayload))
+	thirdCtx.Request.Header.Set("Content-Type", "application/json")
+	result, err := svc.Forward(context.Background(), thirdCtx, nativeAccount, followupPayload)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_after_failover", result.ResponseID)
+	require.Equal(t, "http://upstream.example/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "reasoning_text", gjson.GetBytes(upstream.lastBody, "input.0.content.0.type").String())
+	require.Equal(t, "plan before failover", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
+	require.Len(t, upstream.requests, 3)
 }
 
 func TestForwardResponses_ChatFallbackRejectsInvalidToolArgumentsAtOutputLimit(t *testing.T) {

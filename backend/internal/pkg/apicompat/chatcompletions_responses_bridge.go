@@ -1405,6 +1405,10 @@ func chatMessageToResponsesOutput(message ChatMessage, customTools, functionTool
 				Type: "summary_text",
 				Text: reasoning,
 			}},
+			Content: []ResponsesContentPart{{
+				Type: "reasoning_text",
+				Text: reasoning,
+			}},
 		})
 	}
 
@@ -1939,6 +1943,7 @@ func closeChatReasoningItem(state *ChatCompletionsToResponsesStreamState) []Resp
 				ID:      state.ReasoningItemID,
 				Status:  "completed",
 				Summary: []ResponsesSummary{{Type: "summary_text", Text: reasoning}},
+				Content: []ResponsesContentPart{{Type: "reasoning_text", Text: reasoning}},
 			},
 		}),
 	}
@@ -2174,6 +2179,10 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 			ID:   generateItemID(),
 			Summary: []ResponsesSummary{{
 				Type: "summary_text",
+				Text: state.Reasoning.String(),
+			}},
+			Content: []ResponsesContentPart{{
+				Type: "reasoning_text",
 				Text: state.Reasoning.String(),
 			}},
 		})

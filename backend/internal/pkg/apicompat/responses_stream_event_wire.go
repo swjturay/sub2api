@@ -177,6 +177,9 @@ func responsesItemWire(item *ResponsesOutput) map[string]any {
 		m["content"] = messageContentWire(item.Content)
 	case "reasoning":
 		m["summary"] = reasoningSummaryWire(item.Summary)
+		if item.Content != nil {
+			m["content"] = reasoningContentWire(item.Content)
+		}
 		if item.EncryptedContent != "" {
 			m["encrypted_content"] = item.EncryptedContent
 		}
@@ -235,6 +238,21 @@ func reasoningSummaryWire(summary []ResponsesSummary) []map[string]any {
 			typ = "summary_text"
 		}
 		out = append(out, map[string]any{"type": typ, "text": s.Text})
+	}
+	return out
+}
+
+// reasoningContentWire renders the full reasoning text parts carried by a
+// reasoning output item. Chat→Responses conversion keeps both summary_text and
+// reasoning_text so a later Responses request can replay the complete thinking
+// text to strict providers such as DeepSeek.
+func reasoningContentWire(parts []ResponsesContentPart) []map[string]any {
+	out := make([]map[string]any, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != "reasoning_text" {
+			continue
+		}
+		out = append(out, map[string]any{"type": "reasoning_text", "text": p.Text})
 	}
 	return out
 }

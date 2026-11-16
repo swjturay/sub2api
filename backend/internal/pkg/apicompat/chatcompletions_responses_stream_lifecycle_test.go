@@ -121,6 +121,9 @@ func TestStream_ReasoningThenContentDoesNotDuplicateFallbackText(t *testing.T) {
 			require.NotNil(t, e.Response)
 			require.Len(t, e.Response.Output, 2)
 			require.Equal(t, "private plan", e.Response.Output[0].Summary[0].Text)
+			require.Len(t, e.Response.Output[0].Content, 1)
+			require.Equal(t, "reasoning_text", e.Response.Output[0].Content[0].Type)
+			require.Equal(t, "private plan", e.Response.Output[0].Content[0].Text)
 			require.Equal(t, "final answer", e.Response.Output[1].Content[0].Text)
 		}
 	}

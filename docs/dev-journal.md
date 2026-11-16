@@ -1227,3 +1227,19 @@ Follow-up production verification found the rollup and raw fallback branches
 were UNIONed with different `platform_cost` types (`numeric` versus `text`).
 The rollup branch now casts to text before the existing decimal parser; backend
 unit tests and production build pass after the correction.
+
+## DeepSeek new-session reasoning replay compatibility (2026-11-16)
+
+- Chat→Responses conversion now emits both `summary_text` and full
+  `content[].reasoning_text` for non-streaming responses and streaming terminal
+  output items. The stream wire encoder preserves the reasoning content array.
+- Added regression coverage for non-streaming conversion, streaming terminal
+  output, wire serialization, and a new Responses session that receives a Chat
+  503 before succeeding through a native DeepSeek Responses account.
+- This patch intentionally does not migrate old sessions or change protocol
+  routing/failover policy.
+
+Validation: `go test -tags unit ./internal/pkg/apicompat` and the focused
+`TestForwardResponses_` service tests pass. The complete service package suite
+was attempted locally but remains noisy/failing in unrelated OAuth/Gemini/
+Antigravity coverage.

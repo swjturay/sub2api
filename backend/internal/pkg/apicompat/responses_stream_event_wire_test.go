@@ -79,6 +79,29 @@ func TestWire_ReasoningItemSummaryAlwaysArray(t *testing.T) {
 	require.True(t, ok, "summary must be an array")
 }
 
+func TestWire_ReasoningItemCarriesFullReasoningContent(t *testing.T) {
+	m := marshalEvent(t, ResponsesStreamEvent{
+		Type:        "response.output_item.done",
+		OutputIndex: 0,
+		Item: &ResponsesOutput{
+			Type:    "reasoning",
+			ID:      "rs_1",
+			Status:  "completed",
+			Summary: []ResponsesSummary{{Type: "summary_text", Text: "summary"}},
+			Content: []ResponsesContentPart{{Type: "reasoning_text", Text: "full reasoning"}},
+		},
+	})
+	item, ok := m["item"].(map[string]any)
+	require.True(t, ok, "item must be an object")
+	content, ok := item["content"].([]any)
+	require.True(t, ok, "reasoning content must be an array")
+	require.Len(t, content, 1)
+	part, ok := content[0].(map[string]any)
+	require.True(t, ok, "reasoning content part must be an object")
+	require.Equal(t, "reasoning_text", part["type"])
+	require.Equal(t, "full reasoning", part["text"])
+}
+
 // TestWire_ContentPartCarriesAnnotationsLogprobs guards the output_text part shape.
 func TestWire_ContentPartCarriesAnnotationsLogprobs(t *testing.T) {
 	m := marshalEvent(t, ResponsesStreamEvent{
