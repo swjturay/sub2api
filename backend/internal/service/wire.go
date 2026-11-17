@@ -72,6 +72,7 @@ func ProvideAuthService(
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	mcpOAuthService *MCPOAuthService,
+	apiKeyService *APIKeyService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -93,6 +94,7 @@ func ProvideAuthService(
 	if mcpOAuthService != nil {
 		svc.SetMCPGrantRevoker(mcpOAuthService)
 	}
+	svc.SetDefaultAPIKeyAssigner(apiKeyService)
 	return svc
 }
 

@@ -85,6 +85,7 @@ type AuthService struct {
 	promoService          *PromoService
 	affiliateService      *AffiliateService
 	defaultSubAssigner    DefaultSubscriptionAssigner
+	defaultAPIKeyAssigner DefaultAPIKeyAssigner
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	mcpGrantRevoker       MCPGrantRevoker
 }
@@ -103,6 +104,12 @@ type MCPGrantRevoker interface {
 
 type DefaultSubscriptionAssigner interface {
 	AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error)
+}
+
+// DefaultAPIKeyAssigner initializes the first API key for a newly registered
+// user without coupling authentication to the full API key management API.
+type DefaultAPIKeyAssigner interface {
+	EnsureDefaultAPIKey(ctx context.Context, userID int64) error
 }
 
 type signupGrantPlan struct {
@@ -162,6 +169,10 @@ func (s *AuthService) SetAliyunCaptchaService(aliyunCaptchaService *AliyunCaptch
 
 func (s *AuthService) SetMCPGrantRevoker(revoker MCPGrantRevoker) {
 	s.mcpGrantRevoker = revoker
+}
+
+func (s *AuthService) SetDefaultAPIKeyAssigner(assigner DefaultAPIKeyAssigner) {
+	s.defaultAPIKeyAssigner = assigner
 }
 
 // Register 用户注册，返回token和用户
@@ -1006,6 +1017,11 @@ func (s *AuthService) postAuthUserBootstrap(ctx context.Context, user *User, sig
 		signupSource = "email"
 	}
 	s.updateUserSignupSource(ctx, user.ID, signupSource)
+	if s.defaultAPIKeyAssigner != nil {
+		if err := s.defaultAPIKeyAssigner.EnsureDefaultAPIKey(ctx, user.ID); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize default API key for user %d: %v", user.ID, err)
+		}
+	}
 
 	if touchLogin {
 		s.touchUserLogin(ctx, user.ID)

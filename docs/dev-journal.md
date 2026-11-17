@@ -1243,3 +1243,20 @@ Validation: `go test -tags unit ./internal/pkg/apicompat` and the focused
 `TestForwardResponses_` service tests pass. The complete service package suite
 was attempted locally but remains noisy/failing in unrelated OAuth/Gemini/
 Antigravity coverage.
+
+## Signup default API key bootstrap (2026-11-17)
+
+- New email and first-time OAuth registrations now attempt to create one
+  `default-<userID>` API key only when the user has no existing API keys.
+  Key contents continue to use the existing random generator.
+- The bootstrap selects the first active group available to the user using the
+  repository's `sort_order`, then ID ordering, grants that group to the user,
+  and binds it to the key. If no group is available, the key is created without
+  a group; registration remains successful and no repair job is introduced.
+- The authentication hook is optional and fail-open: bootstrap errors are
+  logged without blocking account creation. An in-process singleflight guard
+  coalesces repeated initialization calls for one user.
+
+Validation: focused service unit tests cover email/OAuth registration, any
+existing API key skip behavior, first available group binding, and the no-group
+unbound key case. `go test ./internal/service ./cmd/server` passes.

@@ -302,6 +302,7 @@ type APIKeyService struct {
 	authNegativeCacheL1       *ristretto.Cache
 	authCfg                   apiKeyAuthCacheConfig
 	authGroup                 singleflight.Group
+	signupBootstrapGroup      singleflight.Group
 	authLookupSlots           chan struct{}
 	authLookupTotal           atomic.Uint64
 	authLookupRejected        atomic.Uint64
@@ -598,6 +599,59 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	s.compileAPIKeyIPRules(apiKey)
 
 	return apiKey, nil
+}
+
+// EnsureDefaultAPIKey creates the registration default API key when the user
+// does not have any existing API key. It is intentionally idempotent so that
+// registration retries and OAuth callback replays do not create additional
+// credentials for the same user.
+func (s *APIKeyService) EnsureDefaultAPIKey(ctx context.Context, userID int64) error {
+	if s == nil || s.apiKeyRepo == nil || s.userRepo == nil {
+		return fmt.Errorf("default api key bootstrap is not configured")
+	}
+	if userID <= 0 {
+		return fmt.Errorf("invalid user id %d", userID)
+	}
+
+	_, err, _ := s.signupBootstrapGroup.Do(strconv.FormatInt(userID, 10), func() (any, error) {
+		count, err := s.apiKeyRepo.CountByUserID(ctx, userID)
+		if err != nil {
+			return nil, fmt.Errorf("count user api keys: %w", err)
+		}
+		if count > 0 {
+			return nil, nil
+		}
+
+		var groupID *int64
+		if s.groupRepo != nil && s.userSubRepo != nil {
+			groups, err := s.GetAvailableGroups(ctx, userID)
+			if err != nil {
+				return nil, fmt.Errorf("list available groups for default api key: %w", err)
+			}
+			// Keep the selection deterministic even if a repository implementation
+			// does not provide the standard sort_order/id ordering.
+			sort.SliceStable(groups, func(i, j int) bool {
+				if groups[i].SortOrder == groups[j].SortOrder {
+					return groups[i].ID < groups[j].ID
+				}
+				return groups[i].SortOrder < groups[j].SortOrder
+			})
+			if len(groups) > 0 {
+				selectedID := groups[0].ID
+				groupID = &selectedID
+				if err := s.userRepo.AddGroupToAllowedGroups(ctx, userID, selectedID); err != nil {
+					return nil, fmt.Errorf("allow default api key group %d: %w", selectedID, err)
+				}
+			}
+		}
+
+		name := fmt.Sprintf("default-%d", userID)
+		if _, err := s.Create(ctx, userID, CreateAPIKeyRequest{Name: name, GroupID: groupID}); err != nil {
+			return nil, fmt.Errorf("create default api key: %w", err)
+		}
+		return nil, nil
+	})
+	return err
 }
 
 // List 获取用户的API Key列表
