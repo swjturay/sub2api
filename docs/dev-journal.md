@@ -1228,6 +1228,13 @@ were UNIONed with different `platform_cost` types (`numeric` versus `text`).
 The rollup branch now casts to text before the existing decimal parser; backend
 unit tests and production build pass after the correction.
 
+## Department user-growth chart axis spacing (2026-11-18)
+
+- Added category-axis padding and explicit month-label intervals to the user
+  growth chart so the final month label remains fully visible at narrow panel
+  widths.
+- Insights typecheck, lint, and the full 30-file / 127-test suite pass.
+
 ## DeepSeek new-session reasoning replay compatibility (2026-11-16)
 
 - Chat→Responses conversion now emits both `summary_text` and full

@@ -123,8 +123,8 @@ export function UserGrowthCard({ series, loading, error, retry }: { series?: Tim
     {loading && !series ? <Loading label="正在加载用户数" /> : error && !series ? <ErrorBanner message={error} retry={retry} /> : data.length ? <Chart label="平台月末总用户增长折线图" height={280} option={{
       color: [palette[0]], textStyle: theme.textStyle,
       tooltip: { ...tooltipTheme(), trigger: "axis", valueFormatter: (value) => `${fullNumber(value)} 人` },
-      grid: { ...(theme.grid as object), top: 40, bottom: 42 },
-      xAxis: { ...theme.xAxis, type: "category", boundaryGap: false, data: data.map((point) => monthLabel(point.bucket)), axisLabel: { ...(theme.xAxis.axisLabel as object), hideOverlap: true } },
+      grid: { ...(theme.grid as object), top: 40, right: 34, bottom: 42 },
+      xAxis: { ...theme.xAxis, type: "category", boundaryGap: true, data: data.map((point) => monthLabel(point.bucket)), axisLabel: { ...(theme.xAxis.axisLabel as object), interval: 0, margin: 14, hideOverlap: true } },
       yAxis: { ...theme.yAxis, type: "value", min: 0, axisLabel: { ...(theme.yAxis.axisLabel as object), formatter: (value: unknown) => `${compactNumber(value)}人` } },
       series: [{ name: "总用户数", type: "line", smooth: 0.22, symbolSize: 7, showSymbol: true, data: data.map((point) => point.users ?? null), lineStyle: { width: 2.5 }, areaStyle: { color: palette[0], opacity: 0.12 }, label: { show: true, position: "top", color: colors.ink, fontSize: 14, formatter: (params: { value?: unknown }) => compactNumber(params.value) } }],
     }} /> : <Empty title="暂无用户增长数据" detail="当前日期范围没有可展示的月末用户数据。" />}
